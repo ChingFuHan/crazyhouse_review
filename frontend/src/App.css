@@ -785,3 +785,11 @@ button.link {
   color: var(--text-strong);
   font-size: 0.9rem;
 }
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  color: var(--text);
+}

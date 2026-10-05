@@ -7,6 +7,8 @@ export interface EnginePanelProps {
   engine: EngineView
   /** Play the first `count` moves of a line from the current position. */
   onPlayLine: (moves: MoveModel[]) => void
+  enabled: boolean
+  onToggle: () => void
 }
 
 function pvTokens(position: PositionState, line: EngineLine, onPlayLine: (moves: MoveModel[]) => void) {
@@ -31,7 +33,7 @@ function pvTokens(position: PositionState, line: EngineLine, onPlayLine: (moves:
   })
 }
 
-export function EnginePanel({ position, engine, onPlayLine }: EnginePanelProps) {
+export function EnginePanel({ position, engine, onPlayLine, enabled, onToggle }: EnginePanelProps) {
   const { analysis, status, error } = engine
   const best = analysis?.lines[0]
 
@@ -47,8 +49,13 @@ export function EnginePanel({ position, engine, onPlayLine }: EnginePanelProps) 
         <span className="engine-meta">
           {analysis ? `${analysis.engine} · depth ${analysis.depth}` : 'Fairy-Stockfish'}
           {status === 'analyzing' && <span className="spinner" aria-label="analyzing" />}
+          <label className="toggle">
+            <input type="checkbox" checked={enabled} onChange={onToggle} aria-label="Engine 開關" />
+            {enabled ? '開' : '關'}
+          </label>
         </span>
       </header>
+      {!enabled && <div className="engine-note">Engine 已關閉。</div>}
 
       {error && <div className="engine-error">Engine 錯誤：{error}</div>}
       {analysis?.status === 'game_over' && (
@@ -80,7 +87,7 @@ export function EnginePanel({ position, engine, onPlayLine }: EnginePanelProps) 
           </ol>
         </>
       )}
-      {!best && !error && analysis?.status !== 'game_over' && <div className="engine-note">分析中…</div>}
+      {enabled && !best && !error && analysis?.status !== 'game_over' && <div className="engine-note">分析中…</div>}
     </section>
   )
 }

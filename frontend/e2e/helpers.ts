@@ -72,7 +72,7 @@ export async function expectBoardConsistent(page: Page): Promise<string> {
 }
 
 export async function loadPgn(page: Page, pgn: string) {
-  await page.getByRole('button', { name: '載入 PGN' }).click()
+  await page.getByRole('button', { name: '載入 PGN / FEN' }).click()
   await page.getByLabel('PGN').fill(pgn)
   await page.getByRole('button', { name: '載入', exact: true }).click()
   await expect(page.getByLabel('PGN')).toHaveCount(0)

@@ -114,6 +114,8 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   - Click-to-drop: pocket click toggles a selection mirrored into chessground's drop mode; one
     board click per selection, then re-sync (an occupied-square click leaves chessground's
     off-board placeholder otherwise); Esc cancels.
+  - Loader accepts PGN or a one-line crazyhouse FEN (`looksLikeFen`; bracket or lichess "/pocket"
+    style, normalized by the backend). Engine on/off switch (localStorage preference, try/catch).
 
 ## Completed features
 - Crazyhouse canonical state, move parsing (UCI or SAN) with human-readable illegal reasons.
@@ -161,8 +163,8 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   on every ply of the real games; insights analysis_id == analyze analysis_id) (incl. real Fairy-Stockfish: drop mates both colors,
   supersede race (deterministic; proven to fail without the fix), crash restart, and FSF `d`/`perft 1`
   vs python-chess FEN + legal-move set for all 174 plies of the 3 real games — identical).
-- `cd frontend && npx vitest run` → 30 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 18 passed (incl. click-to-drop) (review: annotations only on main line, critical
+- `cd frontend && npx vitest run` → 32 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
+- `cd frontend && npx playwright test` → 20 passed (incl. click-to-drop, FEN load, engine toggle) (review: annotations only on main line, critical
   list == flagged moves, click selects the move; eval graph dots == flagged moves, hover tooltip,
   click jumps to the nearest ply) (core flow §55: PGN → engine → why → AI → ask
   "為什麼不是 Qh5？" → play Qh5 → re-analysis → ask "現在黑方怎麼反擊？" answered for the variation →
@@ -187,4 +189,4 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
 ## Next recommended task
 1. (Needs the user) Verify real Claude answers with an ANTHROPIC_API_KEY in `.env`: run
    `scripts/llm_smoke.py`-style check on a known position and review grounding/POV/language.
-2. UI polish: engine on/off toggle, streaming LLM answers, keyboard access to pockets.
+2. Streaming LLM answers (SSE) once real Claude latency can be measured; keyboard access to pockets.

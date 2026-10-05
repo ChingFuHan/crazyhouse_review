@@ -13,7 +13,7 @@ export function PgnLoader({ onLoad, onNewGame }: PgnLoaderProps) {
   if (!open) {
     return (
       <div className="pgn-loader">
-        <button onClick={() => setOpen(true)}>載入 PGN</button>
+        <button onClick={() => setOpen(true)}>載入 PGN / FEN</button>
         <button onClick={onNewGame}>新局面</button>
       </div>
     )
@@ -22,7 +22,7 @@ export function PgnLoader({ onLoad, onNewGame }: PgnLoaderProps) {
     <div className="pgn-loader open">
       <textarea
         aria-label="PGN"
-        placeholder="貼上 Crazyhouse PGN"
+        placeholder="貼上 Crazyhouse PGN，或一行 Crazyhouse FEN"
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={8}

@@ -21,13 +21,39 @@ import { useGameReview } from './useGameReview'
 import { useInsights } from './useInsights'
 import { useReview } from './useReview'
 
+const ENGINE_KEY = 'crazyhouse-review:engine-on'
+
+// Per-viewer convenience only; storage may be unavailable (private mode), so never rely on it.
+function readEngineOn(): boolean {
+  try {
+    return localStorage.getItem(ENGINE_KEY) !== 'off'
+  } catch {
+    return true
+  }
+}
+
+function writeEngineOn(on: boolean) {
+  try {
+    localStorage.setItem(ENGINE_KEY, on ? 'on' : 'off')
+  } catch {
+    // ignore
+  }
+}
+
 export default function App() {
   const review = useReview()
   const [orientation, setOrientation] = useState<Color>('white')
   const flip = useCallback(() => setOrientation((o) => (o === 'white' ? 'black' : 'white')), [])
   const { tree, active, play, playLine } = review
   const position = active?.state
-  const engine = useEngine(position ?? null)
+  const [engineOn, setEngineOn] = useState(readEngineOn)
+  const toggleEngine = useCallback(() => {
+    setEngineOn((on) => {
+      writeEngineOn(!on)
+      return !on
+    })
+  }, [])
+  const engine = useEngine(position ?? null, engineOn)
   const insights = useInsights(position ?? null, engine)
   const conversation = useConversation(tree, active?.id ?? null)
   const gameReview = useGameReview(tree)
@@ -53,7 +79,7 @@ export default function App() {
             {tree.headers.White} – {tree.headers.Black} {tree.headers.Result}
           </span>
         )}
-        <PgnLoader onLoad={review.loadPgn} onNewGame={() => void review.newGame()} />
+        <PgnLoader onLoad={review.loadText} onNewGame={() => void review.newGame()} />
       </header>
 
       {review.error && (
@@ -75,9 +101,11 @@ export default function App() {
             <EnginePanel
               position={position}
               engine={engine}
+              enabled={engineOn}
+              onToggle={toggleEngine}
               onPlayLine={(moves) => void playLine(position, moves.map((m) => m.uci))}
             />
-            <WhyPanel position={position} view={insights} aiTurn={aiTurn} onExplain={() => void conversation.ask(null)} />
+            <WhyPanel position={position} view={insights} engineOn={engineOn} aiTurn={aiTurn} onExplain={() => void conversation.ask(null)} />
             <section className="panel status" data-testid="status">
               <div>
                 <strong>{position.side_to_move === 'white' ? '白方' : '黑方'}</strong> 走棋 · 第 {position.move_number} 回合 · ply {position.ply}

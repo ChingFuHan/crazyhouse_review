@@ -57,14 +57,14 @@ key everything else works and the AI button reports that the LLM is not configur
 ## Current features
 - Crazyhouse position state (FEN with pockets and promoted markers), legal moves incl. drops
 - Move input as UCI or SAN with readable illegal-move reasons
-- Crazyhouse PGN import (variations and comments kept as data)
+- Crazyhouse PGN import (variations and comments kept as data), or load a crazyhouse FEN directly
 - Review board: PGN load, pockets, move list with variations, keyboard navigation, flip
 - Play your own moves: drag pieces, drag from the pocket or click a pocket piece then a square
   (legal squares highlighted; Esc cancels),
   promotion chooser, typed moves (SAN/UCI); your moves form variations, the PGN main line
   is never changed; 「回到主線」 returns to where you branched off
 
-- Fairy-Stockfish analysis of the current position: White-POV eval bar, best move, top 3 lines,
+- Fairy-Stockfish analysis of the current position (switchable on/off): White-POV eval bar, best move, top 3 lines,
   arrows (drops shown as a ghost piece on the target square); click a line move to play it
 
 - "Why this move?": a fact-only explanation of the engine's best move (drop checks, mates,

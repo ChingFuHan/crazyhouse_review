@@ -7,12 +7,13 @@ import { AnswerView } from './AnswerView'
 export interface WhyPanelProps {
   position: PositionState
   view: InsightsView
+  engineOn: boolean
   /** Latest "explain the best move" turn for this position, if any. */
   aiTurn: Turn | undefined
   onExplain: () => void
 }
 
-export function WhyPanel({ position, view, aiTurn, onExplain }: WhyPanelProps) {
+export function WhyPanel({ position, view, engineOn, aiTurn, onExplain }: WhyPanelProps) {
   const { insights, loading, error, engineMismatch } = view
   const explanation = insights ? explain(insights, position.move_number) : null
   const last = insights?.last_move
@@ -22,7 +23,11 @@ export function WhyPanel({ position, view, aiTurn, onExplain }: WhyPanelProps) {
       <h2>Why this move?</h2>
       {error && <div className="engine-error">無法取得局面事實：{error}</div>}
       {engineMismatch && <div className="notice">Engine 結果已更新，以下事實可能對應較舊的分析。</div>}
-      {!insights && !error && <div className="engine-note">{loading ? '整理局面事實中…' : '等待 Engine 分析完成…'}</div>}
+      {!insights && !error && (
+        <div className="engine-note">
+          {!engineOn ? 'Engine 已關閉：開啟後顯示最佳著的事實說明。' : loading ? '整理局面事實中…' : '等待 Engine 分析完成…'}
+        </div>
+      )}
 
       {insights && insights.position && explanation && (
         <>

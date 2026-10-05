@@ -46,6 +46,15 @@ function reducer(s: ReviewState, action: Action): ReviewState {
 
 export type NavKind = keyof typeof navigation
 
+/** One line whose first field has 7 or 8 '/' (8 when the pocket is written lichess-style) and a side to move. */
+export function looksLikeFen(text: string): boolean {
+  const line = text.trim()
+  if (line.includes('\n')) return false
+  const [board, side] = line.split(/\s+/)
+  const slashes = (board?.match(/\//g) ?? []).length
+  return (slashes === 7 || slashes === 8) && (side === 'w' || side === 'b')
+}
+
 export function useReview() {
   const [state, dispatch] = useReducer(reducer, { tree: null, activeId: null, error: null, variantAssumed: false })
 
@@ -53,13 +62,16 @@ export function useReview() {
   // Only the most recent game load may replace the tree (an older, slower response is stale).
   const loadGeneration = useRef(0)
 
-  const newGame = useCallback(async (rootFen?: string) => {
+  const newGame = useCallback(async (rootFen?: string): Promise<boolean> => {
     const generation = ++loadGeneration.current
     try {
       const root = await api.startPosition(rootFen)
-      if (generation === loadGeneration.current) dispatch({ type: 'loaded', tree: fromRoot(root), variantAssumed: false })
+      if (generation !== loadGeneration.current) return false
+      dispatch({ type: 'loaded', tree: fromRoot(root), variantAssumed: false })
+      return true
     } catch (error) {
       if (generation === loadGeneration.current) fail(error)
+      return false
     }
   }, [])
 
@@ -75,6 +87,12 @@ export function useReview() {
       return false
     }
   }, [])
+
+  /** Load either a crazyhouse FEN (one line) or a PGN. */
+  const loadText = useCallback(
+    (text: string): Promise<boolean> => (looksLikeFen(text) ? newGame(text.trim()) : loadPgn(text)),
+    [newGame, loadPgn],
+  )
 
   const select = useCallback((id: string) => dispatch({ type: 'select', id }), [])
 
@@ -122,5 +140,5 @@ export function useReview() {
   }, [newGame])
 
   const active = tree && activeId ? tree.nodes[activeId] : null
-  return { ...state, active, newGame, loadPgn, select, play, playLine, navigate, deleteVariation, clearError }
+  return { ...state, active, newGame, loadPgn, loadText, select, play, playLine, navigate, deleteVariation, clearError }
 }
