@@ -27,6 +27,9 @@ from .models import (
 )
 
 FORCED_REPLY_LIMIT = 3
+DEFENSE_LIMIT = 12
+# Conventional piece values, used only to decide whether a piece can be taken at a profit.
+EXCHANGE_VALUE = {chess.PAWN: 1, chess.KNIGHT: 3, chess.BISHOP: 3, chess.ROOK: 5, chess.QUEEN: 9, chess.KING: 100}
 VALUABLE = (chess.KING, chess.QUEEN, chess.ROOK)
 
 
@@ -183,6 +186,63 @@ def threat_from_line(view: CrazyhouseBoard, line: EngineLine) -> ThreatFacts:
     )
 
 
+def king_zone_attackers(board: CrazyhouseBoard, color: chess.Color) -> list[str]:
+    """Enemy pieces attacking the king of ``color`` or a square next to it."""
+    king = board.king(color)
+    if king is None:
+        return []
+    zone = chess.BB_KING_ATTACKS[king] | chess.BB_SQUARES[king]
+    attackers = 0
+    for square in chess.scan_forward(zone):
+        attackers |= board.attackers_mask(not color, square)
+    return [_label(board, sq) for sq in chess.scan_forward(attackers)]
+
+
+def board_material(board: CrazyhouseBoard, color: chess.Color) -> dict[str, int]:
+    return {
+        chess.piece_symbol(pt).upper(): count
+        for pt in (chess.QUEEN, chess.ROOK, chess.BISHOP, chess.KNIGHT, chess.PAWN)
+        if (count := chess.popcount(board.pieces_mask(pt, color)))
+    }
+
+
+def defenses_to_mate_threats(board: CrazyhouseBoard, limit: int = DEFENSE_LIMIT) -> list[str]:
+    """Moves of the side to move after which the opponent has no mate in one.
+
+    Quiet drops first, then other quiet moves, then checks (a check only postpones the threat).
+    """
+    out = []
+    for move in sorted(board.legal_moves, key=lambda m: (board.gives_check(m), m.drop is None)):
+        board.push(move)
+        safe = not board.is_checkmate() and not mating_moves(board)
+        board.pop()
+        if safe:
+            out.append(move_model(board, move).san)
+            if len(out) >= limit:
+                break
+    return out
+
+
+def en_prise_attackers(after: CrazyhouseBoard, square: chess.Square) -> list[str]:
+    """Opponent pieces that can take the piece on ``square`` at a profit (or for free).
+
+    In crazyhouse the taken piece goes to the taker's pocket, so this is material handed over.
+    """
+    piece = after.piece_at(square)
+    if piece is None or piece.piece_type == chess.KING:
+        return []
+    takers = [m.from_square for m in after.generate_legal_captures(to_mask=chess.BB_SQUARES[square])]
+    if not takers:
+        return []
+    defended = after.is_attacked_by(piece.color, square)
+    value = EXCHANGE_VALUE[piece.piece_type]
+    return [
+        _label(after, sq)
+        for sq in takers
+        if not defended or EXCHANGE_VALUE[after.piece_type_at(sq)] < value
+    ]
+
+
 def side_facts(board: CrazyhouseBoard, color: chess.Color) -> SideFacts:
     king = board.king(color)
     king_zone = chess.BB_KING_ATTACKS[king] if king is not None else 0
@@ -195,6 +255,8 @@ def side_facts(board: CrazyhouseBoard, color: chess.Color) -> SideFacts:
         hanging_pieces=hanging_pieces(board, color),
         attacked_queens_rooks=attacked_valuables(board, color),
         drop_check_squares=drop_check_squares(board, color),
+        king_zone_attackers=king_zone_attackers(board, color),
+        board_material=board_material(board, color),
     )
 
 
@@ -210,6 +272,7 @@ def position_facts(board: CrazyhouseBoard) -> PositionFacts:
         legal_move_count=board.legal_moves.count(),
         mate_in_one=mating_moves(board),
         opponent_mate_threats=threats,
+        defenses_to_mate_threats=defenses_to_mate_threats(board) if threats else [],
         white=side_facts(board, chess.WHITE),
         black=side_facts(board, chess.BLACK),
     )
@@ -243,6 +306,7 @@ def move_facts(board: CrazyhouseBoard, move: chess.Move) -> MoveFacts:
     blocked = blocked_lines(board, after, move)
     file_opened = opened_file(board, after, move)
     threatens = [] if gives_check or after.is_game_over() else mating_moves(_as_turn(after, mover))
+    en_prise = [] if is_mate else en_prise_attackers(after, move.to_square)
 
     tags: list[str] = []
     if model.drop:
@@ -275,6 +339,10 @@ def move_facts(board: CrazyhouseBoard, move: chess.Move) -> MoveFacts:
         tags.append("opens_file")
     if threatens:
         tags.append("mate_threat")
+    if en_prise:
+        tags.append("piece_en_prise")
+    if model.drop and not pocket_list(after, mover):
+        tags.append("pocket_emptied")
 
     return MoveFacts(
         move=model,
@@ -297,6 +365,7 @@ def move_facts(board: CrazyhouseBoard, move: chess.Move) -> MoveFacts:
         blocked_lines=blocked,
         opened_file=file_opened,
         threatens_mate=threatens,
+        en_prise_to=en_prise,
         tags=tags,
     )
 

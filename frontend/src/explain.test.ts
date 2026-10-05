@@ -36,6 +36,7 @@ function move(over: Partial<MoveFacts> & { san: string; uci: string }): MoveFact
     blocked_lines: [],
     opened_file: null,
     threatens_mate: [],
+    en_prise_to: [],
     tags: [],
     ...rest,
   }
@@ -50,6 +51,8 @@ const side = (color: 'white' | 'black'): SideFacts => ({
   hanging_pieces: [],
   attacked_queens_rooks: [],
   drop_check_squares: {},
+  king_zone_attackers: [],
+  board_material: {},
 })
 
 const dropMate = move({
@@ -118,6 +121,7 @@ describe('explain', () => {
         legal_move_count: 30,
         mate_in_one: ['R@e8#'],
         opponent_mate_threats: ['R@e1#'],
+        defenses_to_mate_threats: ['h3', 'Kf1', 'Ra8+'],
         white: { ...side('white'), hanging_pieces: [{ square: 'd4', piece: 'N', color: 'white' }] },
         black: side('black'),
       },
@@ -131,7 +135,11 @@ describe('explain', () => {
     expect(e.items.map((i) => i.label)).toEqual(['直接作用', '王的安全', '對手應對', '主要變化', 'Pocket'])
     expect(e.tags).toEqual(['Drop mate', '壓縮逃生格'])
     expect(e.comparisons).toHaveLength(1)
-    expect(positionAlerts(insights)).toEqual(['若不處理，黑方有一步殺：R@e1#。', '白方無保護且被攻擊：馬d4。'])
+    expect(positionAlerts(insights)).toEqual([
+      '若不處理，黑方有一步殺：R@e1#。',
+      '能擋住一步殺的應著：h3、Kf1。',
+      '白方無保護且被攻擊：馬d4。',
+    ])
   })
 })
 
@@ -150,6 +158,15 @@ describe('line facts and threats', () => {
       '擋住對方的攻擊線：象b4→后d2。',
       '打開 e 線（全開放）。',
       '威脅下一步 Re8# 將死。',
+    ])
+  })
+
+  it('warns about a dropped piece that can be taken at a profit and an emptied pocket', () => {
+    const f = move({ san: 'N@d6+', uci: 'N@d6', is_check: true, en_prise_to: ['Pc7'], tags: ['drop', 'drop_check', 'pocket_emptied'] })
+    expect(directEffects(f)).toEqual([
+      '從 pocket 打入馬到 d6，是 drop check（將軍）。',
+      '馬可被 兵c7 有利地吃掉（吃到的子進入對方 pocket）。',
+      '用掉了 pocket 裡最後一個棋子。',
     ])
   })
 

@@ -91,6 +91,8 @@ export interface SideFacts {
   hanging_pieces: PieceOnSquare[]
   attacked_queens_rooks: PieceOnSquare[]
   drop_check_squares: Record<string, string[]>
+  king_zone_attackers: string[]
+  board_material: Record<string, number>
 }
 
 export interface PositionFacts {
@@ -100,6 +102,7 @@ export interface PositionFacts {
   legal_move_count: number
   mate_in_one: string[]
   opponent_mate_threats: string[]
+  defenses_to_mate_threats: string[]
   white: SideFacts
   black: SideFacts
 }
@@ -145,6 +148,7 @@ export interface MoveFacts {
   blocked_lines: LineEffect[]
   opened_file: OpenedFile | null
   threatens_mate: string[]
+  en_prise_to: string[]
   tags: string[]
 }
 

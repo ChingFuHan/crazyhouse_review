@@ -46,6 +46,12 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
     `opened_file` (pawn capture leaving the file open / half-open), `threatens_mate` (mate-in-one
     next if the opponent passed). Position `threat`: engine search of the null-move position
     (`run_threat`, THREAT_MOVETIME_MS=400, skipped in check) — also in the LLM context.
+    Also: `defenses_to_mate_threats` (moves after which the opponent has no mate in one; quiet drops,
+    quiet moves, then checks — checks only postpone), `en_prise_to` (opponent pieces that can take
+    the moved piece at a profit → it would go to their pocket), tags `piece_en_prise`,
+    `pocket_emptied`; per side `king_zone_attackers`, `board_material`.
+    Note when writing analyzer tests: pocket pieces change what is mate (a piece in hand can block),
+    which invalidated several hand-made test assumptions — compute, don't assume.
   - Engine supersede policy: only a request for a DIFFERENT position stops the running search
     (generation bump); same-position requests with other settings queue (found by E2E: the UI's
     quick look used to cancel a user's explain request).
@@ -161,8 +167,8 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   move input).
 - Engine: single shared process; two browser tabs analysing at once cancel each other's searches.
   No streaming (two fixed-length phases). Classical eval only (NNUE net not installed).
-- Analyzer does not score king-zone pressure; opened diagonals are covered only through
-  discovered attacks. "Why" panel is fact-only (no strategic interpretation) until the LLM.
+- Analyzer reports king-zone attackers but no weighted pressure score; opened diagonals are covered
+  only through discovered attacks; "tempo" is expressed only through checks/forced replies. "Why" panel is fact-only (no strategic interpretation) until the LLM.
 - LLM: real Claude output never exercised here (no key). E2E uses LLM_PROVIDER=fake.
 - If the user asks AI about position A and navigates to B before A's engine search finishes,
   A's search can be superseded → that turn shows "請再問一次".
@@ -170,7 +176,7 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 141 passed (line facts, null-move engine threat, SSE stream
+- `cd backend && uv run pytest -q` → 144 passed (line facts, null-move engine threat, SSE stream
   events/cache/rules path, stubbed SDK stream incl. refusal and fallback block) (review classification incl. mate edge cases, review
   job on a real game without disturbing interactive analysis, root_moves) (candidate extraction forms; MultiPV vs fresh engine
   analysis; illegal-only answered by rules without engine/LLM; mixed legal/illegal) (LLM: context == board/engine/analyzer, variation
@@ -179,7 +185,7 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   on every ply of the real games; insights analysis_id == analyze analysis_id) (incl. real Fairy-Stockfish: drop mates both colors,
   supersede race (deterministic; proven to fail without the fix), crash restart, and FSF `d`/`perft 1`
   vs python-chess FEN + legal-move set for all 174 plies of the 3 real games — identical).
-- `cd frontend && npx vitest run` → 37 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
+- `cd frontend && npx vitest run` → 38 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
 - `cd frontend && npx playwright test` → 23 passed (incl. click-to-drop, FEN load, engine toggle,
   touch: tap-to-drop + CDP touch drags on board and from pocket, keyboard pocket access) (review: annotations only on main line, critical
   list == flagged moves, click selects the move; eval graph dots == flagged moves, hover tooltip,

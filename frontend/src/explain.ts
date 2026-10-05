@@ -25,6 +25,8 @@ export const TAG_LABELS: Record<string, string> = {
   blocks_line: '擋線',
   opens_file: '開線',
   mate_threat: '殺棋威脅',
+  piece_en_prise: '送吃',
+  pocket_emptied: 'pocket 用盡',
 }
 
 const opposite = (color: Color): Color => (color === 'white' ? 'black' : 'white')
@@ -87,6 +89,12 @@ export function directEffects(facts: MoveFacts): string[] {
     out.push(`打開 ${facts.opened_file.file} 線（${facts.opened_file.kind === 'open' ? '全開放' : '己方半開放'}）。`)
   }
   if (facts.threatens_mate.length > 0) out.push(`威脅下一步 ${facts.threatens_mate.slice(0, 3).join('、')} 將死。`)
+  if (facts.en_prise_to.length > 0) {
+    const moved = facts.move.drop ?? facts.move.promotion ?? null
+    const what = moved ? PIECE_NAMES[moved] : '這個棋子'
+    out.push(`${what}可被 ${facts.en_prise_to.map(named).join('、')} 有利地吃掉（吃到的子進入對方 pocket）。`)
+  }
+  if (facts.tags.includes('pocket_emptied')) out.push('用掉了 pocket 裡最後一個棋子。')
   if (out.length === 0) out.push('安靜著：不將軍、不吃子、不 drop。')
   return out
 }
@@ -160,6 +168,11 @@ export function positionAlerts(insights: Insights): string[] {
   if (p.in_check) alerts.push(`${SIDE[mover]}正被將軍（${p.checkers.map(piece).join('、')}）。`)
   if (p.opponent_mate_threats.length > 0) {
     alerts.push(`若不處理，${SIDE[opposite(mover)]}有一步殺：${p.opponent_mate_threats.slice(0, 4).join('、')}。`)
+    const quiet = p.defenses_to_mate_threats.filter((m) => !/[+#]$/.test(m))
+    const checks = p.defenses_to_mate_threats.filter((m) => /[+#]$/.test(m))
+    if (quiet.length > 0) alerts.push(`能擋住一步殺的應著：${quiet.slice(0, 6).join('、')}。`)
+    else if (checks.length > 0) alerts.push(`沒有安靜的防守，只有將軍能延緩：${checks.slice(0, 4).join('、')}。`)
+    else alerts.push('沒有任何應著能阻止一步殺。')
   } else if (insights.threat && insights.threat.mate !== null && insights.threat.mate * (insights.threat.side === 'white' ? 1 : -1) > 0) {
     alerts.push(threatText(insights.threat))
   }

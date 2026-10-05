@@ -133,6 +133,8 @@ class SideFacts(BaseModel):
     drop_check_squares: dict[str, list[str]] = Field(
         description="Pocket piece -> empty squares where dropping it would check the enemy king."
     )
+    king_zone_attackers: list[str] = Field(default=[], description="Enemy pieces hitting the king or its neighbours.")
+    board_material: dict[str, int] = Field(default={}, description="Pieces on the board (pocket listed separately).")
 
 
 class PositionFacts(BaseModel):
@@ -143,6 +145,10 @@ class PositionFacts(BaseModel):
     mate_in_one: list[str] = Field(description="SAN of moves for the side to move that mate at once.")
     opponent_mate_threats: list[str] = Field(
         description="SAN of mate-in-one moves the opponent would have if it were their turn."
+    )
+    defenses_to_mate_threats: list[str] = Field(
+        default=[],
+        description="Moves after which the opponent has no mate in one: quiet drops, quiet moves, then checks.",
     )
     white: SideFacts
     black: SideFacts
@@ -186,6 +192,9 @@ class MoveFacts(BaseModel):
     opened_file: OpenedFile | None = None
     threatens_mate: list[str] = Field(
         default=[], description="Mate-in-one moves the mover would have next if the opponent did nothing."
+    )
+    en_prise_to: list[str] = Field(
+        default=[], description="Opponent pieces that can take the moved piece at a profit (it would go to their pocket)."
     )
     tags: list[str]
 

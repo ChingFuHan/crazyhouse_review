@@ -63,6 +63,7 @@ def move_facts_dict(f: MoveFacts) -> dict:
         "blocked_enemy_lines": [f"{e.attacker}->{e.target}" for e in f.blocked_lines],
         "opened_file": f.opened_file.model_dump() if f.opened_file else None,
         "threatens_mate_in_one_next": f.threatens_mate,
+        "moved_piece_can_be_taken_at_profit_by": f.en_prise_to,
         "tags": f.tags,
     }
 
@@ -102,6 +103,8 @@ def _side(s: SideFacts) -> dict:
         "hanging_pieces": [f"{x.piece}{x.square}" for x in s.hanging_pieces],
         "attacked_queens_rooks": [f"{x.piece}{x.square}" for x in s.attacked_queens_rooks],
         "drop_check_squares": s.drop_check_squares,
+        "king_zone_attackers": s.king_zone_attackers,
+        "board_material": s.board_material,
     }
 
 
@@ -166,6 +169,7 @@ def build_context(
             "legal_move_count": p.legal_move_count,
             "mate_in_one_for_side_to_move": p.mate_in_one,
             "opponent_mate_in_one_threats_if_ignored": p.opponent_mate_threats,
+            "moves_after_which_opponent_has_no_mate_in_one": p.defenses_to_mate_threats,
             "white": _side(p.white),
             "black": _side(p.black),
             "threat_if_side_to_move_passes": insights.threat.model_dump() if insights.threat else None,

@@ -198,3 +198,38 @@ def test_null_move_view():
     assert view is not None and view.turn == chess.BLACK
     in_check = build_board(STARTING_FEN, ["e2e4", "g8f6", "b1c3", "f6e4", "c3e4", "e7e6", "N@d6"])
     assert null_move_view(in_check) is None
+
+
+def test_defenses_to_mate_threats_list_drops_first():
+    pf = position_facts(board("6k1/5ppp/8/8/8/8/5PPP/6K1[r] w - - 0 1"))
+    assert {"h3", "g3", "f3", "Kf1"} <= set(pf.defenses_to_mate_threats)
+    assert "a3" not in pf.defenses_to_mate_threats
+    # With a knight in hand the rook drop is no longer mate (N@f1 would block): no threat at all.
+    assert position_facts(board("6k1/5ppp/8/8/8/8/5PPP/6K1[Nr] w - - 0 1")).opponent_mate_threats == []
+    # Contact mate Q@g2# (g2 covered by Ne3). N@g2 does not help: with the knight spent, Q@f1# (also
+    # covered by Ne3) can no longer be blocked by N@g1. Only checking drops postpone the threat.
+    contact = position_facts(board("6k1/8/8/8/8/4n3/7P/7K[Nq] w - - 0 1"))
+    assert contact.opponent_mate_threats == ["Q@g2#"]
+    assert contact.defenses_to_mate_threats == ["N@f6+", "N@h6+", "N@e7+"]
+    # Quiet defenses come before checks when both exist.
+    mixed = position_facts(board("6k1/5ppp/8/8/8/8/R4PPP/6K1[r] w - - 0 1"))
+    first_check = next(i for i, m in enumerate(mixed.defenses_to_mate_threats) if m.endswith(("+", "#")))
+    assert first_check > 0 and all(not m.endswith(("+", "#")) for m in mixed.defenses_to_mate_threats[:first_check])
+    assert all(m.endswith(("+", "#")) for m in mixed.defenses_to_mate_threats[first_check:])
+    assert position_facts(KNIGHT_TRADE_E6).defenses_to_mate_threats == []
+
+
+def test_piece_left_en_prise_goes_to_opponent_pocket():
+    f = move_facts(KNIGHT_TRADE_E6, chess.Move.from_uci("N@d6"))
+    assert f.en_prise_to == ["Pc7"], "defended by Ne4, so only the pawn takes at a profit"
+    assert {"piece_en_prise", "pocket_emptied"} <= set(f.tags)
+    q = facts("4k3/8/8/8/8/8/8/4K3[QQ] w - - 0 1", "Q@e7")
+    assert q.en_prise_to == ["Ke8"] and "pocket_emptied" not in q.tags
+    assert facts("6k1/5ppp/8/8/8/8/5PPP/6K1[R] w - - 0 1", "R@e8").en_prise_to == []  # mate
+
+
+def test_king_zone_attackers_and_material():
+    b = build_board(STARTING_FEN, ["e2e4", "g8f6", "b1c3", "f6e4", "c3e4", "e7e6", "N@d6"])
+    pf = position_facts(b)
+    assert pf.black.king_zone_attackers == ["Nd6"]
+    assert position_facts(board(STARTING_FEN)).white.board_material == {"Q": 1, "R": 2, "B": 2, "N": 2, "P": 8}
