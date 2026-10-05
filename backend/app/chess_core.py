@@ -8,6 +8,7 @@ positions produced here and identifies them by ``position_id``.
 from __future__ import annotations
 
 import hashlib
+import re
 
 import chess
 from chess.variant import CrazyhouseBoard
@@ -89,7 +90,7 @@ def parse_move(board: CrazyhouseBoard, text: str) -> chess.Move:
                 raise IllegalMoveError(text, CASTLING_REASON) from None
             move = _san_target(board, text)
             if move is None:
-                raise IllegalMoveError(text, "illegal move in this position") from None
+                raise IllegalMoveError(text, _san_reason(board, text)) from None
         except chess.AmbiguousMoveError:
             raise IllegalMoveError(text, "ambiguous move; specify the origin square") from None
         except ValueError:
@@ -116,6 +117,20 @@ def _san_target(board: CrazyhouseBoard, text: str) -> chess.Move | None:
         if not board.is_legal(move) and board.san(move).rstrip("+#") == core
     ]
     return matches[0] if len(matches) == 1 else None
+
+
+SAN_PATTERN = re.compile(r"^([NBRQK])?[a-h]?[1-8]?x?([a-h][1-8])")
+
+
+def _san_reason(board: CrazyhouseBoard, text: str) -> str:
+    match = SAN_PATTERN.match(text)
+    if not match:
+        return "illegal move in this position"
+    piece_type = chess.PIECE_SYMBOLS.index(match.group(1).lower()) if match.group(1) else chess.PAWN
+    name = chess.piece_name(piece_type)
+    if not board.pieces(piece_type, board.turn):
+        return f"{color_name(board.turn)} has no {name} on the board"
+    return f"no {name} can move to {match.group(2)}"
 
 
 def illegal_reason(board: CrazyhouseBoard, move: chess.Move) -> str:

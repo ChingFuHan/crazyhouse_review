@@ -41,6 +41,7 @@ function assertChild(parent: PositionState, child: PositionState): void {
   }
 }
 
+/** A fresh analysis without a PGN: the first line the user plays becomes the main line. */
 export function fromRoot(state: PositionState, headers: Record<string, string> = {}): GameTree {
   const root: TreeNode = {
     id: state.position_id,
@@ -49,7 +50,7 @@ export function fromRoot(state: PositionState, headers: Record<string, string> =
     parentId: null,
     children: [],
     variationId: MAIN,
-    origin: 'pgn',
+    origin: 'user',
   }
   return { rootId: root.id, nodes: { [root.id]: root }, headers }
 }

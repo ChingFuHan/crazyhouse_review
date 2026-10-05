@@ -77,3 +77,45 @@ export async function loadPgn(page: Page, pgn: string) {
   await page.getByRole('button', { name: '載入', exact: true }).click()
   await expect(page.getByLabel('PGN')).toHaveCount(0)
 }
+
+async function squareCenter(page: Page, square: string): Promise<{ x: number; y: number }> {
+  const box = (await page.locator('cg-board').boundingBox())!
+  const black = (await page.locator('.cg-wrap.orientation-black').count()) > 0
+  const size = box.width / 8
+  let file = 'abcdefgh'.indexOf(square[0])
+  let rank = Number(square[1]) - 1
+  if (black) {
+    file = 7 - file
+    rank = 7 - rank
+  }
+  return { x: box.x + (file + 0.5) * size, y: box.y + (7 - rank + 0.5) * size }
+}
+
+/** Real mouse drag on the board. */
+export async function dragMove(page: Page, from: string, to: string) {
+  const a = await squareCenter(page, from)
+  const b = await squareCenter(page, to)
+  await page.mouse.move(a.x, a.y)
+  await page.mouse.down()
+  await page.mouse.move(b.x, b.y, { steps: 8 })
+  await page.mouse.up()
+}
+
+/** Press on a pocket piece and move over `to`; call `finish` to release. */
+export async function startPocketDrag(page: Page, color: string, letter: string, to: string) {
+  const slot = (await page.locator(`.pocket[data-color=${color}] .pocket-slot[data-role=${letter}]`).boundingBox())!
+  await page.mouse.move(slot.x + slot.width / 2, slot.y + slot.height / 2)
+  await page.mouse.down()
+  const b = await squareCenter(page, to)
+  await page.mouse.move(b.x, b.y, { steps: 8 })
+  return () => page.mouse.up()
+}
+
+export async function pocketDrop(page: Page, color: string, letter: string, to: string) {
+  const finish = await startPocketDrag(page, color, letter, to)
+  await finish()
+}
+
+export async function activePly(page: Page, ply: number) {
+  await expect(page.getByTestId('status')).toContainText(`ply ${ply}`)
+}

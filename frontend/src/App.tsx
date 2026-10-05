@@ -3,12 +3,12 @@ import 'chessground/assets/chessground.brown.css'
 import 'chessground/assets/chessground.cburnett.css'
 import './App.css'
 import { useCallback, useState } from 'react'
-import { Board } from './components/Board'
+import { MoveInput } from './components/MoveInput'
 import { MoveList } from './components/MoveList'
 import { NavControls } from './components/NavControls'
 import { PgnLoader } from './components/PgnLoader'
-import { Pocket } from './components/Pocket'
-import { MAIN } from './tree'
+import { ReviewBoard } from './components/ReviewBoard'
+import { MAIN, mainlineAncestor } from './tree'
 import type { Color } from './types'
 import { useReview } from './useReview'
 
@@ -16,10 +16,13 @@ export default function App() {
   const review = useReview()
   const [orientation, setOrientation] = useState<Color>('white')
   const flip = useCallback(() => setOrientation((o) => (o === 'white' ? 'black' : 'white')), [])
-  const { tree, active } = review
-
-  const opponent: Color = orientation === 'white' ? 'black' : 'white'
+  const { tree, active, play } = review
   const position = active?.state
+
+  const playHere = useCallback(
+    async (move: string) => (position ? (await play(position, move)) !== null : false),
+    [play, position],
+  )
 
   return (
     <div className="app">
@@ -44,11 +47,7 @@ export default function App() {
       {tree && active && position && (
         <main className="layout">
           <section className="board-column">
-            <Pocket color={opponent} pieces={position.pockets[opponent]} active={false} />
-            <div className="board-wrap">
-              <Board position={position} orientation={orientation} />
-            </div>
-            <Pocket color={orientation} pieces={position.pockets[orientation]} active={false} />
+            <ReviewBoard position={position} orientation={orientation} onPlay={playHere} />
             <NavControls onNavigate={review.navigate} onFlip={flip} />
           </section>
 
@@ -58,6 +57,11 @@ export default function App() {
                 <strong>{position.side_to_move === 'white' ? '白方' : '黑方'}</strong> 走棋 · 第 {position.move_number} 回合 · ply {position.ply}
                 {active.variationId !== MAIN && <span className="badge">變化</span>}
               </div>
+              {active.variationId !== MAIN && (
+                <button className="back-to-main" onClick={() => review.select(mainlineAncestor(tree, active.id))}>
+                  回到主線
+                </button>
+              )}
               {position.outcome && (
                 <div className="outcome">
                   {position.outcome.result} ({position.outcome.termination})
@@ -68,6 +72,7 @@ export default function App() {
             <section className="panel moves">
               <MoveList tree={tree} activeId={active.id} onSelect={review.select} onDelete={review.deleteVariation} />
             </section>
+            <MoveInput onPlay={playHere} disabled={position.outcome !== null} />
           </aside>
         </main>
       )}

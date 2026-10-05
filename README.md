@@ -38,7 +38,9 @@ cd frontend && npx vitest run && npx tsc -b && npx playwright test
 - Move input as UCI or SAN with readable illegal-move reasons
 - Crazyhouse PGN import (variations and comments kept as data)
 - Review board: PGN load, pockets, move list with variations, keyboard navigation, flip
+- Play your own moves: drag pieces, drag from the pocket (legal squares highlighted),
+  promotion chooser, typed moves (SAN/UCI); your moves form variations, the PGN main line
+  is never changed; 「回到主線」 returns to where you branched off
 
 ## Known limitations
-- Moving pieces / dropping from the pocket on the board is not implemented yet.
 - No engine or LLM integration yet.

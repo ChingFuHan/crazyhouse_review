@@ -14,6 +14,10 @@ export interface BoardProps {
   /** Receives the chessground API once; used for pocket drags. */
   onReady?: (api: Api) => void
   movable?: Config['movable']
+  /** Extra square classes (e.g. legal drop targets while dragging from a pocket). */
+  highlights?: Map<Key, string>
+  /** Changing this forces a full re-sync of chessground with `position` (e.g. after a rejected move). */
+  syncKey?: number
 }
 
 function lastMoveKeys(position: PositionState): Key[] | undefined {
@@ -23,7 +27,7 @@ function lastMoveKeys(position: PositionState): Key[] | undefined {
 }
 
 /** Chessground view of a backend position. The board never decides legality itself. */
-export function Board({ position, orientation, shapes, onReady, movable }: BoardProps) {
+export function Board({ position, orientation, shapes, onReady, movable, highlights, syncKey }: BoardProps) {
   const element = useRef<HTMLDivElement>(null)
   const ground = useRef<Api | null>(null)
 
@@ -58,7 +62,12 @@ export function Board({ position, orientation, shapes, onReady, movable }: Board
       lastMove: lastMoveKeys(position),
       movable: movable ?? { color: undefined, dests: new Map() },
     })
-  }, [position, orientation, movable])
+  }, [position, orientation, movable, syncKey])
+
+  // Highlights change during pocket drags: never touch the pieces here.
+  useEffect(() => {
+    ground.current?.set({ highlight: { custom: highlights ?? new Map() } })
+  }, [highlights])
 
   useEffect(() => {
     ground.current?.setAutoShapes(shapes ?? [])

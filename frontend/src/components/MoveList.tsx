@@ -37,10 +37,36 @@ export function MoveList({ tree, activeId, onSelect, onDelete }: MoveListProps) 
     )
   }
 
+  // The continuation of a node is the child on the same variation; every other child is
+  // shown as a (variation), including user moves played after the last main-line move.
+  const continuationOf = (id: string): string | undefined => {
+    const node = tree.nodes[id]
+    return node.children.find((c) => tree.nodes[c].variationId === node.variationId)
+  }
+
+  const variations = (ids: string[], depth: number): ReactNode[] =>
+    ids.map((id) => (
+      <span key={`${id}-var`} className={`variation depth-${Math.min(depth, 3)}`}>
+        {line(id, depth + 1)}
+        {tree.nodes[id].origin === 'user' && (
+          <button
+            className="delete-variation"
+            title="刪除此變化"
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete(id)
+            }}
+          >
+            ×
+          </button>
+        )}
+      </span>
+    ))
+
   const line = (firstId: string, depth: number): ReactNode[] => {
     const out: ReactNode[] = []
     let needNumber = true
-    for (let id: string | undefined = firstId; id !== undefined; id = tree.nodes[id].children[0]) {
+    for (let id: string | undefined = firstId; id !== undefined; ) {
       const node: GameTree['nodes'][string] = tree.nodes[id]
       out.push(moveToken(id, needNumber))
       needNumber = false
@@ -52,29 +78,17 @@ export function MoveList({ tree, activeId, onSelect, onDelete }: MoveListProps) 
         )
         needNumber = true
       }
-      const parent = tree.nodes[node.parentId!]
-      if (parent.children[0] === id && parent.children.length > 1) {
-        for (const sibling of parent.children.slice(1)) {
-          out.push(
-            <span key={`${sibling}-var`} className={`variation depth-${Math.min(depth, 3)}`}>
-              {line(sibling, depth + 1)}
-              {tree.nodes[sibling].origin === 'user' && (
-                <button
-                  className="delete-variation"
-                  title="刪除此變化"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onDelete(sibling)
-                  }}
-                >
-                  ×
-                </button>
-              )}
-            </span>,
-          )
+      const parentId = node.parentId!
+      if (continuationOf(parentId) === id) {
+        const siblings = tree.nodes[parentId].children.filter((c) => c !== id)
+        if (siblings.length > 0) {
+          out.push(...variations(siblings, depth))
+          needNumber = true
         }
-        needNumber = true
       }
+      const next = continuationOf(id)
+      if (next === undefined && node.children.length > 0) out.push(...variations(node.children, depth))
+      id = next
     }
     return out
   }
@@ -83,7 +97,13 @@ export function MoveList({ tree, activeId, onSelect, onDelete }: MoveListProps) 
   return (
     <div className="move-list" data-testid="move-list">
       {root.comment && <span className="comment">{root.comment}</span>}
-      {root.children.length === 0 ? <span className="empty">尚無棋步</span> : line(root.children[0], 0)}
+      {root.children.length === 0 ? (
+        <span className="empty">尚無棋步</span>
+      ) : continuationOf(root.id) !== undefined ? (
+        line(continuationOf(root.id)!, 0)
+      ) : (
+        variations(root.children, 0)
+      )}
     </div>
   )
 }

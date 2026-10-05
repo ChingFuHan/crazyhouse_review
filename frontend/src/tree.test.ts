@@ -5,6 +5,7 @@ import {
   addChild,
   deleteSubtree,
   fromDto,
+  fromRoot,
   mainline,
   mainlineAncestor,
   navigation,
@@ -108,6 +109,17 @@ describe('addChild', () => {
 
   it('rejects a state that is not a child of the parent', () => {
     expect(() => addChild(pgnTree(), 'id:e2e4', state(['d2d4', 'd7d5']))).toThrow(TreeInvariantError)
+  })
+})
+
+describe('fromRoot', () => {
+  it('makes the first user line the main line; later branches are variations', () => {
+    let { tree, id } = addChild(fromRoot(state([])), 'id:', state(['e2e4']))
+    ;({ tree, id } = addChild(tree, id, state(['e2e4', 'e7e5'])))
+    expect(mainline(tree)).toEqual(['id:', 'id:e2e4', 'id:e2e4,e7e5'])
+    const branch = addChild(tree, 'id:e2e4', state(['e2e4', 'c7c5']))
+    expect(branch.tree.nodes[branch.id].variationId).not.toBe(MAIN)
+    expect(mainline(branch.tree)).toEqual(['id:', 'id:e2e4', 'id:e2e4,e7e5'])
   })
 })
 

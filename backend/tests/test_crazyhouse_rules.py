@@ -195,6 +195,8 @@ def test_position_id_identifies_the_line():
         (STARTING_FEN, "e7e5", "not white's"),
         (STARTING_FEN, "e3e4", "no piece on e3"),
         (STARTING_FEN, "hello", "cannot parse"),
+        (STARTING_FEN, "Qxf7", "no queen can move to f7"),
+        ("4k3/8/8/8/8/8/8/4K3[P] w - - 0 1", "Nf3", "white has no knight on the board"),
         ("4k3/8/8/8/8/8/8/1N2KN2[] w - - 0 1", "Nd2", "ambiguous"),
         ("4k3/1P6/8/8/8/8/8/4K3[] w - - 0 1", "b7b8", "must promote"),
         # Castling through an attacked square (f1 attacked by the bishop on c4).
