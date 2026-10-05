@@ -75,3 +75,21 @@ test('in a user variation the LLM gets the variation, not the main line', async 
   await expect(ai.locator('.answer')).toContainText('variation_id=v:')
   await expect(ai.locator('.answer')).toContainText('side_to_move=black')
 })
+
+test('the board orientation tells the LLM whose "我的" it is', async ({ page }) => {
+  await page.goto('/')
+  await loadPgn(page, GAME)
+  const sides: (string | null)[] = []
+  page.on('request', (r) => {
+    if (r.url().includes('/api/explain')) sides.push(JSON.parse(r.postData() ?? '{}').viewer_side)
+  })
+  const chat = page.getByTestId('chat')
+  await chat.getByLabel('提問').fill('我的后安全嗎？')
+  await chat.getByLabel('提問').press('Enter')
+  await expect(chat.locator('.chat-turn .answer')).toHaveCount(1)
+  await page.getByRole('button', { name: 'flip' }).click()
+  await chat.getByLabel('提問').fill('那我的王呢？')
+  await chat.getByLabel('提問').press('Enter')
+  await expect(chat.locator('.chat-turn .answer')).toHaveCount(2)
+  expect(sides).toEqual(['white', 'black'])
+})

@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api } from './api'
 import { llmMeta } from './llmRequest'
 import type { GameTree } from './tree'
-import type { ChatTurn, ExplainResponse, PositionState } from './types'
+import type { ChatTurn, Color, ExplainResponse, PositionState } from './types'
 
 /** Prior turns sent with a follow-up question. */
 const HISTORY_TURNS = 6
@@ -31,7 +31,7 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-export function useConversation(tree: GameTree | null, activeId: string | null) {
+export function useConversation(tree: GameTree | null, activeId: string | null, viewerSide: Color) {
   const [threads, setThreads] = useState<Record<string, Turn[]>>({})
   const nextId = useRef(1)
   const controllers = useRef(new Set<AbortController>())
@@ -48,7 +48,7 @@ export function useConversation(tree: GameTree | null, activeId: string | null) 
     async (question: string | null) => {
       if (!tree || !activeId) return
       const position = tree.nodes[activeId].state
-      const meta = llmMeta(tree, activeId)
+      const meta = llmMeta(tree, activeId, viewerSide)
       const threadKey = conversationKey(position, meta.variation_id)
       const id = nextId.current++
       const previous = threads[threadKey] ?? []
@@ -89,7 +89,7 @@ export function useConversation(tree: GameTree | null, activeId: string | null) 
         controllers.current.delete(controller)
       }
     },
-    [tree, activeId, threads],
+    [tree, activeId, threads, viewerSide],
   )
 
   return { key, turns: key ? (threads[key] ?? []) : [], ask }

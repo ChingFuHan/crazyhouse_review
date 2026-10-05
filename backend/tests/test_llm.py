@@ -348,3 +348,13 @@ def test_mating_candidate_is_decided_by_rules():
 def test_extract_candidate_forms(fen, moves, question, expected):
     checks = extract_candidates(build_board(fen, moves), question)
     assert [(c.input, c.legal, c.uci) for c in checks] == expected
+
+
+@needs_engine
+def test_viewer_side_reaches_the_context_and_changes_the_cache_key(client, fake):
+    base = {"moves": KNIGHT_TRADE_E6, "question": "我的后安全嗎？"}
+    client.post("/api/explain", json={**base, "viewer_side": "black"})
+    assert context_of(fake.calls[-1])["game"]["viewer_side"] == "black"
+    again = client.post("/api/explain", json={**base, "viewer_side": "white"}).json()
+    assert not again["cached"] and context_of(fake.calls[-1])["game"]["viewer_side"] == "white"
+    assert "viewer_side" in fake.calls[-1]["system"]

@@ -113,7 +113,10 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
     over fetch, TextDecoder streaming mode) and render progressively.
   - Auto-explain (opt-in, `src/preferences.ts` localStorage booleans): asks the default question
     only after the active position's analysis is done AND the user stayed 1.5 s; one request per
-    thread (answers/cache are reused). Arrow keys navigate unless a text field/select is focused. AnswerView + RichText
+    thread (answers/cache are reused). Arrow keys navigate unless a text field/select is focused.
+  - LLM requests carry `viewer_side` (board orientation); context `game.viewer_side` (ctx-v2) and the
+    system prompt say "我/我的" = viewer side (else side to move), and to say so when the named
+    piece does not exist instead of guessing. AnswerView + RichText
     (safe minimal markdown). WhyPanel has an on-demand 「AI 解釋」 button.
   - ChatPanel ("Ask about this position"): quick questions (task.md §23, built with the actual best /
     second / game-move SAN) and free questions on the same `/api/explain` pipeline; shows
@@ -179,7 +182,7 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 144 passed (line facts, null-move engine threat, SSE stream
+- `cd backend && uv run pytest -q` → 145 passed (line facts, null-move engine threat, SSE stream
   events/cache/rules path, stubbed SDK stream incl. refusal and fallback block) (review classification incl. mate edge cases, review
   job on a real game without disturbing interactive analysis, root_moves) (candidate extraction forms; MultiPV vs fresh engine
   analysis; illegal-only answered by rules without engine/LLM; mixed legal/illegal) (LLM: context == board/engine/analyzer, variation

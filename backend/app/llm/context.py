@@ -14,7 +14,7 @@ from chess.variant import CrazyhouseBoard
 from ..chess_core import IllegalMoveError, build_board, move_model, parse_move
 from ..models import CandidateFacts, EngineAnalysis, ExplainRequest, Insights, MoveFacts, PositionState, SideFacts
 
-CONTEXT_VERSION = "ctx-v1"
+CONTEXT_VERSION = "ctx-v2"
 RECENT_PLIES = 12
 PV_PLIES = 10
 
@@ -143,6 +143,7 @@ def build_context(
             "game_move": game_move,
             "variation": variation,
             "headers": {k: v for k, v in request.headers.items() if k in ("White", "Black", "Result", "Event", "Date")},
+            "viewer_side": request.viewer_side,
         },
         "engine": {
             "name": analysis.engine,

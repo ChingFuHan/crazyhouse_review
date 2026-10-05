@@ -32,8 +32,8 @@ const tree = fromDto({
 
 describe('llmMeta', () => {
   it('on the main line points at the next game move', () => {
-    const meta = llmMeta(tree, 'id:e2e4')
-    expect(meta).toMatchObject({ variation_id: 'main', on_main_line: true, game_move: 'e7e5', game_move_ply: 1 })
+    const meta = llmMeta(tree, 'id:e2e4', 'black')
+    expect(meta).toMatchObject({ variation_id: 'main', on_main_line: true, game_move: 'e7e5', game_move_ply: 1, viewer_side: 'black' })
     expect(meta.headers.White).toBe('A')
   })
 

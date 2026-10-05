@@ -35,7 +35,7 @@ export default function App() {
   const [autoExplain, toggleAutoExplain] = useBooleanPreference('auto-explain', false)
   const engine = useEngine(position ?? null, engineOn)
   const insights = useInsights(position ?? null, engine)
-  const conversation = useConversation(tree, active?.id ?? null)
+  const conversation = useConversation(tree, active?.id ?? null, orientation)
   const gameReview = useGameReview(tree)
   const aiTurn = [...conversation.turns].reverse().find((turn) => turn.question === null)
 

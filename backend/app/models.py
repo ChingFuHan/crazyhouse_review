@@ -265,6 +265,9 @@ class ExplainRequest(AnalyzeRequest):
     headers: dict[str, str] = Field(default={}, max_length=30)
     question: str | None = Field(default=None, max_length=1000)
     history: list[ChatTurn] = Field(default=[], max_length=20)
+    viewer_side: Color | None = Field(
+        default=None, description="Side shown at the bottom of the user's board (who 'my/我的' most likely means)."
+    )
 
 
 class CheckedMove(BaseModel):
