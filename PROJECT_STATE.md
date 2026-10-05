@@ -197,20 +197,15 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   supersede race (deterministic; proven to fail without the fix), crash restart, and FSF `d`/`perft 1`
   vs python-chess FEN + legal-move set for all 174 plies of the 3 real games — identical).
 - `cd frontend && npx vitest run` → 40 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 27 passed (session restore after reload incl. user
-  variations/comments/active ply; corrupt session fallback; viewer side; (auto-explain: 15 fast plies → zero LLM
-  requests, dwell → exactly one, for the shown position) (incl. click-to-drop, FEN load, engine toggle,
-  touch: tap-to-drop + CDP touch drags on board and from pocket, keyboard pocket access) (review: annotations only on main line, critical
-  list == flagged moves, click selects the move; eval graph dots == flagged moves, hover tooltip,
-  click jumps to the nearest ply) (core flow §55: PGN → engine → why → AI → ask
-  "為什麼不是 Qh5？" → play Qh5 → re-analysis → ask "現在黑方怎麼反擊？" answered for the variation →
-  back to main line with PGN unchanged and the original thread restored) (fake LLM: answer echoes exactly the board's
-  position_id/FEN and the displayed analysis_id; late answer never shown on another position;
-  variation context; why panel uses the displayed engine result's
-  analysis_id; drop mate explanation; mate-threat alert; engine: drop mate #1/#-1, drop marker, PV click,
-  engine panel position_id always == board position_id during fast navigation) (real backend :8821 + vite :5181, fresh servers;
-  DOM board/pockets compared square-by-square to backend FEN; real mouse drags incl. pocket
-  drops, flipped board, illegal pawn drop rollback, promotion → captured → pawn in pocket).
+- `cd frontend && npx playwright test` → 27 passed. Real backend + real Fairy-Stockfish + vite, fresh
+  servers on 8821/5181, LLM_PROVIDER=fake. Covers: DOM board/pockets == backend FEN square-by-square
+  (all 83 plies of a real game); mouse, click-to-drop, touch (tap + CDP drags) and keyboard input;
+  illegal drop rollback; promotion → captured → pawn in pocket; variations / main line preservation;
+  engine drop mates (#1/#-1), drop markers, engine output bound to the active position during fast
+  navigation; why panel facts on the displayed analysis_id; mate-threat alerts and defenses; fake-LLM
+  answers echo the exact board position/FEN/variation; late answers never shown elsewhere; the §55
+  core flow; whole-game review annotations + eval graph; FEN load; engine toggle; auto-explain (15
+  fast plies → zero LLM requests, dwell → exactly one); viewer side; session restore after reload.
 - Real-data cross-check: 3 finished lichess crazyhouse games (fixtures) reach lichess's own
   final FEN (board, pocket, side, castling). Ongoing TV games mismatch only because lichess
   delays published moves of games in progress (not a rules issue).
