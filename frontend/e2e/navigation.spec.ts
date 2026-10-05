@@ -44,6 +44,15 @@ test('PGN load, navigation and pockets stay consistent with the backend', async 
   await expect(page.locator('.move.active')).toHaveCount(0)
   await expectBoardConsistent(page)
 
+  // Arrow keys inside a text field edit the text; on a checkbox they still navigate.
+  await page.getByLabel('輸入棋步').focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page.locator('.move.active')).toHaveCount(0)
+  await page.getByTestId('engine').getByLabel('Engine 開關').focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page.locator('.move.active')).toHaveText(/e4/)
+  await page.keyboard.press('Home')
+
   // Buttons.
   await page.getByRole('button', { name: 'next' }).click()
   await expect(page.locator('.move.active')).toHaveText(/e4/)

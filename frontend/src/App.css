@@ -803,3 +803,10 @@ button.link {
   cursor: pointer;
   color: var(--text);
 }
+
+.ai-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.85rem;
+}

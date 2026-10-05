@@ -110,7 +110,10 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
     at the branch point, PGN comments on the path, headers). `src/useConversation.ts`: turns per
     (position_id, variation_id); answers land in the thread they were asked in (late answers never
     show on another position); follow-ups send the last 6 Q/A turns. Answers stream (`readSse`
-    over fetch, TextDecoder streaming mode) and render progressively. AnswerView + RichText
+    over fetch, TextDecoder streaming mode) and render progressively.
+  - Auto-explain (opt-in, `src/preferences.ts` localStorage booleans): asks the default question
+    only after the active position's analysis is done AND the user stayed 1.5 s; one request per
+    thread (answers/cache are reused). Arrow keys navigate unless a text field/select is focused. AnswerView + RichText
     (safe minimal markdown). WhyPanel has an on-demand 「AI 解釋」 button.
   - ChatPanel ("Ask about this position"): quick questions (task.md §23, built with the actual best /
     second / game-move SAN) and free questions on the same `/api/explain` pipeline; shows
@@ -186,7 +189,8 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   supersede race (deterministic; proven to fail without the fix), crash restart, and FSF `d`/`perft 1`
   vs python-chess FEN + legal-move set for all 174 plies of the 3 real games — identical).
 - `cd frontend && npx vitest run` → 38 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 23 passed (incl. click-to-drop, FEN load, engine toggle,
+- `cd frontend && npx playwright test` → 24 passed (auto-explain: 15 fast plies → zero LLM
+  requests, dwell → exactly one, for the shown position) (incl. click-to-drop, FEN load, engine toggle,
   touch: tap-to-drop + CDP touch drags on board and from pocket, keyboard pocket access) (review: annotations only on main line, critical
   list == flagged moves, click selects the move; eval graph dots == flagged moves, hover tooltip,
   click jumps to the nearest ply) (core flow §55: PGN → engine → why → AI → ask

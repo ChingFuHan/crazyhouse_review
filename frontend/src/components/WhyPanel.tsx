@@ -11,9 +11,11 @@ export interface WhyPanelProps {
   /** Latest "explain the best move" turn for this position, if any. */
   aiTurn: Turn | undefined
   onExplain: () => void
+  autoExplain: boolean
+  onToggleAutoExplain: () => void
 }
 
-export function WhyPanel({ position, view, engineOn, aiTurn, onExplain }: WhyPanelProps) {
+export function WhyPanel({ position, view, engineOn, aiTurn, onExplain, autoExplain, onToggleAutoExplain }: WhyPanelProps) {
   const { insights, loading, error, engineMismatch } = view
   const explanation = insights ? explain(insights, position.move_number) : null
   const last = insights?.last_move
@@ -90,9 +92,15 @@ export function WhyPanel({ position, view, engineOn, aiTurn, onExplain }: WhyPan
       <p className="why-source">以上皆由 Fairy-Stockfish 輸出與規則計算得出（評估為白方視角）。</p>
 
       <div className="ai-explain" data-testid="ai-explain">
-        <button onClick={onExplain} disabled={aiTurn?.pending}>
-          {aiTurn?.answer ? '重新詢問 AI 解釋' : 'AI 解釋'}
-        </button>
+        <div className="ai-controls">
+          <button onClick={onExplain} disabled={aiTurn?.pending}>
+            {aiTurn?.answer ? '重新詢問 AI 解釋' : 'AI 解釋'}
+          </button>
+          <label className="toggle" title="分析完成並停留 1.5 秒後自動解釋；快速瀏覽不會呼叫 AI">
+            <input type="checkbox" checked={autoExplain} onChange={onToggleAutoExplain} aria-label="停留時自動解釋" />
+            停留時自動解釋
+          </label>
+        </div>
         {aiTurn && <AnswerView turn={aiTurn} />}
       </div>
     </section>

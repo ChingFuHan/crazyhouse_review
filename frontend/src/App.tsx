@@ -2,7 +2,7 @@ import 'chessground/assets/chessground.base.css'
 import 'chessground/assets/chessground.brown.css'
 import 'chessground/assets/chessground.cburnett.css'
 import './App.css'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChatPanel } from './components/ChatPanel'
 import { EnginePanel } from './components/EnginePanel'
 import { MoveInput } from './components/MoveInput'
@@ -15,30 +15,15 @@ import { WhyPanel } from './components/WhyPanel'
 import { engineShapes } from './engineShapes'
 import { MAIN, mainlineAncestor } from './tree'
 import type { Color } from './types'
+import { useBooleanPreference } from './preferences'
 import { useConversation } from './useConversation'
 import { useEngine } from './useEngine'
 import { useGameReview } from './useGameReview'
 import { useInsights } from './useInsights'
 import { useReview } from './useReview'
 
-const ENGINE_KEY = 'crazyhouse-review:engine-on'
-
-// Per-viewer convenience only; storage may be unavailable (private mode), so never rely on it.
-function readEngineOn(): boolean {
-  try {
-    return localStorage.getItem(ENGINE_KEY) !== 'off'
-  } catch {
-    return true
-  }
-}
-
-function writeEngineOn(on: boolean) {
-  try {
-    localStorage.setItem(ENGINE_KEY, on ? 'on' : 'off')
-  } catch {
-    // ignore
-  }
-}
+/** Auto-explain waits until the user has stayed on a position this long after its analysis is done. */
+const AUTO_EXPLAIN_DWELL_MS = 1500
 
 export default function App() {
   const review = useReview()
@@ -46,18 +31,26 @@ export default function App() {
   const flip = useCallback(() => setOrientation((o) => (o === 'white' ? 'black' : 'white')), [])
   const { tree, active, play, playLine } = review
   const position = active?.state
-  const [engineOn, setEngineOn] = useState(readEngineOn)
-  const toggleEngine = useCallback(() => {
-    setEngineOn((on) => {
-      writeEngineOn(!on)
-      return !on
-    })
-  }, [])
+  const [engineOn, toggleEngine] = useBooleanPreference('engine-on', true)
+  const [autoExplain, toggleAutoExplain] = useBooleanPreference('auto-explain', false)
   const engine = useEngine(position ?? null, engineOn)
   const insights = useInsights(position ?? null, engine)
   const conversation = useConversation(tree, active?.id ?? null)
   const gameReview = useGameReview(tree)
   const aiTurn = [...conversation.turns].reverse().find((turn) => turn.question === null)
+
+  // Auto-explain only after the user dwells on an analysed position; quick browsing never asks.
+  const ask = useRef(conversation.ask)
+  useEffect(() => {
+    ask.current = conversation.ask
+  }, [conversation.ask])
+  const analysed = engine.status === 'done' && engine.analysis !== null && engine.analysis.position_id === position?.position_id
+  const hasExplanation = aiTurn !== undefined
+  useEffect(() => {
+    if (!autoExplain || !analysed || hasExplanation) return
+    const timer = setTimeout(() => void ask.current(null), AUTO_EXPLAIN_DWELL_MS)
+    return () => clearTimeout(timer)
+  }, [autoExplain, analysed, hasExplanation, conversation.key])
   const lines = engine.analysis?.lines ?? []
   const gameChild = active?.children.find((c) => tree?.nodes[c].variationId === MAIN)
   const shapes = useMemo(
@@ -105,7 +98,15 @@ export default function App() {
               onToggle={toggleEngine}
               onPlayLine={(moves) => void playLine(position, moves.map((m) => m.uci))}
             />
-            <WhyPanel position={position} view={insights} engineOn={engineOn} aiTurn={aiTurn} onExplain={() => void conversation.ask(null)} />
+            <WhyPanel
+              position={position}
+              view={insights}
+              engineOn={engineOn}
+              aiTurn={aiTurn}
+              onExplain={() => void conversation.ask(null)}
+              autoExplain={autoExplain}
+              onToggleAutoExplain={toggleAutoExplain}
+            />
             <section className="panel status" data-testid="status">
               <div>
                 <strong>{position.side_to_move === 'white' ? '白方' : '黑方'}</strong> 走棋 · 第 {position.move_number} 回合 · ply {position.ply}
