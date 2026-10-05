@@ -8,11 +8,12 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 
-from .config import REPO_ROOT, EngineSettings, LLMSettings, engine_settings, llm_settings
+from .config import REPO_ROOT, EngineSettings, LLMSettings, engine_settings, llm_settings, review_engine_settings
 from .engine import EngineService
 from .llm.provider import AnthropicProvider, FakeProvider, LLMProvider, LLMUnavailable
 from .llm.service import ExplainService
-from .routers import engine, explain, game
+from .review import ReviewService
+from .routers import engine, explain, game, review
 
 
 def make_explain_service(settings: LLMSettings) -> ExplainService:
@@ -29,20 +30,28 @@ def make_explain_service(settings: LLMSettings) -> ExplainService:
     return ExplainService(provider)
 
 
-def create_app(settings: EngineSettings | None = None, explain_service: ExplainService | None = None) -> FastAPI:
+def create_app(
+    settings: EngineSettings | None = None,
+    explain_service: ExplainService | None = None,
+    review_settings: EngineSettings | None = None,
+) -> FastAPI:
     load_dotenv(REPO_ROOT / ".env", override=False)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.engine = EngineService(settings or engine_settings())
         app.state.explain = explain_service or make_explain_service(llm_settings())
+        review_engine = review_settings or review_engine_settings()
+        app.state.review = ReviewService(EngineService(review_engine), review_engine.movetime_ms)
         yield
         await app.state.engine.close()
+        await app.state.review.close()
 
     app = FastAPI(title="Crazyhouse Review", lifespan=lifespan)
     app.include_router(game.router)
     app.include_router(engine.router)
     app.include_router(explain.router)
+    app.include_router(review.router)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

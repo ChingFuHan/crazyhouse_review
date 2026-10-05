@@ -1,5 +1,5 @@
 import type { LlmMeta } from './llmRequest'
-import type { ChatTurn, EngineAnalysis, ExplainResponse, GameTreeDto, Insights, PositionState } from './types'
+import type { ChatTurn, EngineAnalysis, ExplainResponse, GameTreeDto, Insights, PositionState, ReviewJob } from './types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -13,12 +13,11 @@ export class ApiError extends Error {
 }
 
 async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-    signal,
-  })
+  return request<T>(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal })
+}
+
+async function request<T>(path: string, init: RequestInit): Promise<T> {
+  const response = await fetch(path, init)
   if (!response.ok) {
     let code = 'http_error'
     let message = `${response.status} ${response.statusText}`
@@ -65,4 +64,7 @@ export const api = {
   /** Ask the LLM about this position; null question = explain the best move. */
   explain: (position: PositionState, meta: LlmMeta, question: string | null, history: ChatTurn[], signal?: AbortSignal) =>
     post<ExplainResponse>('/api/explain', { ...lineOf(position), ...meta, question, history }, signal),
+  /** Whole-game review of a line (the main line), run on the backend's separate review engine. */
+  startReview: (last: PositionState) => post<ReviewJob>('/api/review', { root_fen: last.root_fen, moves: last.moves }),
+  getReview: (jobId: string, signal?: AbortSignal) => request<ReviewJob>(`/api/review/${jobId}`, { signal }),
 }

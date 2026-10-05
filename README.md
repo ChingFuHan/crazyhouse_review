@@ -72,6 +72,10 @@ key everything else works and the AI button reports that the LLM is not configur
   legality and analysed by the engine before the LLM compares them; illegal moves are answered
   by the rules directly
 
+- 整局分析: every main-line move checked by a separate engine process; inaccuracies, mistakes,
+  blunders, missed and allowed forced mates are marked in the move list and listed as critical
+  moments (best vs played, both searched from the same position)
+
 ## Known limitations
 - One engine process is shared; analysing in two tabs at once cancels searches.
 - Real Claude responses have not been verified in this repository's test runs (tests use a fake).

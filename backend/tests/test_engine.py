@@ -321,3 +321,17 @@ def test_same_position_other_settings_queue_instead_of_cancelling():
     long, quick = run(with_engine(go))
     assert long.status == "ok" and quick.status == "ok"
     assert long.analysis_id != quick.analysis_id or long.depth >= quick.depth
+
+
+@needs_engine
+def test_root_moves_restrict_the_search_and_are_part_of_the_cache_key():
+    async def go(engine):
+        pid = position_id(WHITE_DROP_MATE, [])
+        best = await engine.analyse(WHITE_DROP_MATE, [], pid, 1, 200)
+        forced = await engine.analyse(WHITE_DROP_MATE, [], pid, 1, 200, ("h2h3",))
+        return best, forced
+
+    best, forced = run(with_engine(go))
+    assert best.lines[0].mate == 1
+    assert forced.lines[0].pv[0].uci == "h2h3" and forced.lines[0].mate is None
+    assert not forced.cached and forced.analysis_id != best.analysis_id

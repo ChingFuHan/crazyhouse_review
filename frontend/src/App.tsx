@@ -10,12 +10,14 @@ import { MoveList } from './components/MoveList'
 import { NavControls } from './components/NavControls'
 import { PgnLoader } from './components/PgnLoader'
 import { ReviewBoard } from './components/ReviewBoard'
+import { ReviewPanel } from './components/ReviewPanel'
 import { WhyPanel } from './components/WhyPanel'
 import { engineShapes } from './engineShapes'
 import { MAIN, mainlineAncestor } from './tree'
 import type { Color } from './types'
 import { useConversation } from './useConversation'
 import { useEngine } from './useEngine'
+import { useGameReview } from './useGameReview'
 import { useInsights } from './useInsights'
 import { useReview } from './useReview'
 
@@ -28,6 +30,7 @@ export default function App() {
   const engine = useEngine(position ?? null)
   const insights = useInsights(position ?? null, engine)
   const conversation = useConversation(tree, active?.id ?? null)
+  const gameReview = useGameReview(tree)
   const aiTurn = [...conversation.turns].reverse().find((turn) => turn.question === null)
   const lines = engine.analysis?.lines ?? []
   const gameChild = active?.children.find((c) => tree?.nodes[c].variationId === MAIN)
@@ -93,8 +96,15 @@ export default function App() {
               <code className="fen" title="Crazyhouse FEN">{position.fen}</code>
             </section>
             <section className="panel moves">
-              <MoveList tree={tree} activeId={active.id} onSelect={review.select} onDelete={review.deleteVariation} />
+              <MoveList
+                tree={tree}
+                activeId={active.id}
+                onSelect={review.select}
+                onDelete={review.deleteVariation}
+                review={gameReview.byPosition}
+              />
             </section>
+            <ReviewPanel tree={tree} review={gameReview} onSelect={review.select} />
             <MoveInput onPlay={playHere} disabled={position.outcome !== null} />
             <ChatPanel
               turns={conversation.turns}

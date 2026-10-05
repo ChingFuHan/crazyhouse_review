@@ -628,3 +628,66 @@ cg-board square.drop-dest {
 .chat-input input {
   flex: 1;
 }
+
+.glyph {
+  margin-left: 1px;
+  font-weight: 700;
+}
+
+.move.inaccuracy .glyph {
+  color: #56b4e9;
+}
+
+.move.mistake .glyph {
+  color: #e69f00;
+}
+
+.move.blunder .glyph,
+.move.mate_missed .glyph,
+.move.mate_allowed .glyph {
+  color: #df5353;
+}
+
+.move.active .glyph {
+  color: #fff;
+}
+
+.critical {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.88rem;
+}
+
+.critical-label {
+  font-weight: 600;
+}
+
+.critical .inaccuracy .critical-label {
+  color: #56b4e9;
+}
+
+.critical .mistake .critical-label {
+  color: #e69f00;
+}
+
+.critical .blunder .critical-label,
+.critical .mate_missed .critical-label,
+.critical .mate_allowed .critical-label {
+  color: #df5353;
+}
+
+.critical-note {
+  color: var(--muted);
+}
+
+button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-strong);
+  text-decoration: underline;
+}

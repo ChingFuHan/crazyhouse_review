@@ -250,3 +250,32 @@ class ExplainResponse(BaseModel):
     refused: bool
     cached: bool
     checked_moves: list[CheckedMove] = []
+
+
+class ReviewPly(BaseModel):
+    """Engine evaluation of the position after ``ply`` moves, and the verdict on the move that led there."""
+
+    ply: int
+    position_id: str
+    evaluation: float | None
+    mate: int | None
+    evaluation_pov: Literal["white"] = "white"
+    best_move: str | None = Field(description="Engine best move (SAN) in this position.")
+    best_before: str | None = Field(default=None, description="Engine best move (SAN) in the previous position.")
+    played_best: bool | None = None
+    played_evaluation: float | None = Field(
+        default=None, description="Score of the played move searched from the previous position (White POV)."
+    )
+    played_mate: int | None = None
+    classification: Literal["inaccuracy", "mistake", "blunder", "mate_missed", "mate_allowed"] | None = None
+
+
+class ReviewJob(BaseModel):
+    job_id: str
+    root_fen: str
+    moves: list[str]
+    status: Literal["running", "done", "error"]
+    done: int
+    total: int
+    plies: list[ReviewPly]
+    error: str | None = None

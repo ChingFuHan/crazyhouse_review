@@ -1,15 +1,19 @@
 import { type ReactNode, useEffect, useRef } from 'react'
+import { GLYPH, reviewNote } from '../reviewText'
 import { type GameTree, MAIN } from '../tree'
+import type { ReviewPly } from '../types'
 
 export interface MoveListProps {
   tree: GameTree
   activeId: string
   onSelect: (id: string) => void
   onDelete: (id: string) => void
+  /** Whole-game review results keyed by position_id (the position after the move). */
+  review?: Map<string, ReviewPly>
 }
 
 /** Lichess-style move list: main line with inline (variations). */
-export function MoveList({ tree, activeId, onSelect, onDelete }: MoveListProps) {
+export function MoveList({ tree, activeId, onSelect, onDelete, review }: MoveListProps) {
   const activeRef = useRef<HTMLSpanElement | null>(null)
 
   useEffect(() => {
@@ -22,17 +26,22 @@ export function MoveList({ tree, activeId, onSelect, onDelete }: MoveListProps) 
     const white = parent.state.side_to_move === 'white'
     const number = white ? `${parent.state.move_number}.` : withNumber ? `${parent.state.move_number}…` : ''
     const active = id === activeId
+    const verdict = review?.get(id)
+    const classification = verdict?.classification ?? null
     return (
       <span
         key={id}
         ref={active ? activeRef : undefined}
-        className={`move${active ? ' active' : ''}${node.variationId === MAIN ? ' main' : ''}`}
+        className={`move${active ? ' active' : ''}${node.variationId === MAIN ? ' main' : ''}${classification ? ` ${classification}` : ''}`}
         data-node-id={id}
         data-uci={node.state.last_move?.uci}
+        data-classification={classification ?? undefined}
+        title={verdict ? reviewNote(verdict, review?.get(parent.id)) : undefined}
         onClick={() => onSelect(id)}
       >
         {number && <span className="move-number">{number}</span>}
         {node.state.last_move?.san}
+        {classification && <span className="glyph">{GLYPH[classification]}</span>}
       </span>
     )
   }

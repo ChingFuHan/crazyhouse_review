@@ -30,6 +30,19 @@ def engine_settings() -> EngineSettings:
     )
 
 
+def review_engine_settings() -> EngineSettings:
+    """A second, smaller engine process for whole-game review (never competes with interactive analysis)."""
+    base = engine_settings()
+    return EngineSettings(
+        path=base.path,
+        threads=int(os.environ.get("REVIEW_ENGINE_THREADS", "2")),
+        hash_mb=int(os.environ.get("REVIEW_ENGINE_HASH_MB", "64")),
+        movetime_ms=int(os.environ.get("REVIEW_MOVETIME_MS", "300")),
+        max_movetime_ms=base.max_movetime_ms,
+        multipv=1,
+    )
+
+
 @dataclass(frozen=True)
 class LLMSettings:
     provider: str  # "anthropic" | "fake" | "none"

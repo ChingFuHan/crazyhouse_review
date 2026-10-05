@@ -10,6 +10,7 @@ Milestone 3: Analyzer + deterministic "Why this move?" DONE; LLM layer DONE but 
 UNVERIFIED (no ANTHROPIC_API_KEY available) → PARTIAL.
 Milestone 4 (chat + candidate re-analysis + variation-aware Q&A) DONE with the fake LLM; the task.md
 §55 core flow passes end-to-end (e2e/core-flow.spec.ts). Real-LLM answer quality still unverified.
+Whole-game review (critical moves, task.md §30) DONE.
 
 ## Current architecture
 - `backend/` Python 3.13 (uv), FastAPI, python-chess 1.11.2.
@@ -59,6 +60,15 @@ Milestone 4 (chat + candidate re-analysis + variation-aware Q&A) DONE with the f
     → move facts → `candidate_analysis` in the LLM context. If every named move is illegal the
     answer comes from the rules (`model: "rules"`), no engine, no LLM. Response `checked_moves`.
   - User-facing illegal-move reasons in chess_core are Traditional Chinese.
+  - `app/review.py` + `routers/review.py`: whole-game review jobs (`POST /api/review`, `GET
+    /api/review/{id}`, in-memory, deduped by line) on a SECOND engine process (2 threads,
+    REVIEW_MOVETIME_MS=300) so it never supersedes interactive analysis. Each played move that
+    differs from the engine's best is searched from the SAME position with `root_moves=[played]`
+    (UCI searchmoves) — comparing positions before/after with separate short searches produced
+    alternating fake blunders (side-to-move bias, found via screenshot). Verdicts: lichess
+    winning-chance drop 0.1/0.2/0.3 on cp×0.5 (crazyhouse scale heuristic) + mate-aware
+    (mate_missed, mate_allowed; downgraded/ignored when the position is already decisive).
+  - `EngineService.analyse(..., root_moves=())` — part of the cache key.
   - `scripts/fetch_engine.sh` → `engines/fairy-stockfish` (gitignored; fairy_sf_14 release, bmi2
     build here, sha256 9c8ff22d…). Classical eval (no crazyhouse NNUE file installed).
 - `frontend/` React 19 + TS + Vite 8 + Chessground 9.2. NO rules logic in the browser.
@@ -89,6 +99,8 @@ Milestone 4 (chat + candidate re-analysis + variation-aware Q&A) DONE with the f
   - ChatPanel ("Ask about this position"): quick questions (task.md §23, built with the actual best /
     second / game-move SAN) and free questions on the same `/api/explain` pipeline; shows
     checked moves (illegal reason / engine score + source) above each answer.
+  - `useGameReview` (start + poll; shown only for the exact main line analysed), move-list glyphs
+    (?! ? ?? ?# ??#) with best-vs-played tooltip, ReviewPanel (critical moments, clickable).
   - `src/useInsights.ts` fetches insights once the engine result is final (keyed by
     position_id + analysis_id); `src/explain.ts` turns facts into fact-only Traditional Chinese
     sentences (direct effect, king safety, replies, PV, pocket, candidate comparison in mover POV,
@@ -120,6 +132,7 @@ Milestone 4 (chat + candidate re-analysis + variation-aware Q&A) DONE with the f
 - none known
 
 ## Known limitations
+- Review verdicts come from 300 ms searches: bullet-game classifications vary a little between runs.
 - No click-to-drop (pocket piece then square) yet; drag only. No touch E2E coverage.
 - Engine: single shared process; two browser tabs analysing at once cancel each other's searches.
   No streaming (two fixed-length phases). Classical eval only (NNUE net not installed).
@@ -132,15 +145,17 @@ Milestone 4 (chat + candidate re-analysis + variation-aware Q&A) DONE with the f
   change; not reproduced in 8 later runs incl. --repeat-each stress. Watch for recurrence.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 110 passed (candidate extraction forms; MultiPV vs fresh engine
+- `cd backend && uv run pytest -q` → 129 passed (review classification incl. mate edge cases, review
+  job on a real game without disturbing interactive analysis, root_moves) (candidate extraction forms; MultiPV vs fresh engine
   analysis; illegal-only answered by rules without engine/LLM; mixed legal/illegal) (LLM: context == board/engine/analyzer, variation
   context, prompt-injection boundary, cache key separation, missing key 503, key never in errors,
   refusal handling via stubbed SDK client — no real API call) (incl. analyzer facts consistent with canonical state
   on every ply of the real games; insights analysis_id == analyze analysis_id) (incl. real Fairy-Stockfish: drop mates both colors,
   supersede race (deterministic; proven to fail without the fix), crash restart, and FSF `d`/`perft 1`
   vs python-chess FEN + legal-move set for all 174 plies of the 3 real games — identical).
-- `cd frontend && npx vitest run` → 24 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 16 passed (core flow §55: PGN → engine → why → AI → ask
+- `cd frontend && npx vitest run` → 26 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
+- `cd frontend && npx playwright test` → 17 passed (review: annotations only on main line, critical
+  list == flagged moves, click selects the move) (core flow §55: PGN → engine → why → AI → ask
   "為什麼不是 Qh5？" → play Qh5 → re-analysis → ask "現在黑方怎麼反擊？" answered for the variation →
   back to main line with PGN unchanged and the original thread restored) (fake LLM: answer echoes exactly the board's
   position_id/FEN and the displayed analysis_id; late answer never shown on another position;
@@ -162,6 +177,5 @@ Milestone 4 (chat + candidate re-analysis + variation-aware Q&A) DONE with the f
 ## Next recommended task
 1. (Needs the user) Verify real Claude answers with an ANTHROPIC_API_KEY in `.env`: run
    `scripts/llm_smoke.py`-style check on a known position and review grounding/POV/language.
-2. Critical move detection on the main line (task.md §30): mate introduced / lost / missed and big
-   eval swings, using the engine per main-line ply (batch, cached), shown as markers in the move list.
+2. Eval graph for the reviewed main line (load the dataviz skill first), clickable.
 3. UI polish: click-to-drop from the pocket, engine on/off toggle, streaming LLM answers.

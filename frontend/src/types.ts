@@ -183,3 +183,31 @@ export interface ExplainResponse {
   cached: boolean
   checked_moves: CheckedMove[]
 }
+
+export type MoveClassification = 'inaccuracy' | 'mistake' | 'blunder' | 'mate_missed' | 'mate_allowed'
+
+export interface ReviewPly {
+  ply: number
+  position_id: string
+  evaluation: number | null
+  mate: number | null
+  evaluation_pov: 'white'
+  best_move: string | null
+  best_before: string | null
+  played_best: boolean | null
+  /** The played move searched from the previous position (same side to move as the best move). */
+  played_evaluation: number | null
+  played_mate: number | null
+  classification: MoveClassification | null
+}
+
+export interface ReviewJob {
+  job_id: string
+  root_fen: string
+  moves: string[]
+  status: 'running' | 'done' | 'error'
+  done: number
+  total: number
+  plies: ReviewPly[]
+  error: string | null
+}

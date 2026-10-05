@@ -22,7 +22,7 @@ export default defineConfig({
       reuseExistingServer: false,
       // UI wiring is tested against a deterministic fake LLM that echoes the context it received.
       // Real Claude calls are verified separately (they need ANTHROPIC_API_KEY).
-      env: { LLM_PROVIDER: 'fake' },
+      env: { LLM_PROVIDER: 'fake', REVIEW_MOVETIME_MS: '100' },
       timeout: 60_000,
     },
     {
