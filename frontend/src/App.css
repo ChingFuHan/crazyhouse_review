@@ -635,17 +635,17 @@ cg-board square.drop-dest {
 }
 
 .move.inaccuracy .glyph {
-  color: #56b4e9;
+  color: var(--status-warning);
 }
 
 .move.mistake .glyph {
-  color: #e69f00;
+  color: var(--status-serious);
 }
 
 .move.blunder .glyph,
 .move.mate_missed .glyph,
 .move.mate_allowed .glyph {
-  color: #df5353;
+  color: var(--status-critical);
 }
 
 .move.active .glyph {
@@ -667,17 +667,17 @@ cg-board square.drop-dest {
 }
 
 .critical .inaccuracy .critical-label {
-  color: #56b4e9;
+  color: var(--status-warning);
 }
 
 .critical .mistake .critical-label {
-  color: #e69f00;
+  color: var(--status-serious);
 }
 
 .critical .blunder .critical-label,
 .critical .mate_missed .critical-label,
 .critical .mate_allowed .critical-label {
-  color: #df5353;
+  color: var(--status-critical);
 }
 
 .critical-note {
@@ -690,4 +690,93 @@ button.link {
   padding: 0;
   color: var(--text-strong);
   text-decoration: underline;
+}
+
+.eval-graph {
+  position: relative;
+  height: 96px;
+  margin: 6px 0;
+  cursor: crosshair;
+  border-radius: 4px;
+  background: var(--bg);
+}
+
+.eval-graph:focus-visible {
+  outline: 2px solid var(--accent-2);
+}
+
+.eval-graph svg {
+  display: block;
+}
+
+.eval-area-white {
+  fill: rgba(232, 230, 227, 0.16);
+}
+
+.eval-area-black {
+  fill: rgba(0, 0, 0, 0.45);
+}
+
+.eval-midline {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.eval-line {
+  fill: none;
+  stroke: var(--text-strong);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.eval-active {
+  stroke: var(--accent-2);
+  stroke-width: 2;
+}
+
+.eval-crosshair {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+
+.eval-dot {
+  stroke: var(--bg);
+  stroke-width: 2;
+}
+
+.eval-dot.inaccuracy {
+  fill: var(--status-warning);
+}
+
+.eval-dot.mistake {
+  fill: var(--status-serious);
+}
+
+.eval-dot.blunder,
+.eval-dot.mate_missed,
+.eval-dot.mate_allowed {
+  fill: var(--status-critical);
+}
+
+.eval-tooltip {
+  position: absolute;
+  top: 4px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.eval-tooltip strong {
+  color: var(--text-strong);
+  font-size: 0.9rem;
 }

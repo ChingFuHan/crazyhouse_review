@@ -1,9 +1,17 @@
 import { LABEL, reviewNote } from '../reviewText'
 import type { GameTree } from '../tree'
 import type { GameReview } from '../useGameReview'
+import { EvalGraph } from './EvalGraph'
 
-/** Whole-game review controls and the list of critical moments on the main line. */
-export function ReviewPanel({ tree, review, onSelect }: { tree: GameTree; review: GameReview; onSelect: (id: string) => void }) {
+export interface ReviewPanelProps {
+  tree: GameTree
+  review: GameReview
+  activeId: string
+  onSelect: (id: string) => void
+}
+
+/** Whole-game review controls, eval graph and the list of critical moments on the main line. */
+export function ReviewPanel({ tree, review, activeId, onSelect }: ReviewPanelProps) {
   const { job, error, byPosition } = review
   const running = job?.status === 'running'
   const critical = (job?.plies ?? []).filter((p) => p.classification && tree.nodes[p.position_id])
@@ -22,6 +30,7 @@ export function ReviewPanel({ tree, review, onSelect }: { tree: GameTree; review
           分析中 {job.done}/{job.total}
         </div>
       )}
+      {job && job.plies.length > 1 && <EvalGraph tree={tree} job={job} activeId={activeId} onSelect={onSelect} />}
       {job?.status === 'done' && critical.length === 0 && <div className="engine-note">主線沒有發現明顯失誤。</div>}
       {critical.length > 0 && (
         <ul className="critical" data-testid="critical">

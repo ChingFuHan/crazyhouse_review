@@ -10,6 +10,10 @@
   --accent-2: #3692e7;
   --danger: #cc3333;
   --warn: #c79a2b;
+  /* status palette (reserved for review verdicts; always paired with a glyph + label) */
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #d03b3b;
   color-scheme: dark;
   font-family: 'Noto Sans TC', 'Noto Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 15px;

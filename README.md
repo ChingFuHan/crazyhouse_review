@@ -74,7 +74,7 @@ key everything else works and the AI button reports that the LLM is not configur
 
 - 整局分析: every main-line move checked by a separate engine process; inaccuracies, mistakes,
   blunders, missed and allowed forced mates are marked in the move list and listed as critical
-  moments (best vs played, both searched from the same position)
+  moments (best vs played, both searched from the same position), with a clickable eval graph
 
 ## Known limitations
 - One engine process is shared; analysing in two tabs at once cancels searches.

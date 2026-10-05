@@ -25,6 +25,18 @@ test('whole-game review annotates main-line moves and lists critical moments', a
   await expect(flagged.first().locator('.glyph')).toHaveText(/^\?\?#|\?#|\?\?|\?!|\?$/)
   await expect(flagged.first()).toHaveAttribute('title', /最佳 \S+ \S+，實戰 \S+（白方視角）/)
 
+  // Eval graph: one dot per flagged move; hover shows the value and the move; click jumps there.
+  const graph = panel.getByTestId('eval-graph')
+  await expect(graph.locator('circle.eval-dot')).toHaveCount(count)
+  await graph.scrollIntoViewIfNeeded()
+  const box = (await graph.boundingBox())!
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height / 2)
+  await expect(graph.getByTestId('eval-tooltip')).toContainText(/^[+-]?\d+\.\d\d|#-?\d+/)
+  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height / 2)
+  const ply = Number((await page.getByTestId('status').textContent())!.match(/ply (\d+)/)![1])
+  expect(Math.abs(ply - 42)).toBeLessThanOrEqual(1)
+  await expect(graph.locator('line.eval-active')).toHaveCount(1)
+
   // Clicking a critical moment selects exactly that move.
   const first = critical.first()
   const label = (await first.locator('button').textContent())!

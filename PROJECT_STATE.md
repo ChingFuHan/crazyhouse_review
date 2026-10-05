@@ -10,7 +10,7 @@ Milestone 3: Analyzer + deterministic "Why this move?" DONE; LLM layer DONE but 
 UNVERIFIED (no ANTHROPIC_API_KEY available) → PARTIAL.
 Milestone 4 (chat + candidate re-analysis + variation-aware Q&A) DONE with the fake LLM; the task.md
 §55 core flow passes end-to-end (e2e/core-flow.spec.ts). Real-LLM answer quality still unverified.
-Whole-game review (critical moves, task.md §30) DONE.
+Whole-game review (critical moves, task.md §30) + eval graph DONE.
 
 ## Current architecture
 - `backend/` Python 3.13 (uv), FastAPI, python-chess 1.11.2.
@@ -101,6 +101,10 @@ Whole-game review (critical moves, task.md §30) DONE.
     checked moves (illegal reason / engine score + source) above each answer.
   - `useGameReview` (start + poll; shown only for the exact main line analysed), move-list glyphs
     (?! ? ?? ?# ??#) with best-vs-played tooltip, ReviewPanel (critical moments, clickable).
+  - EvalGraph (`src/evalGraph.ts` geometry + component): White winning chances per main-line ply
+    (same curve/scale as backend), white wash above / dark below the midline, status-colored dots
+    on flagged moves (status tokens in index.css, always with glyph + label), crosshair tooltip,
+    click to jump, active-ply line.
   - `src/useInsights.ts` fetches insights once the engine result is final (keyed by
     position_id + analysis_id); `src/explain.ts` turns facts into fact-only Traditional Chinese
     sentences (direct effect, king safety, replies, PV, pocket, candidate comparison in mover POV,
@@ -153,9 +157,10 @@ Whole-game review (critical moves, task.md §30) DONE.
   on every ply of the real games; insights analysis_id == analyze analysis_id) (incl. real Fairy-Stockfish: drop mates both colors,
   supersede race (deterministic; proven to fail without the fix), crash restart, and FSF `d`/`perft 1`
   vs python-chess FEN + legal-move set for all 174 plies of the 3 real games — identical).
-- `cd frontend && npx vitest run` → 26 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
+- `cd frontend && npx vitest run` → 30 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
 - `cd frontend && npx playwright test` → 17 passed (review: annotations only on main line, critical
-  list == flagged moves, click selects the move) (core flow §55: PGN → engine → why → AI → ask
+  list == flagged moves, click selects the move; eval graph dots == flagged moves, hover tooltip,
+  click jumps to the nearest ply) (core flow §55: PGN → engine → why → AI → ask
   "為什麼不是 Qh5？" → play Qh5 → re-analysis → ask "現在黑方怎麼反擊？" answered for the variation →
   back to main line with PGN unchanged and the original thread restored) (fake LLM: answer echoes exactly the board's
   position_id/FEN and the displayed analysis_id; late answer never shown on another position;
@@ -177,5 +182,4 @@ Whole-game review (critical moves, task.md §30) DONE.
 ## Next recommended task
 1. (Needs the user) Verify real Claude answers with an ANTHROPIC_API_KEY in `.env`: run
    `scripts/llm_smoke.py`-style check on a known position and review grounding/POV/language.
-2. Eval graph for the reviewed main line (load the dataviz skill first), clickable.
-3. UI polish: click-to-drop from the pocket, engine on/off toggle, streaming LLM answers.
+2. UI polish: click-to-drop from the pocket, engine on/off toggle, streaming LLM answers.

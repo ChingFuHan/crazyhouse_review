@@ -104,7 +104,7 @@ export default function App() {
                 review={gameReview.byPosition}
               />
             </section>
-            <ReviewPanel tree={tree} review={gameReview} onSelect={review.select} />
+            <ReviewPanel tree={tree} review={gameReview} activeId={active.id} onSelect={review.select} />
             <MoveInput onPlay={playHere} disabled={position.outcome !== null} />
             <ChatPanel
               turns={conversation.turns}
