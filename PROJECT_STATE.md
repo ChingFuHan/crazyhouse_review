@@ -187,15 +187,15 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 145 passed (line facts, null-move engine threat, SSE stream
-  events/cache/rules path, stubbed SDK stream incl. refusal and fallback block) (review classification incl. mate edge cases, review
-  job on a real game without disturbing interactive analysis, root_moves) (candidate extraction forms; MultiPV vs fresh engine
-  analysis; illegal-only answered by rules without engine/LLM; mixed legal/illegal) (LLM: context == board/engine/analyzer, variation
-  context, prompt-injection boundary, cache key separation, missing key 503, key never in errors,
-  refusal handling via stubbed SDK client — no real API call) (incl. analyzer facts consistent with canonical state
-  on every ply of the real games; insights analysis_id == analyze analysis_id) (incl. real Fairy-Stockfish: drop mates both colors,
-  supersede race (deterministic; proven to fail without the fix), crash restart, and FSF `d`/`perft 1`
-  vs python-chess FEN + legal-move set for all 174 plies of the 3 real games — identical).
+- `cd backend && uv run pytest -q` → 145 passed. Rules suite (drops, pawn ranks, drop mates, promoted
+  capture → pawn, FEN round trip, castling rights); 3 real lichess games reach lichess's final FEN;
+  real Fairy-Stockfish: drop mates both colors, White-POV signs, supersede race (deterministic, proven
+  to fail without the fix), crash restart, root_moves, FSF `d`/`perft 1` == python-chess FEN and
+  legal moves on all 174 real plies; analyzer facts (exact positions + every real ply); insights use
+  the same analysis_id as analyze; null-move threats; review classification incl. mate edge cases and
+  a real-game job not disturbing interactive analysis; LLM context == board/engine/analyzer, variation
+  and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
+  503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
 - `cd frontend && npx vitest run` → 40 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
 - `cd frontend && npx playwright test` → 27 passed. Real backend + real Fairy-Stockfish + vite, fresh
   servers on 8821/5181, LLM_PROVIDER=fake. Covers: DOM board/pockets == backend FEN square-by-square
