@@ -576,3 +576,55 @@ cg-board square.drop-dest {
   margin-left: 0;
   background: var(--warn);
 }
+
+.quick-questions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.chip {
+  font-size: 0.8rem;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.chat-turns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat-question {
+  justify-self: end;
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: #33465c;
+  color: var(--text-strong);
+  width: fit-content;
+  margin-left: auto;
+}
+
+.checked-moves {
+  margin: 4px 0 0;
+  padding-left: 1.1em;
+  font-size: 0.85rem;
+}
+
+.checked-moves .illegal {
+  color: #f2c4c4;
+}
+
+.chat-input {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.chat-input input {
+  flex: 1;
+}

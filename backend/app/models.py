@@ -223,6 +223,21 @@ class ExplainRequest(AnalyzeRequest):
     history: list[ChatTurn] = Field(default=[], max_length=20)
 
 
+class CheckedMove(BaseModel):
+    """A move named in the question and what the rules / engine said about it."""
+
+    input: str
+    legal: bool
+    reason: str | None = None
+    san: str | None = None
+    uci: str | None = None
+    source: str | None = Field(default=None, description="multipv | engine_after_move | rules | unavailable")
+    multipv_rank: int | None = None
+    evaluation: float | None = None
+    mate: int | None = None
+    evaluation_pov: Literal["white"] = "white"
+
+
 class ExplainResponse(BaseModel):
     position_id: str
     variation_id: str
@@ -234,3 +249,4 @@ class ExplainResponse(BaseModel):
     model: str
     refused: bool
     cached: bool
+    checked_moves: list[CheckedMove] = []

@@ -11,7 +11,13 @@ export function AnswerView({ turn }: { turn: Turn }) {
     <div className="answer" data-position-id={answer.position_id} data-analysis-id={answer.analysis_id}>
       <RichText text={answer.text} />
       <div className="answer-meta">
-        {answer.model === 'fake' ? <span className="badge fake">測試用假 LLM</span> : <span>{answer.model}</span>}
+        {answer.model === 'fake' ? (
+          <span className="badge fake">測試用假 LLM</span>
+        ) : answer.model === 'rules' ? (
+          <span>規則判定（未使用 LLM）</span>
+        ) : (
+          <span>{answer.model}</span>
+        )}
         {answer.cached && <span>（快取）</span>}
       </div>
     </div>

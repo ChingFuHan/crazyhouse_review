@@ -41,7 +41,7 @@ test('fresh game: dragged moves build the main line; illegal drags are refused',
   await activePly(page, 3)
   await page.getByLabel('輸入棋步').fill('Qxf7')
   await page.getByLabel('輸入棋步').press('Enter')
-  await expect(page.getByRole('alert')).toContainText('no queen can move to f7')
+  await expect(page.getByRole('alert')).toContainText('沒有后能走到 f7')
   await activePly(page, 3)
   fen = await expectBoardConsistent(page)
 
@@ -109,7 +109,7 @@ test('illegal pawn drop on the back rank is rejected by the backend and the boar
   const finish = await startPocketDrag(page, 'white', 'P', 'a8')
   await expect(page.locator('cg-board square.drop-dest')).toHaveCount(48) // ranks 2-7, empty
   await finish()
-  await expect(page.getByRole('alert')).toContainText('pawns cannot be dropped on the 1st or 8th rank')
+  await expect(page.getByRole('alert')).toContainText('兵不能打入第 1 或第 8 橫列')
   await activePly(page, 0)
   expect(await expectBoardConsistent(page)).toBe(before)
 

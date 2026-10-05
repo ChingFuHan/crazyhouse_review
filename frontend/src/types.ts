@@ -157,6 +157,19 @@ export interface ChatTurn {
   content: string
 }
 
+export interface CheckedMove {
+  input: string
+  legal: boolean
+  reason: string | null
+  san: string | null
+  uci: string | null
+  source: 'multipv' | 'engine_after_move' | 'rules' | 'unavailable' | null
+  multipv_rank: number | null
+  evaluation: number | null
+  mate: number | null
+  evaluation_pov: 'white'
+}
+
 export interface ExplainResponse {
   position_id: string
   variation_id: string
@@ -168,4 +181,5 @@ export interface ExplainResponse {
   model: string
   refused: boolean
   cached: boolean
+  checked_moves: CheckedMove[]
 }

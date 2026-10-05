@@ -3,6 +3,7 @@ import 'chessground/assets/chessground.brown.css'
 import 'chessground/assets/chessground.cburnett.css'
 import './App.css'
 import { useCallback, useMemo, useState } from 'react'
+import { ChatPanel } from './components/ChatPanel'
 import { EnginePanel } from './components/EnginePanel'
 import { MoveInput } from './components/MoveInput'
 import { MoveList } from './components/MoveList'
@@ -28,6 +29,8 @@ export default function App() {
   const insights = useInsights(position ?? null, engine)
   const conversation = useConversation(tree, active?.id ?? null)
   const aiTurn = [...conversation.turns].reverse().find((turn) => turn.question === null)
+  const lines = engine.analysis?.lines ?? []
+  const gameChild = active?.children.find((c) => tree?.nodes[c].variationId === MAIN)
   const shapes = useMemo(
     () => (position ? engineShapes(engine.analysis, position.side_to_move) : []),
     [engine.analysis, position],
@@ -93,6 +96,13 @@ export default function App() {
               <MoveList tree={tree} activeId={active.id} onSelect={review.select} onDelete={review.deleteVariation} />
             </section>
             <MoveInput onPlay={playHere} disabled={position.outcome !== null} />
+            <ChatPanel
+              turns={conversation.turns}
+              onAsk={(question) => void conversation.ask(question)}
+              bestSan={lines[0]?.pv[0].san ?? null}
+              secondSan={lines[1]?.pv[0].san ?? null}
+              gameMoveSan={gameChild ? (tree.nodes[gameChild].state.last_move?.san ?? null) : null}
+            />
           </aside>
         </main>
       )}

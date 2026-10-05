@@ -30,7 +30,7 @@ def test_position_id_mismatch_is_rejected():
 def test_illegal_move_returns_reason():
     response = client.post("/api/move", json={"moves": [], "move": "N@e4"})
     assert response.status_code == 422
-    assert response.json()["detail"] == {"error": "illegal_move", "move": "N@e4", "message": "white has no N in the pocket"}
+    assert response.json()["detail"] == {"error": "illegal_move", "move": "N@e4", "message": "白方的 pocket 裡沒有馬"}
 
 
 def test_invalid_line_returns_422():

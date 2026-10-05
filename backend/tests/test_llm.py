@@ -14,11 +14,13 @@ import anthropic
 import pytest
 from fastapi.testclient import TestClient
 
-from app.chess_core import STARTING_FEN, position_id, position_state
+from app.chess_core import STARTING_FEN, build_board, position_id, position_state
 from app.config import LLMSettings, engine_settings
+from app.llm.candidates import analyse_candidates, extract_candidates
 from app.llm.provider import AnthropicProvider, FakeProvider, LLMError, LLMUnavailable
 from app.llm.service import SYSTEM_PROMPT, ExplainService
 from app.main import create_app, make_explain_service
+from app.models import EngineAnalysis
 
 SETTINGS = replace(engine_settings(), threads=2, hash_mb=32, movetime_ms=300)
 needs_engine = pytest.mark.skipif(not SETTINGS.path.exists(), reason="run scripts/fetch_engine.sh")
@@ -185,3 +187,92 @@ def test_explain_for_game_over_position_still_has_context(client, fake):
     assert ctx["engine"]["status"] == "game_over" and ctx["engine"]["best_move"] is None
     assert ctx["analysis"]["last_move"]["is_mate"] and "drop_mate" in ctx["analysis"]["last_move"]["tags"]
     assert answer["position_id"] == position_id(fen, ["R@e8"])
+
+
+# --- candidate moves named in a question (task.md §22) -------------------------
+
+
+def test_extract_candidates_from_chinese_text():
+    board = build_board(STARTING_FEN, KNIGHT_TRADE_E6)
+    checks = extract_candidates(board, "為什麼不能 Qxf7？如果我改走Qh5呢？或是 N@d6+ 跟 e2e4？e5 這格呢？")
+    by_input = {c.input: c for c in checks}
+    assert list(by_input) == ["Qxf7", "Qh5", "N@d6+"], "max three, in order"
+    assert not by_input["Qxf7"].legal and by_input["Qxf7"].reason == "沒有后能走到 f7"
+    assert by_input["Qh5"].legal and by_input["Qh5"].uci == "d1h5"
+    assert by_input["N@d6+"].san == "N@d6+"
+    # A bare square is a candidate only when it is a legal pawn move.
+    assert [c.input for c in extract_candidates(board, "e5 這格很弱嗎？")] == []
+    assert [c.uci for c in extract_candidates(board, "d4 好嗎？")] == ["d2d4"]
+    assert extract_candidates(board, "黑王在 e8 很危險") == []
+
+
+@needs_engine
+def test_question_about_multipv_move_uses_engine_line(client, fake):
+    analysis = client.post("/api/analyze", json={"moves": KNIGHT_TRADE_E6}).json()
+    second = analysis["lines"][1]["pv"][0]["san"]
+    answer = client.post("/api/explain", json={"moves": KNIGHT_TRADE_E6, "question": f"為什麼不是 {second}？"}).json()
+    checked = answer["checked_moves"]
+    assert len(checked) == 1 and checked[0]["source"] == "multipv" and checked[0]["multipv_rank"] == 2
+    entry = context_of(fake.calls[-1])["candidate_analysis"][0]
+    assert entry["san"] == second and entry["evaluation"] == analysis["lines"][1]["evaluation"]
+    assert entry["evaluation_pov"] == "white"
+
+
+@needs_engine
+def test_question_about_other_move_gets_fresh_engine_analysis(client, fake):
+    analysis = client.post("/api/analyze", json={"moves": KNIGHT_TRADE_E6}).json()
+    assert "a2a3" not in [l["pv"][0]["uci"] for l in analysis["lines"]]
+    answer = client.post("/api/explain", json={"moves": KNIGHT_TRADE_E6, "question": "如果我改走 a3 呢？"}).json()
+    checked = answer["checked_moves"][0]
+    assert checked["source"] == "engine_after_move" and checked["uci"] == "a2a3"
+    assert checked["evaluation"] is not None or checked["mate"] is not None
+    entry = context_of(fake.calls[-1])["candidate_analysis"][0]
+    assert entry["line_after_move"].startswith("4...")  # Black's best reply after 4.a3
+    assert entry["facts"]["san"] == "a3"
+    # The UI's position analysis is unchanged by the temporary line.
+    assert answer["analysis_id"] == analysis["analysis_id"]
+
+
+def test_illegal_only_question_is_answered_by_rules_without_engine_or_llm(client, fake):
+    answer = client.post("/api/explain", json={"moves": KNIGHT_TRADE_E6, "question": "為什麼不能 Qxf7？"}).json()
+    assert answer["model"] == "rules" and answer["analysis_id"] == ""
+    assert "沒有后能走到 f7" in answer["text"]
+    assert answer["checked_moves"][0]["legal"] is False
+    assert fake.calls == []
+
+
+@needs_engine
+def test_mixed_legal_and_illegal_candidates_reach_the_llm_with_both(client, fake):
+    answer = client.post("/api/explain", json={"moves": KNIGHT_TRADE_E6, "question": "Qxf7 不行的話，Qh5 呢？"}).json()
+    entries = context_of(fake.calls[-1])["candidate_analysis"]
+    assert entries[0] == {"input": "Qxf7", "legal": False, "illegal_reason": "沒有后能走到 f7"}
+    assert entries[1]["legal"] and entries[1]["san"] == "Qh5"
+    assert [c["legal"] for c in answer["checked_moves"]] == [False, True]
+
+
+def test_mating_candidate_is_decided_by_rules():
+    fen = "6k1/5ppp/8/8/8/8/5PPP/6K1[r] b - - 0 1"
+    board = build_board(fen, [])
+    checks = extract_candidates(board, "R@e1 是殺棋嗎？")
+    empty = EngineAnalysis(
+        position_id="x", status="ok", engine="e", multipv=3, movetime_ms=100, depth=0, lines=[], best_move=None, analysis_id="a"
+    )
+    asyncio.run(analyse_candidates(checks, board, fen, [], empty, engine=None))
+    assert checks[0].source == "rules" and checks[0].mate == -1  # Black mates: negative in White POV
+
+
+@pytest.mark.parametrize(
+    ("fen", "moves", "question", "expected"),
+    [
+        ("4k3/8/8/8/8/8/8/4K2R[] w K - 0 1", [], "可以 O-O 嗎？", [("O-O", True, "e1g1")]),
+        ("4k3/1P6/8/8/8/8/8/4K3[] w - - 0 1", [], "b8=Q 還是 b8=N？", [("b8=Q", True, "b7b8q"), ("b8=N", True, "b7b8n")]),
+        (STARTING_FEN, ["e2e4", "d7d5"], "為什麼不 exd5？", [("exd5", True, "e4d5")]),
+        (STARTING_FEN, [], "e2e4跟g1f3哪個好", [("e2e4", True, "e2e4"), ("g1f3", True, "g1f3")]),
+        (STARTING_FEN, ["e2e4", "g8f6", "b1c3", "f6e4", "c3e4"], "黑方 P@d3 呢？", [("P@d3", True, "P@d3")]),
+        ("4k3/8/8/8/8/8/8/1N2KN2[] w - - 0 1", [], "Nd2 好嗎", [("Nd2", False, None)]),
+        (STARTING_FEN, [], "Q@ 跟 @@ 都不是棋步", []),
+    ],
+)
+def test_extract_candidate_forms(fen, moves, question, expected):
+    checks = extract_candidates(build_board(fen, moves), question)
+    assert [(c.input, c.legal, c.uci) for c in checks] == expected

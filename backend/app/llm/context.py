@@ -43,7 +43,7 @@ def _sans(root_fen: str, moves: list[str]) -> list[str]:
     return out
 
 
-def _move_facts(f: MoveFacts) -> dict:
+def move_facts_dict(f: MoveFacts) -> dict:
     return {
         "san": f.move.san,
         "uci": f.move.uci,
@@ -72,7 +72,7 @@ def _candidate(c: CandidateFacts, ply: int) -> dict:
         "depth": c.depth,
         "pv": numbered([p.san for p in c.pv[:PV_PLIES]], ply),
         "mover_consecutive_checks_from_start": c.forcing_checks,
-        "facts": _move_facts(c.facts),
+        "facts": move_facts_dict(c.facts),
     }
 
 
@@ -164,7 +164,7 @@ def build_context(
             "opponent_mate_in_one_threats_if_ignored": p.opponent_mate_threats,
             "white": _side(p.white),
             "black": _side(p.black),
-            "last_move": _move_facts(insights.last_move) if insights.last_move else None,
+            "last_move": move_facts_dict(insights.last_move) if insights.last_move else None,
             "candidates": [_candidate(c, state.ply) for c in insights.candidates],
         },
         "pgn_comments": [{"ply": c.ply, "text": c.text} for c in request.comments],

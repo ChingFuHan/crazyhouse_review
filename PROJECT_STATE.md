@@ -7,7 +7,9 @@ Task spec: `task.md`.
 Milestone 1 DONE (PGN → board → navigation → pockets → rules → variations).
 Milestone 2 DONE (Fairy-Stockfish → White-POV eval → best move → MultiPV 3 → PV, arrows).
 Milestone 3: Analyzer + deterministic "Why this move?" DONE; LLM layer DONE but real Claude calls
-UNVERIFIED (no ANTHROPIC_API_KEY available) → PARTIAL. Next: Milestone 4 (chat + candidate re-analysis).
+UNVERIFIED (no ANTHROPIC_API_KEY available) → PARTIAL.
+Milestone 4 (chat + candidate re-analysis + variation-aware Q&A) DONE with the fake LLM; the task.md
+§55 core flow passes end-to-end (e2e/core-flow.spec.ts). Real-LLM answer quality still unverified.
 
 ## Current architecture
 - `backend/` Python 3.13 (uv), FastAPI, python-chess 1.11.2.
@@ -51,6 +53,12 @@ UNVERIFIED (no ANTHROPIC_API_KEY available) → PARTIAL. Next: Milestone 4 (chat
     `service.py` (cache key = context (incl. position_id, variation_id, analysis_id) + question +
     history + model + context/prompt versions). `POST /api/explain` (503 llm_unavailable, 502
     llm_error, 409 position mismatch / engine superseded). `LLM_PROVIDER` anthropic|fake|none.
+  - `app/llm/candidates.py` (task.md §22): moves named in a question (SAN/UCI/drop/castling, CJK
+    neighbours ok; bare squares only if a legal pawn move; max 3) → legality (illegal → Chinese
+    reason) → MultiPV hit, or engine analysis of the position after the move (same multipv/movetime)
+    → move facts → `candidate_analysis` in the LLM context. If every named move is illegal the
+    answer comes from the rules (`model: "rules"`), no engine, no LLM. Response `checked_moves`.
+  - User-facing illegal-move reasons in chess_core are Traditional Chinese.
   - `scripts/fetch_engine.sh` → `engines/fairy-stockfish` (gitignored; fairy_sf_14 release, bmi2
     build here, sha256 9c8ff22d…). Classical eval (no crazyhouse NNUE file installed).
 - `frontend/` React 19 + TS + Vite 8 + Chessground 9.2. NO rules logic in the browser.
@@ -78,6 +86,9 @@ UNVERIFIED (no ANTHROPIC_API_KEY available) → PARTIAL. Next: Milestone 4 (chat
     (position_id, variation_id); answers land in the thread they were asked in (late answers never
     show on another position); follow-ups send the last 6 Q/A turns. AnswerView + RichText
     (safe minimal markdown). WhyPanel has an on-demand 「AI 解釋」 button.
+  - ChatPanel ("Ask about this position"): quick questions (task.md §23, built with the actual best /
+    second / game-move SAN) and free questions on the same `/api/explain` pipeline; shows
+    checked moves (illegal reason / engine score + source) above each answer.
   - `src/useInsights.ts` fetches insights once the engine result is final (keyed by
     position_id + analysis_id); `src/explain.ts` turns facts into fact-only Traditional Chinese
     sentences (direct effect, king safety, replies, PV, pocket, candidate comparison in mover POV,
@@ -121,14 +132,17 @@ UNVERIFIED (no ANTHROPIC_API_KEY available) → PARTIAL. Next: Milestone 4 (chat
   change; not reproduced in 8 later runs incl. --repeat-each stress. Watch for recurrence.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 97 passed (LLM: context == board/engine/analyzer, variation
+- `cd backend && uv run pytest -q` → 110 passed (candidate extraction forms; MultiPV vs fresh engine
+  analysis; illegal-only answered by rules without engine/LLM; mixed legal/illegal) (LLM: context == board/engine/analyzer, variation
   context, prompt-injection boundary, cache key separation, missing key 503, key never in errors,
   refusal handling via stubbed SDK client — no real API call) (incl. analyzer facts consistent with canonical state
   on every ply of the real games; insights analysis_id == analyze analysis_id) (incl. real Fairy-Stockfish: drop mates both colors,
   supersede race (deterministic; proven to fail without the fix), crash restart, and FSF `d`/`perft 1`
   vs python-chess FEN + legal-move set for all 174 plies of the 3 real games — identical).
 - `cd frontend && npx vitest run` → 24 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 14 passed (fake LLM: answer echoes exactly the board's
+- `cd frontend && npx playwright test` → 16 passed (core flow §55: PGN → engine → why → AI → ask
+  "為什麼不是 Qh5？" → play Qh5 → re-analysis → ask "現在黑方怎麼反擊？" answered for the variation →
+  back to main line with PGN unchanged and the original thread restored) (fake LLM: answer echoes exactly the board's
   position_id/FEN and the displayed analysis_id; late answer never shown on another position;
   variation context; why panel uses the displayed engine result's
   analysis_id; drop mate explanation; mate-threat alert; engine: drop mate #1/#-1, drop marker, PV click,
@@ -146,8 +160,8 @@ UNVERIFIED (no ANTHROPIC_API_KEY available) → PARTIAL. Next: Milestone 4 (chat
 - `cd frontend && npx playwright test` (starts its own servers on 8821/5181)
 
 ## Next recommended task
-Milestone 4: Chat panel ("Ask about this position") with quick questions (task.md §23) on the same
-pipeline, and the candidate-move hard flow (task.md §22): parse moves mentioned in the question
-(SAN/UCI) → legality check (illegal → reason, no engine) → temporary line → engine analysis →
-analyzer → comparison context for the LLM. Pending: user-provided ANTHROPIC_API_KEY to verify real
-Claude answers.
+1. (Needs the user) Verify real Claude answers with an ANTHROPIC_API_KEY in `.env`: run
+   `scripts/llm_smoke.py`-style check on a known position and review grounding/POV/language.
+2. Critical move detection on the main line (task.md §30): mate introduced / lost / missed and big
+   eval swings, using the engine per main-line ply (batch, cached), shown as markers in the move list.
+3. UI polish: click-to-drop from the pocket, engine on/off toggle, streaming LLM answers.

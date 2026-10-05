@@ -65,10 +65,10 @@ def test_drop_moves_are_listed_as_legal_moves():
 @pytest.mark.parametrize(
     ("moves", "move", "reason"),
     [
-        ([*KNIGHT_TRADE, "e7e6"], "N@e6", "occupied"),
-        ([*KNIGHT_TRADE, "e7e6"], "Q@h5", "no Q in the pocket"),
-        ([*KNIGHT_TRADE, "e7e6"], "K@h5", "king can never be dropped"),
-        ([*KNIGHT_TRADE, "e7e6", "N@d6"], "P@a6", "in check"),
+        ([*KNIGHT_TRADE, "e7e6"], "N@e6", "e6 已經有棋子"),
+        ([*KNIGHT_TRADE, "e7e6"], "Q@h5", "白方的 pocket 裡沒有后"),
+        ([*KNIGHT_TRADE, "e7e6"], "K@h5", "王不能被打入"),
+        ([*KNIGHT_TRADE, "e7e6", "N@d6"], "P@a6", "黑方正被將軍，打入 a6 擋不住將軍"),
     ],
 )
 def test_illegal_drops_are_rejected_with_reason(moves, move, reason):
@@ -82,7 +82,7 @@ def test_pawn_cannot_be_dropped_on_first_or_last_rank(square):
     fen = "4k3/8/8/8/8/8/8/4K3[P] w - - 0 1"
     with pytest.raises(IllegalMoveError) as error:
         apply_move(fen, [], f"P@{square}")
-    assert "1st or 8th rank" in error.value.reason
+    assert "兵不能打入第 1 或第 8 橫列" in error.value.reason
     assert not any(uci == f"P@{square}" for uci in position_state(fen, []).legal_moves)
 
 
@@ -160,7 +160,7 @@ def test_pockets_are_reported_strongest_first():
 def test_pinned_piece_move_is_illegal():
     with pytest.raises(IllegalMoveError) as error:
         apply_move("4k3/4r3/8/8/8/8/4N3/4K3[] w - - 0 1", [], "Nc3")
-    assert "leave the king in check" in error.value.reason
+    assert "會讓自己的王被將軍" in error.value.reason
 
 
 def test_checkmate_by_normal_move():
@@ -190,18 +190,18 @@ def test_position_id_identifies_the_line():
 @pytest.mark.parametrize(
     ("fen", "move", "reason"),
     [
-        (STARTING_FEN, "0000", "null moves"),
-        (STARTING_FEN, "e2e5", "pawn cannot move to e5"),
-        (STARTING_FEN, "e7e5", "not white's"),
-        (STARTING_FEN, "e3e4", "no piece on e3"),
-        (STARTING_FEN, "hello", "cannot parse"),
-        (STARTING_FEN, "Qxf7", "no queen can move to f7"),
-        ("4k3/8/8/8/8/8/8/4K3[P] w - - 0 1", "Nf3", "white has no knight on the board"),
-        ("4k3/8/8/8/8/8/8/1N2KN2[] w - - 0 1", "Nd2", "ambiguous"),
-        ("4k3/1P6/8/8/8/8/8/4K3[] w - - 0 1", "b7b8", "must promote"),
+        (STARTING_FEN, "0000", "不允許空著"),
+        (STARTING_FEN, "e2e5", "兵不能走到 e5"),
+        (STARTING_FEN, "e7e5", "e7 上的棋子不是白方的"),
+        (STARTING_FEN, "e3e4", "e3 上沒有棋子"),
+        (STARTING_FEN, "hello", "無法解析棋步"),
+        (STARTING_FEN, "Qxf7", "沒有后能走到 f7"),
+        ("4k3/8/8/8/8/8/8/4K3[P] w - - 0 1", "Nf3", "白方盤上沒有馬"),
+        ("4k3/8/8/8/8/8/8/1N2KN2[] w - - 0 1", "Nd2", "歧義"),
+        ("4k3/1P6/8/8/8/8/8/4K3[] w - - 0 1", "b7b8", "必須升變"),
         # Castling through an attacked square (f1 attacked by the bishop on c4).
-        ("4k3/8/8/8/2b5/8/8/4K2R[] w K - 0 1", "O-O", "castling is not possible"),
-        ("4k3/8/8/8/2b5/8/8/4K2R[] w K - 0 1", "e1g1", "castling is not possible"),
+        ("4k3/8/8/8/2b5/8/8/4K2R[] w K - 0 1", "O-O", "現在不能易位"),
+        ("4k3/8/8/8/2b5/8/8/4K2R[] w K - 0 1", "e1g1", "現在不能易位"),
     ],
 )
 def test_illegal_move_reasons(fen, move, reason):

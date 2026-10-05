@@ -18,10 +18,10 @@ from .models import Color, MoveModel, Outcome, Pockets, PositionState
 STARTING_FEN = CrazyhouseBoard.starting_fen
 MAX_LINE_LENGTH = 1000
 POCKET_ORDER = (chess.QUEEN, chess.ROOK, chess.BISHOP, chess.KNIGHT, chess.PAWN)
-CASTLING_REASON = (
-    "castling is not possible here (no castling right, pieces in between, "
-    "or the king is in, passes through or lands on an attacked square)"
-)
+# User-facing reasons are Traditional Chinese (the product's default language).
+PIECE_ZH = {chess.PAWN: "兵", chess.KNIGHT: "馬", chess.BISHOP: "象", chess.ROOK: "車", chess.QUEEN: "后", chess.KING: "王"}
+SIDE_ZH = {chess.WHITE: "白方", chess.BLACK: "黑方"}
+CASTLING_REASON = "現在不能易位（沒有易位權、中間有棋子，或王正被將軍、經過或停在被攻擊的格子）"
 
 
 class LineError(ValueError):
@@ -78,7 +78,7 @@ def parse_move(board: CrazyhouseBoard, text: str) -> chess.Move:
     """Parse UCI or SAN text into a legal move, or raise IllegalMoveError with a reason."""
     text = text.strip()
     if not text:
-        raise IllegalMoveError(text, "empty move")
+        raise IllegalMoveError(text, "棋步是空的")
     try:
         move = chess.Move.from_uci(text)
     except ValueError:
@@ -92,11 +92,11 @@ def parse_move(board: CrazyhouseBoard, text: str) -> chess.Move:
             if move is None:
                 raise IllegalMoveError(text, _san_reason(board, text)) from None
         except chess.AmbiguousMoveError:
-            raise IllegalMoveError(text, "ambiguous move; specify the origin square") from None
+            raise IllegalMoveError(text, "棋步有歧義，請指明出發格") from None
         except ValueError:
-            raise IllegalMoveError(text, "cannot parse move (use UCI like e2e4 / N@e7 or SAN like Nf3)") from None
+            raise IllegalMoveError(text, "無法解析棋步（請用 e2e4、N@e7 或 Nf3 這類寫法）") from None
     if not move:
-        raise IllegalMoveError(text, "null moves are not allowed")
+        raise IllegalMoveError(text, "不允許空著")
     if board.is_legal(move):
         return move
     raise IllegalMoveError(text, illegal_reason(board, move))
@@ -125,44 +125,44 @@ SAN_PATTERN = re.compile(r"^([NBRQK])?[a-h]?[1-8]?x?([a-h][1-8])")
 def _san_reason(board: CrazyhouseBoard, text: str) -> str:
     match = SAN_PATTERN.match(text)
     if not match:
-        return "illegal move in this position"
+        return "這步在此局面不合法"
     piece_type = chess.PIECE_SYMBOLS.index(match.group(1).lower()) if match.group(1) else chess.PAWN
-    name = chess.piece_name(piece_type)
+    name = PIECE_ZH[piece_type]
     if not board.pieces(piece_type, board.turn):
-        return f"{color_name(board.turn)} has no {name} on the board"
-    return f"no {name} can move to {match.group(2)}"
+        return f"{SIDE_ZH[board.turn]}盤上沒有{name}"
+    return f"沒有{name}能走到 {match.group(2)}"
 
 
 def illegal_reason(board: CrazyhouseBoard, move: chess.Move) -> str:
-    side = color_name(board.turn)
+    side = SIDE_ZH[board.turn]
     if move.drop:
-        symbol = chess.piece_symbol(move.drop).upper()
+        name = PIECE_ZH[move.drop]
         square = chess.square_name(move.to_square)
         if move.drop == chess.KING:
-            return "the king can never be dropped"
+            return "王不能被打入"
         if board.pockets[board.turn].count(move.drop) == 0:
-            return f"{side} has no {symbol} in the pocket"
+            return f"{side}的 pocket 裡沒有{name}"
         if board.piece_at(move.to_square):
-            return f"{square} is occupied"
+            return f"{square} 已經有棋子"
         if move.drop == chess.PAWN and chess.square_rank(move.to_square) in (0, 7):
-            return "pawns cannot be dropped on the 1st or 8th rank"
+            return "兵不能打入第 1 或第 8 橫列"
         if board.is_check():
-            return f"{side} is in check and a drop on {square} does not block it"
-        return "illegal drop"
+            return f"{side}正被將軍，打入 {square} 擋不住將軍"
+        return "不合法的打入"
     piece = board.piece_at(move.from_square)
     if piece is None:
-        return f"no piece on {chess.square_name(move.from_square)}"
+        return f"{chess.square_name(move.from_square)} 上沒有棋子"
     if piece.color != board.turn:
-        return f"the piece on {chess.square_name(move.from_square)} is not {side}'s"
+        return f"{chess.square_name(move.from_square)} 上的棋子不是{side}的"
     if piece.piece_type == chess.KING and chess.square_distance(move.from_square, move.to_square) > 1:
         return CASTLING_REASON
     if board.is_pseudo_legal(move):
         if board.is_check():
-            return f"{side} is in check and this move does not resolve it"
-        return "the move would leave the king in check (pinned piece or king walks into attack)"
+            return f"{side}正被將軍，這步無法解除將軍"
+        return "這步會讓自己的王被將軍（棋子被牽制，或王走進被攻擊的格子）"
     if move.promotion is None and piece.piece_type == chess.PAWN and chess.square_rank(move.to_square) in (0, 7):
-        return "a pawn reaching the last rank must promote"
-    return f"the {chess.piece_name(piece.piece_type)} cannot move to {chess.square_name(move.to_square)}"
+        return "兵走到底線必須升變"
+    return f"{PIECE_ZH[piece.piece_type]}不能走到 {chess.square_name(move.to_square)}"
 
 
 def move_model(board: CrazyhouseBoard, move: chess.Move) -> MoveModel:
@@ -225,7 +225,7 @@ def apply_move(root_fen: str | None, moves: list[str], move_text: str) -> Positi
     root_fen = normalize_root_fen(root_fen)
     board = build_board(root_fen, moves)
     if board.is_game_over():
-        raise IllegalMoveError(move_text, "the game is already over in this position")
+        raise IllegalMoveError(move_text, "這個局面對局已結束")
     move = parse_move(board, move_text)
     board.push(move)
     return position_state(root_fen, [*moves, move.uci()], board)

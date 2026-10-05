@@ -67,7 +67,11 @@ key everything else works and the AI button reports that the LLM is not configur
 - 「AI 解釋」: on-demand Claude explanation grounded on the same engine result and facts shown on
   screen, aware of the current variation and the game move (requires `ANTHROPIC_API_KEY`)
 
+- "Ask about this position": quick questions and free questions about the current position or
+  variation; moves you mention (e.g. 「為什麼不能 Qxe2？」「如果我改走 Qh5 呢？」) are checked for
+  legality and analysed by the engine before the LLM compares them; illegal moves are answered
+  by the rules directly
+
 ## Known limitations
 - One engine process is shared; analysing in two tabs at once cancels searches.
-- Free-form chat / candidate-move questions not implemented yet.
 - Real Claude responses have not been verified in this repository's test runs (tests use a fake).
