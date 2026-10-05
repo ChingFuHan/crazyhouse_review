@@ -27,6 +27,12 @@ Crazyhouse analysis uses [Fairy-Stockfish](https://github.com/fairy-stockfish/Fa
 point of view (`evaluation` in pawns, `mate` positive when White mates).
 
 ## Run
+One process (builds the UI, serves UI + API, fetches the engine if missing):
+```bash
+./scripts/serve.sh        # → http://127.0.0.1:8820  (PORT=... to change)
+```
+
+Development (hot reload):
 ```bash
 # terminal 1
 cd backend && uv run uvicorn app.main:app --host 127.0.0.1 --port 8820
@@ -53,7 +59,8 @@ key everything else works and the AI button reports that the LLM is not configur
 - Move input as UCI or SAN with readable illegal-move reasons
 - Crazyhouse PGN import (variations and comments kept as data)
 - Review board: PGN load, pockets, move list with variations, keyboard navigation, flip
-- Play your own moves: drag pieces, drag from the pocket (legal squares highlighted),
+- Play your own moves: drag pieces, drag from the pocket or click a pocket piece then a square
+  (legal squares highlighted; Esc cancels),
   promotion chooser, typed moves (SAN/UCI); your moves form variations, the PGN main line
   is never changed; 「回到主線」 returns to where you branched off
 

@@ -9,10 +9,13 @@ export interface PocketProps {
   /** Whether this side may drop now (its turn and the board is interactive). */
   active: boolean
   onDragStart?: (role: Role, event: React.MouseEvent | React.TouchEvent) => void
+  /** Click-to-drop: the piece picked from this pocket, if any. */
+  selected?: Role | null
+  onSelect?: (role: Role) => void
 }
 
 /** Crazyhouse pocket: one slot per droppable piece type, with counts. */
-export function Pocket({ color, pieces, active, onDragStart }: PocketProps) {
+export function Pocket({ color, pieces, active, onDragStart, selected, onSelect }: PocketProps) {
   return (
     <div className={`pocket cg-wrap pocket-${color}${active ? ' pocket-active' : ''}`} data-color={color}>
       {POCKET_ROLES.map((letter) => {
@@ -22,12 +25,14 @@ export function Pocket({ color, pieces, active, onDragStart }: PocketProps) {
         return (
           <div
             key={letter}
-            className={`pocket-slot${count === 0 ? ' empty' : ''}${usable ? ' usable' : ''}`}
+            className={`pocket-slot${count === 0 ? ' empty' : ''}${usable ? ' usable' : ''}${selected === role ? ' selected' : ''}`}
             data-role={letter}
             data-count={count}
             title={`${color} ${role} × ${count}`}
             onMouseDown={usable ? (e) => onDragStart(role, e) : undefined}
             onTouchStart={usable ? (e) => onDragStart(role, e) : undefined}
+            onClick={usable && onSelect ? () => onSelect(role) : undefined}
+            aria-pressed={selected === role}
           >
             <PieceIcon role={role} color={color} />
             {count > 1 && <span className="pocket-count">{count}</span>}

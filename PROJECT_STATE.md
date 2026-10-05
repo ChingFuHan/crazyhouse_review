@@ -109,7 +109,11 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
     position_id + analysis_id); `src/explain.ts` turns facts into fact-only Traditional Chinese
     sentences (direct effect, king safety, replies, PV, pocket, candidate comparison in mover POV,
     alerts); `WhyPanel` renders them (or the last move when the game is over).
-  - Vite dev server :5180 proxies `/api` → backend :8820.
+  - Vite dev server :5180 proxies `/api` → backend :8820. `scripts/serve.sh` builds the UI and
+    the backend serves `frontend/dist` at `/` (StaticFiles mounted after the API routes).
+  - Click-to-drop: pocket click toggles a selection mirrored into chessground's drop mode; one
+    board click per selection, then re-sync (an occupied-square click leaves chessground's
+    off-board placeholder otherwise); Esc cancels.
 
 ## Completed features
 - Crazyhouse canonical state, move parsing (UCI or SAN) with human-readable illegal reasons.
@@ -137,7 +141,7 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
 
 ## Known limitations
 - Review verdicts come from 300 ms searches: bullet-game classifications vary a little between runs.
-- No click-to-drop (pocket piece then square) yet; drag only. No touch E2E coverage.
+- No touch E2E coverage.
 - Engine: single shared process; two browser tabs analysing at once cancel each other's searches.
   No streaming (two fixed-length phases). Classical eval only (NNUE net not installed).
 - Analyzer does not yet detect: opened files/diagonals, line blocks, multi-move mate threats,
@@ -149,7 +153,7 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   change; not reproduced in 8 later runs incl. --repeat-each stress. Watch for recurrence.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 129 passed (review classification incl. mate edge cases, review
+- `cd backend && uv run pytest -q` → 130 passed (review classification incl. mate edge cases, review
   job on a real game without disturbing interactive analysis, root_moves) (candidate extraction forms; MultiPV vs fresh engine
   analysis; illegal-only answered by rules without engine/LLM; mixed legal/illegal) (LLM: context == board/engine/analyzer, variation
   context, prompt-injection boundary, cache key separation, missing key 503, key never in errors,
@@ -158,7 +162,7 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   supersede race (deterministic; proven to fail without the fix), crash restart, and FSF `d`/`perft 1`
   vs python-chess FEN + legal-move set for all 174 plies of the 3 real games — identical).
 - `cd frontend && npx vitest run` → 30 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 17 passed (review: annotations only on main line, critical
+- `cd frontend && npx playwright test` → 18 passed (incl. click-to-drop) (review: annotations only on main line, critical
   list == flagged moves, click selects the move; eval graph dots == flagged moves, hover tooltip,
   click jumps to the nearest ply) (core flow §55: PGN → engine → why → AI → ask
   "為什麼不是 Qh5？" → play Qh5 → re-analysis → ask "現在黑方怎麼反擊？" answered for the variation →
@@ -174,6 +178,7 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   delays published moves of games in progress (not a rules issue).
 
 ## Last successful commands
+- `PORT=8830 ./scripts/serve.sh` (single process; browser smoke: board + engine best move, 0 console errors)
 - `cd backend && uv run pytest -q`
 - `cd backend && uv run uvicorn app.main:app --host 127.0.0.1 --port 8820`
 - `cd frontend && npx vite --host 127.0.0.1 --port 5180`
@@ -182,4 +187,4 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
 ## Next recommended task
 1. (Needs the user) Verify real Claude answers with an ANTHROPIC_API_KEY in `.env`: run
    `scripts/llm_smoke.py`-style check on a known position and review grounding/POV/language.
-2. UI polish: click-to-drop from the pocket, engine on/off toggle, streaming LLM answers.
+2. UI polish: engine on/off toggle, streaming LLM answers, keyboard access to pockets.

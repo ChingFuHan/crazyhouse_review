@@ -5,8 +5,11 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from pathlib import Path
+
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from .config import REPO_ROOT, EngineSettings, LLMSettings, engine_settings, llm_settings, review_engine_settings
 from .engine import EngineService
@@ -34,6 +37,7 @@ def create_app(
     settings: EngineSettings | None = None,
     explain_service: ExplainService | None = None,
     review_settings: EngineSettings | None = None,
+    frontend_dist: Path | None = REPO_ROOT / "frontend" / "dist",
 ) -> FastAPI:
     load_dotenv(REPO_ROOT / ".env", override=False)
 
@@ -56,6 +60,10 @@ def create_app(
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    # Serve the built UI (npm run build) from the same process, after the API routes.
+    if frontend_dist is not None and (frontend_dist / "index.html").exists():
+        app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
 
     return app
 

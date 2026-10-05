@@ -166,6 +166,11 @@ cg-board square.drop-dest {
   cursor: grab;
 }
 
+.pocket-slot.selected {
+  background: rgba(98, 153, 36, 0.45);
+  border-radius: 4px;
+}
+
 .pocket-slot.usable:hover {
   background: rgba(98, 153, 36, 0.25);
   border-radius: 4px;

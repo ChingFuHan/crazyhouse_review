@@ -144,3 +144,39 @@ test('promotion chooser; a captured promoted piece goes to the pocket as a pawn'
   await expect(page.locator('.pocket[data-color=black] .pocket-slot[data-role=P]')).toHaveAttribute('data-count', '1')
   await expect(page.locator('.pocket[data-color=black] .pocket-slot[data-role=N]')).toHaveAttribute('data-count', '0')
 })
+
+test('click-to-drop: pick a pocket piece, then click the target square', async ({ page }) => {
+  await page.goto('/')
+  await loadPgn(page, KNIGHT_IN_POCKET)
+  await page.keyboard.press('End')
+  const before = await expectBoardConsistent(page)
+  const slot = page.locator('.pocket[data-color=white] .pocket-slot[data-role=N]')
+
+  // Pick, then Escape cancels.
+  await slot.click()
+  await expect(slot).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('cg-board square.drop-dest')).not.toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(slot).toHaveAttribute('aria-pressed', 'false')
+  await expect(page.locator('cg-board square.drop-dest')).toHaveCount(0)
+
+  // Pick, click an occupied square: nothing is played and the board stays canonical.
+  await slot.click()
+  const box = (await page.locator('cg-board').boundingBox())!
+  const size = box.width / 8
+  const center = (sq: string) => ({
+    x: box.x + ('abcdefgh'.indexOf(sq[0]) + 0.5) * size,
+    y: box.y + (8 - Number(sq[1]) + 0.5) * size,
+  })
+  await page.mouse.click(center('e6').x, center('e6').y)
+  await activePly(page, 6)
+  expect(await expectBoardConsistent(page)).toBe(before)
+  await expect(slot).toHaveAttribute('aria-pressed', 'false')
+
+  // Pick, click a legal square: the drop is played.
+  await slot.click()
+  await page.mouse.click(center('d6').x, center('d6').y)
+  await activePly(page, 7)
+  await expect(page.locator('.move.active')).toHaveText(/N@d6\+$/)
+  await expectBoardConsistent(page)
+})

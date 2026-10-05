@@ -47,3 +47,16 @@ def test_pgn_endpoint():
     assert body["root"]["children"][0]["state"]["last_move"]["san"] == "e4"
     bad = client.post("/api/pgn", json={"pgn": '[Variant "Atomic"]\n\n1. e4 *'})
     assert bad.status_code == 422 and bad.json()["detail"]["error"] == "invalid_pgn"
+
+
+def test_built_frontend_is_served_after_api_routes(tmp_path):
+    (tmp_path / "index.html").write_text("<!doctype html><title>Crazyhouse Review</title>")
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "app.js").write_text("console.log(1)")
+    served = TestClient(create_app(frontend_dist=tmp_path))
+    assert "Crazyhouse Review" in served.get("/").text
+    assert served.get("/assets/app.js").status_code == 200
+    assert served.get("/api/health").json() == {"status": "ok"}
+    assert served.post("/api/position", json={"moves": []}).status_code == 200
+    without = TestClient(create_app(frontend_dist=None))
+    assert without.get("/").status_code == 404
