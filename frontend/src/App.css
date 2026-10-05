@@ -166,6 +166,16 @@ cg-board square.drop-dest {
   cursor: grab;
 }
 
+.pocket-slot:focus-visible {
+  outline: 2px solid var(--accent-2);
+  border-radius: 4px;
+}
+
+.drop-hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .pocket-slot.selected {
   background: rgba(98, 153, 36, 0.45);
   border-radius: 4px;

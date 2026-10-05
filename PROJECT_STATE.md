@@ -119,6 +119,10 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   - Click-to-drop: pocket click toggles a selection mirrored into chessground's drop mode; one
     board click per selection, then re-sync (an occupied-square click leaves chessground's
     off-board placeholder otherwise); Esc cancels.
+  - Touch: chessground cancels touchend's default, so taps never become clicks → Pocket detects
+    taps itself (touchstart→touchend < 10px) and ignores a compatibility click within 600 ms.
+    Pocket slots are role=button (tabindex only when usable), Enter/Space picks; typed drops
+    (MoveInput "N@d6") complete it from the keyboard.
   - Loader accepts PGN or a one-line crazyhouse FEN (`looksLikeFen`; bracket or lichess "/pocket"
     style, normalized by the backend). Engine on/off switch (localStorage preference, try/catch).
 
@@ -148,7 +152,8 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
 
 ## Known limitations
 - Review verdicts come from 300 ms searches: bullet-game classifications vary a little between runs.
-- No touch E2E coverage.
+- Board squares themselves are not keyboard-navigable (moves/drops by keyboard go through the
+  move input).
 - Engine: single shared process; two browser tabs analysing at once cancel each other's searches.
   No streaming (two fixed-length phases). Classical eval only (NNUE net not installed).
 - Analyzer does not score king-zone pressure; opened diagonals are covered only through
@@ -169,7 +174,8 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   supersede race (deterministic; proven to fail without the fix), crash restart, and FSF `d`/`perft 1`
   vs python-chess FEN + legal-move set for all 174 plies of the 3 real games — identical).
 - `cd frontend && npx vitest run` → 35 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 20 passed (incl. click-to-drop, FEN load, engine toggle) (review: annotations only on main line, critical
+- `cd frontend && npx playwright test` → 23 passed (incl. click-to-drop, FEN load, engine toggle,
+  touch: tap-to-drop + CDP touch drags on board and from pocket, keyboard pocket access) (review: annotations only on main line, critical
   list == flagged moves, click selects the move; eval graph dots == flagged moves, hover tooltip,
   click jumps to the nearest ply) (core flow §55: PGN → engine → why → AI → ask
   "為什麼不是 Qh5？" → play Qh5 → re-analysis → ask "現在黑方怎麼反擊？" answered for the variation →
@@ -194,4 +200,4 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
 ## Next recommended task
 1. (Needs the user) Verify real Claude answers with an ANTHROPIC_API_KEY in `.env`: run
    `scripts/llm_smoke.py`-style check on a known position and review grounding/POV/language.
-2. Streaming LLM answers (SSE) once real Claude latency can be measured; keyboard access to pockets.
+2. Streaming LLM answers (SSE) once real Claude latency can be measured.

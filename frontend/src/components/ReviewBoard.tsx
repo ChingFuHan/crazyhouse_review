@@ -134,7 +134,8 @@ export function ReviewBoard({ position, orientation, onPlay, shapes }: ReviewBoa
     (color: Color) => (role: Role, event: React.MouseEvent | React.TouchEvent) => {
       if (!ground.current || !interactive || color !== position.side_to_move) return
       refreshBounds()
-      if (event.type === 'touchstart') event.preventDefault()
+      // No preventDefault on touchstart: the tap must still produce a click (tap-to-drop);
+      // scrolling during a pocket drag is prevented by `touch-action: none` on the slot.
       setDropTargets({ positionId: position.position_id, keys: dropSquares(position.legal_moves, letterOf(role)) })
       const clear = () => setDropTargets(null)
       document.addEventListener('mouseup', clear, { once: true })
@@ -193,6 +194,11 @@ export function ReviewBoard({ position, orientation, onPlay, shapes }: ReviewBoa
         )}
       </div>
       {pocket(orientation)}
+      {selection && (
+        <div className="drop-hint" role="status">
+          已選 {letterOf(selection.role)}：點目標格打入，或在棋步輸入框輸入 {letterOf(selection.role)}@e4 這類寫法；Esc 取消。
+        </div>
+      )}
     </>
   )
 }
