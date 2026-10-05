@@ -20,6 +20,9 @@ export default defineConfig({
       cwd: '../backend',
       url: 'http://127.0.0.1:8821/api/health',
       reuseExistingServer: false,
+      // UI wiring is tested against a deterministic fake LLM that echoes the context it received.
+      // Real Claude calls are verified separately (they need ANTHROPIC_API_KEY).
+      env: { LLM_PROVIDER: 'fake' },
       timeout: 60_000,
     },
     {

@@ -194,3 +194,43 @@ class Insights(BaseModel):
     position: PositionFacts
     last_move: MoveFacts | None
     candidates: list[CandidateFacts]
+
+
+class PgnComment(BaseModel):
+    ply: int = Field(ge=0)
+    text: str = Field(max_length=2000)
+
+
+class ChatTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=8000)
+
+
+class ExplainRequest(AnalyzeRequest):
+    """Ask about the active position. Everything except the line itself is UI metadata and untrusted."""
+
+    variation_id: str = Field(default="main", max_length=80)
+    on_main_line: bool = True
+    game_move: str | None = Field(
+        default=None,
+        description="UCI of the move actually played in the game: from this position (main line) or "
+        "from the branch point (variation).",
+    )
+    game_move_ply: int | None = Field(default=None, ge=0, description="Moves from root before game_move.")
+    comments: list[PgnComment] = Field(default=[], max_length=60)
+    headers: dict[str, str] = Field(default={}, max_length=30)
+    question: str | None = Field(default=None, max_length=1000)
+    history: list[ChatTurn] = Field(default=[], max_length=20)
+
+
+class ExplainResponse(BaseModel):
+    position_id: str
+    variation_id: str
+    analysis_id: str
+    request_id: str
+    context_version: str
+    question: str
+    text: str
+    model: str
+    refused: bool
+    cached: bool

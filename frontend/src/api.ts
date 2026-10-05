@@ -1,4 +1,5 @@
-import type { EngineAnalysis, GameTreeDto, Insights, PositionState } from './types'
+import type { LlmMeta } from './llmRequest'
+import type { ChatTurn, EngineAnalysis, ExplainResponse, GameTreeDto, Insights, PositionState } from './types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -61,4 +62,7 @@ export const api = {
   /** Engine result (same cache as `analyze` with default settings) + deterministic facts. */
   insights: (position: PositionState, signal?: AbortSignal) =>
     post<Insights>('/api/insights', { ...lineOf(position), movetime_ms: null, multipv: null }, signal),
+  /** Ask the LLM about this position; null question = explain the best move. */
+  explain: (position: PositionState, meta: LlmMeta, question: string | null, history: ChatTurn[], signal?: AbortSignal) =>
+    post<ExplainResponse>('/api/explain', { ...lineOf(position), ...meta, question, history }, signal),
 }

@@ -41,6 +41,13 @@ cd backend && uv run pytest -q
 cd frontend && npx vitest run && npx tsc -b && npx playwright test
 ```
 
+## LLM setup
+Natural-language explanations use Claude through the official Anthropic SDK. Copy `.env.example`
+to `.env` (git-ignored) and set `ANTHROPIC_API_KEY`. Defaults: `LLM_MODEL=claude-opus-5-5`,
+`LLM_EFFORT=medium`; server-side refusal fallback (`fallbacks="default"`) is enabled. Without a
+key everything else works and the AI button reports that the LLM is not configured.
+`LLM_PROVIDER=fake` is a deterministic stand-in used only by automated tests.
+
 ## Current features
 - Crazyhouse position state (FEN with pockets and promoted markers), legal moves incl. drops
 - Move input as UCI or SAN with readable illegal-move reasons
@@ -57,6 +64,10 @@ cd frontend && npx vitest run && npx tsc -b && npx playwright test
   king escape squares before/after, forced replies, main line, pocket changes) and how the other
   candidates differ, plus alerts for mate threats and hanging pieces
 
+- 「AI 解釋」: on-demand Claude explanation grounded on the same engine result and facts shown on
+  screen, aware of the current variation and the game move (requires `ANTHROPIC_API_KEY`)
+
 ## Known limitations
 - One engine process is shared; analysing in two tabs at once cancels searches.
-- No natural-language (LLM) explanations or Q&A yet.
+- Free-form chat / candidate-move questions not implemented yet.
+- Real Claude responses have not been verified in this repository's test runs (tests use a fake).

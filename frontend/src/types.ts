@@ -151,3 +151,21 @@ export interface Insights {
   last_move: MoveFacts | null
   candidates: CandidateFacts[]
 }
+
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface ExplainResponse {
+  position_id: string
+  variation_id: string
+  analysis_id: string
+  request_id: string
+  context_version: string
+  question: string
+  text: string
+  model: string
+  refused: boolean
+  cached: boolean
+}

@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import chess
 import chess.variant
 from fastapi import APIRouter, HTTPException, Request
 
-from ..analyzer import candidate_facts, move_facts, position_facts
+from ..analyzer import insights as compute_insights
 from ..chess_core import LineError, build_board, position_id
 from ..engine import EngineService, EngineUnavailable, analysis_id
 from ..models import AnalyzeRequest, EngineAnalysis, Insights
@@ -58,15 +57,4 @@ async def analyze(body: AnalyzeRequest, request: Request) -> EngineAnalysis:
 async def insights(body: AnalyzeRequest, request: Request) -> Insights:
     """Engine result + deterministic facts for the position, its last move and each candidate."""
     root_fen, board, analysis = await run_engine(body, engine_service(request))
-    last_move = None
-    if body.moves:
-        parent = build_board(root_fen, body.moves[:-1])
-        last_move = move_facts(parent, chess.Move.from_uci(body.moves[-1]))
-    return Insights(
-        position_id=analysis.position_id,
-        analysis_id=analysis.analysis_id,
-        engine_status=analysis.status,
-        position=position_facts(board),
-        last_move=last_move,
-        candidates=candidate_facts(board, analysis) if analysis.status == "ok" else [],
-    )
+    return compute_insights(root_fen, body.moves, board, analysis)

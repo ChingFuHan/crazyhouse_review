@@ -13,6 +13,7 @@ import { WhyPanel } from './components/WhyPanel'
 import { engineShapes } from './engineShapes'
 import { MAIN, mainlineAncestor } from './tree'
 import type { Color } from './types'
+import { useConversation } from './useConversation'
 import { useEngine } from './useEngine'
 import { useInsights } from './useInsights'
 import { useReview } from './useReview'
@@ -25,6 +26,8 @@ export default function App() {
   const position = active?.state
   const engine = useEngine(position ?? null)
   const insights = useInsights(position ?? null, engine)
+  const conversation = useConversation(tree, active?.id ?? null)
+  const aiTurn = [...conversation.turns].reverse().find((turn) => turn.question === null)
   const shapes = useMemo(
     () => (position ? engineShapes(engine.analysis, position.side_to_move) : []),
     [engine.analysis, position],
@@ -68,7 +71,7 @@ export default function App() {
               engine={engine}
               onPlayLine={(moves) => void playLine(position, moves.map((m) => m.uci))}
             />
-            <WhyPanel position={position} view={insights} />
+            <WhyPanel position={position} view={insights} aiTurn={aiTurn} onExplain={() => void conversation.ask(null)} />
             <section className="panel status" data-testid="status">
               <div>
                 <strong>{position.side_to_move === 'white' ? '白方' : '黑方'}</strong> 走棋 · 第 {position.move_number} 回合 · ply {position.ply}

@@ -71,7 +71,10 @@ class EngineService:
         self.name = "Fairy-Stockfish"
         self._engine: chess.engine.UciProtocol | None = None
         self._lock = asyncio.Lock()
+        # Bumped whenever a request arrives for a different position than the previous one;
+        # a search that sees the generation change was stopped (or is stale) and is "cancelled".
         self._generation = 0
+        self._latest_position: str | None = None
         self._running: chess.engine.AnalysisResult | None = None
         self._cache: OrderedDict[tuple[str, int, int], EngineAnalysis] = OrderedDict()
         # Identical requests share one search instead of superseding each other.
@@ -123,11 +126,14 @@ class EngineService:
         self, root_fen: str, moves: list[str], position_id: str, multipv: int, movetime_ms: int
     ) -> EngineAnalysis:
         key = (position_id, multipv, movetime_ms)
-        # A newer, different request supersedes the running one: stop it so the lock frees quickly.
-        self._generation += 1
+        # A request for another position supersedes the running search: stop it so the lock frees quickly.
+        if position_id != self._latest_position:
+            self._latest_position = position_id
+            self._generation += 1
+            if self._running is not None:
+                self._running.stop()
+        # Same position, other settings (e.g. quick look vs. full search): queue, never cancel.
         generation = self._generation
-        if self._running is not None:
-            self._running.stop()
 
         async with self._lock:
             if generation != self._generation:

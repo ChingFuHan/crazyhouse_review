@@ -6,7 +6,8 @@ Task spec: `task.md`.
 ## Current milestone
 Milestone 1 DONE (PGN → board → navigation → pockets → rules → variations).
 Milestone 2 DONE (Fairy-Stockfish → White-POV eval → best move → MultiPV 3 → PV, arrows).
-Milestone 3 in progress: Position Analyzer + deterministic "Why this move?" DONE; LLM layer next.
+Milestone 3: Analyzer + deterministic "Why this move?" DONE; LLM layer DONE but real Claude calls
+UNVERIFIED (no ANTHROPIC_API_KEY available) → PARTIAL. Next: Milestone 4 (chat + candidate re-analysis).
 
 ## Current architecture
 - `backend/` Python 3.13 (uv), FastAPI, python-chess 1.11.2.
@@ -37,6 +38,19 @@ Milestone 3 in progress: Position Analyzer + deterministic "Why this move?" DONE
     before→after, reply count + forced replies (≤3), tags (drop_check, drop_mate, queen_drop,
     interposition_drop, knight_fork, double_attack, escape_square_reduction, …). PV: per-ply
     check/drop + mover's consecutive checks. `POST /api/insights` → Insights.
+  - Engine supersede policy: only a request for a DIFFERENT position stops the running search
+    (generation bump); same-position requests with other settings queue (found by E2E: the UI's
+    quick look used to cancel a user's explain request).
+  - `app/llm/`: `provider.py` (`LLMProvider` protocol; `AnthropicProvider` = official SDK,
+    `claude-opus-5-5`, effort medium, `fallbacks="default"` + beta `server-side-fallback-2026-07-01`,
+    refusal handled, typed error chain → safe Chinese messages, key only from env/.env;
+    `FakeProvider` echoes the context for tests), `system_prompt.md` (task.md §19/§20/§33/§34),
+    `context.py` (task.md §18 context built server-side from the line + engine + analyzer;
+    PGN comments/headers passed as data; `<`/`>` escaped so untrusted text cannot close the
+    `<position_context>` block; client `game_move` re-validated, dropped if illegal),
+    `service.py` (cache key = context (incl. position_id, variation_id, analysis_id) + question +
+    history + model + context/prompt versions). `POST /api/explain` (503 llm_unavailable, 502
+    llm_error, 409 position mismatch / engine superseded). `LLM_PROVIDER` anthropic|fake|none.
   - `scripts/fetch_engine.sh` → `engines/fairy-stockfish` (gitignored; fairy_sf_14 release, bmi2
     build here, sha256 9c8ff22d…). Classical eval (no crazyhouse NNUE file installed).
 - `frontend/` React 19 + TS + Vite 8 + Chessground 9.2. NO rules logic in the browser.
@@ -59,6 +73,11 @@ Milestone 3 in progress: Position Analyzer + deterministic "Why this move?" DONE
     position change; a result is exposed only if its position_id == active position_id.
   - EnginePanel (eval White POV + bar, best move, MultiPV lines; clicking a PV move plays the line
     via `playLine`), `engineShapes.ts` (arrows; drops = circle, best drop also a ghost piece).
+  - `src/llmRequest.ts`: tree → LLM metadata (variation_id, on_main_line, the game's move here or
+    at the branch point, PGN comments on the path, headers). `src/useConversation.ts`: turns per
+    (position_id, variation_id); answers land in the thread they were asked in (late answers never
+    show on another position); follow-ups send the last 6 Q/A turns. AnswerView + RichText
+    (safe minimal markdown). WhyPanel has an on-demand 「AI 解釋」 button.
   - `src/useInsights.ts` fetches insights once the engine result is final (keyed by
     position_id + analysis_id); `src/explain.ts` turns facts into fact-only Traditional Chinese
     sentences (direct effect, king safety, replies, PV, pocket, candidate comparison in mover POV,
@@ -95,15 +114,23 @@ Milestone 3 in progress: Position Analyzer + deterministic "Why this move?" DONE
   No streaming (two fixed-length phases). Classical eval only (NNUE net not installed).
 - Analyzer does not yet detect: opened files/diagonals, line blocks, multi-move mate threats,
   king-zone pressure scores. "Why" panel is fact-only (no strategic interpretation) until the LLM.
-- No LLM yet (needs an API key in `.env`).
+- LLM: real Claude output never exercised here (no key). E2E uses LLM_PROVIDER=fake.
+- If the user asks AI about position A and navigates to B before A's engine search finishes,
+  A's search can be superseded → that turn shows "請再問一次".
+- One E2E failure seen once (engine.spec drop-mate test, a toContainText) right after a backend
+  change; not reproduced in 8 later runs incl. --repeat-each stress. Watch for recurrence.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 86 passed (incl. analyzer facts consistent with canonical state
+- `cd backend && uv run pytest -q` → 97 passed (LLM: context == board/engine/analyzer, variation
+  context, prompt-injection boundary, cache key separation, missing key 503, key never in errors,
+  refusal handling via stubbed SDK client — no real API call) (incl. analyzer facts consistent with canonical state
   on every ply of the real games; insights analysis_id == analyze analysis_id) (incl. real Fairy-Stockfish: drop mates both colors,
   supersede race (deterministic; proven to fail without the fix), crash restart, and FSF `d`/`perft 1`
   vs python-chess FEN + legal-move set for all 174 plies of the 3 real games — identical).
-- `cd frontend && npx vitest run` → 21 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 11 passed (why panel uses the displayed engine result's
+- `cd frontend && npx vitest run` → 24 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
+- `cd frontend && npx playwright test` → 14 passed (fake LLM: answer echoes exactly the board's
+  position_id/FEN and the displayed analysis_id; late answer never shown on another position;
+  variation context; why panel uses the displayed engine result's
   analysis_id; drop mate explanation; mate-threat alert; engine: drop mate #1/#-1, drop marker, PV click,
   engine panel position_id always == board position_id during fast navigation) (real backend :8821 + vite :5181, fresh servers;
   DOM board/pockets compared square-by-square to backend FEN; real mouse drags incl. pocket
@@ -119,9 +146,8 @@ Milestone 3 in progress: Position Analyzer + deterministic "Why this move?" DONE
 - `cd frontend && npx playwright test` (starts its own servers on 8821/5181)
 
 ## Next recommended task
-Milestone 3b: LLM layer. `app/llm/` thin `LLMProvider` (Anthropic SDK; key from `.env`, never
-logged/sent to frontend) + `FakeProvider` for tests; system prompt (task.md §20) as a file;
-context builder (task.md §18: position, pockets, game/variation, engine with POV, analyzer facts,
-PGN comments as quoted untrusted data); `POST /api/explain` (best-move explanation) with cache key
-(position_id, variation_id, analysis_id, context version, question). UI: Explain button.
-Real API verification needs ANTHROPIC_API_KEY from the user (ask; do not block other work).
+Milestone 4: Chat panel ("Ask about this position") with quick questions (task.md §23) on the same
+pipeline, and the candidate-move hard flow (task.md §22): parse moves mentioned in the question
+(SAN/UCI) → legality check (illegal → reason, no engine) → temporary line → engine analysis →
+analyzer → comparison context for the LLM. Pending: user-provided ANTHROPIC_API_KEY to verify real
+Claude answers.

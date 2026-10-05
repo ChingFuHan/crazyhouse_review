@@ -10,11 +10,12 @@ from __future__ import annotations
 import chess
 from chess.variant import CrazyhouseBoard
 
-from .chess_core import color_name, move_model, pocket_list
+from .chess_core import build_board, color_name, move_model, pocket_list
 from .models import (
     CandidateFacts,
     EngineAnalysis,
     EngineLine,
+    Insights,
     MoveFacts,
     PieceOnSquare,
     PositionFacts,
@@ -250,3 +251,18 @@ def candidate_facts(board: CrazyhouseBoard, analysis: EngineAnalysis) -> list[Ca
             )
         )
     return out
+
+
+def insights(root_fen: str, moves: list[str], board: CrazyhouseBoard, analysis: EngineAnalysis) -> Insights:
+    """Engine result + facts for the position at the end of the line, its last move and each candidate."""
+    last_move = None
+    if moves:
+        last_move = move_facts(build_board(root_fen, moves[:-1]), chess.Move.from_uci(moves[-1]))
+    return Insights(
+        position_id=analysis.position_id,
+        analysis_id=analysis.analysis_id,
+        engine_status=analysis.status,
+        position=position_facts(board),
+        last_move=last_move,
+        candidates=candidate_facts(board, analysis) if analysis.status == "ok" else [],
+    )

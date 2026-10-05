@@ -1,8 +1,18 @@
 import { TAG_LABELS, directEffects, explain } from '../explain'
 import type { PositionState } from '../types'
+import type { Turn } from '../useConversation'
 import type { InsightsView } from '../useInsights'
+import { AnswerView } from './AnswerView'
 
-export function WhyPanel({ position, view }: { position: PositionState; view: InsightsView }) {
+export interface WhyPanelProps {
+  position: PositionState
+  view: InsightsView
+  /** Latest "explain the best move" turn for this position, if any. */
+  aiTurn: Turn | undefined
+  onExplain: () => void
+}
+
+export function WhyPanel({ position, view, aiTurn, onExplain }: WhyPanelProps) {
   const { insights, loading, error, engineMismatch } = view
   const explanation = insights ? explain(insights, position.move_number) : null
   const last = insights?.last_move
@@ -73,6 +83,13 @@ export function WhyPanel({ position, view }: { position: PositionState; view: In
         </div>
       )}
       <p className="why-source">以上皆由 Fairy-Stockfish 輸出與規則計算得出（評估為白方視角）。</p>
+
+      <div className="ai-explain" data-testid="ai-explain">
+        <button onClick={onExplain} disabled={aiTurn?.pending}>
+          {aiTurn?.answer ? '重新詢問 AI 解釋' : 'AI 解釋'}
+        </button>
+        {aiTurn && <AnswerView turn={aiTurn} />}
+      </div>
     </section>
   )
 }

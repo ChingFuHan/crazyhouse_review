@@ -305,3 +305,19 @@ def test_insights_use_the_same_engine_result_as_analyze():
         over = client.post("/api/insights", json={"root_fen": WHITE_DROP_MATE, "moves": ["R@e8"]}).json()
         assert over["engine_status"] == "game_over" and over["candidates"] == []
         assert over["last_move"]["is_mate"] and "drop_mate" in over["last_move"]["tags"]
+
+
+@needs_engine
+def test_same_position_other_settings_queue_instead_of_cancelling():
+    """A quick look must not cancel a longer search the user asked for on the same position."""
+
+    async def go(engine):
+        pid = position_id(STARTING_FEN, ["b1c3"])
+        long = asyncio.create_task(engine.analyse(STARTING_FEN, ["b1c3"], pid, 3, 800))
+        await asyncio.sleep(0.1)
+        quick = await engine.analyse(STARTING_FEN, ["b1c3"], pid, 3, 200)
+        return await long, quick
+
+    long, quick = run(with_engine(go))
+    assert long.status == "ok" and quick.status == "ok"
+    assert long.analysis_id != quick.analysis_id or long.depth >= quick.depth

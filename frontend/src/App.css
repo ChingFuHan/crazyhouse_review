@@ -537,3 +537,42 @@ cg-board square.drop-dest {
   font-size: 0.75rem;
   color: var(--muted);
 }
+
+.ai-explain {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.answer {
+  margin-top: 6px;
+}
+
+.rich-text p,
+.rich-text ul,
+.rich-text ol {
+  margin: 4px 0;
+}
+
+.rich-text ul,
+.rich-text ol {
+  padding-left: 1.3em;
+}
+
+.rich-text h4 {
+  margin: 8px 0 2px;
+  font-size: 0.9rem;
+  color: var(--text-strong);
+}
+
+.answer-meta {
+  display: flex;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.badge.fake {
+  margin-left: 0;
+  background: var(--warn);
+}
