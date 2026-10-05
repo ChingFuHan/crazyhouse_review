@@ -1,4 +1,4 @@
-import type { EngineAnalysis, GameTreeDto, PositionState } from './types'
+import type { EngineAnalysis, GameTreeDto, Insights, PositionState } from './types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -58,4 +58,7 @@ export const api = {
       { ...lineOf(position), movetime_ms: options.movetimeMs ?? null, multipv: options.multipv ?? null },
       signal,
     ),
+  /** Engine result (same cache as `analyze` with default settings) + deterministic facts. */
+  insights: (position: PositionState, signal?: AbortSignal) =>
+    post<Insights>('/api/insights', { ...lineOf(position), movetime_ms: null, multipv: null }, signal),
 }

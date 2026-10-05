@@ -19,7 +19,7 @@ test('engine finds a drop mate, shows White-POV mate score and a drop marker', a
   // Black to move with the mirrored resource: mate score is negative (White POV).
   await loadPgn(page, setup('6k1/5ppp/8/8/8/8/5PPP/6K1[r] b - - 0 1'))
   await expect(page.getByTestId('eval-score')).toHaveText('#-1')
-  await expect(page.locator('.eval-owner')).toHaveText('黑方可強制將死')
+  await expect(page.getByTestId('engine').locator('.eval-owner')).toHaveText('黑方可強制將死')
 
   // Clicking a PV move plays it as a variation; the mated position is not analysed.
   await page.locator('.engine-line[data-rank="1"] .pv-move').first().click()

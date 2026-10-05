@@ -36,7 +36,12 @@ export function EnginePanel({ position, engine, onPlayLine }: EnginePanelProps) 
   const best = analysis?.lines[0]
 
   return (
-    <section className="panel engine" data-testid="engine" data-position-id={analysis?.position_id ?? ''}>
+    <section
+      className="panel engine"
+      data-testid="engine"
+      data-position-id={analysis?.position_id ?? ''}
+      data-analysis-id={status === 'done' ? (analysis?.analysis_id ?? '') : ''}
+    >
       <header className="engine-header">
         <h2>Engine</h2>
         <span className="engine-meta">

@@ -75,3 +75,79 @@ export interface EngineAnalysis {
   analysis_id: string
   cached: boolean
 }
+
+export interface PieceOnSquare {
+  square: string
+  piece: string
+  color: Color
+}
+
+export interface SideFacts {
+  color: Color
+  king_square: string | null
+  king_escape_squares: string[]
+  king_zone_attacks: number
+  pocket: string[]
+  hanging_pieces: PieceOnSquare[]
+  attacked_queens_rooks: PieceOnSquare[]
+  drop_check_squares: Record<string, string[]>
+}
+
+export interface PositionFacts {
+  side_to_move: Color
+  in_check: boolean
+  checkers: PieceOnSquare[]
+  legal_move_count: number
+  mate_in_one: string[]
+  opponent_mate_threats: string[]
+  white: SideFacts
+  black: SideFacts
+}
+
+export interface MoveFacts {
+  move: MoveModel
+  mover: Color
+  is_check: boolean
+  is_mate: boolean
+  is_capture: boolean
+  captured: string | null
+  is_drop: boolean
+  is_promotion: boolean
+  discovered_check: boolean
+  attacks: PieceOnSquare[]
+  opponent_king_escape_before: string[]
+  opponent_king_escape_after: string[]
+  pocket_before: string[]
+  pocket_after: string[]
+  opponent_reply_count: number
+  forced_replies: string[]
+  tags: string[]
+}
+
+export interface PvPly {
+  san: string
+  uci: string
+  color: Color
+  is_check: boolean
+  is_drop: boolean
+}
+
+export interface CandidateFacts {
+  rank: number
+  evaluation: number | null
+  mate: number | null
+  evaluation_pov: 'white'
+  depth: number
+  facts: MoveFacts
+  pv: PvPly[]
+  forcing_checks: number
+}
+
+export interface Insights {
+  position_id: string
+  analysis_id: string
+  engine_status: 'ok' | 'cancelled' | 'game_over'
+  position: PositionFacts
+  last_move: MoveFacts | null
+  candidates: CandidateFacts[]
+}

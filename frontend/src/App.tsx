@@ -9,10 +9,12 @@ import { MoveList } from './components/MoveList'
 import { NavControls } from './components/NavControls'
 import { PgnLoader } from './components/PgnLoader'
 import { ReviewBoard } from './components/ReviewBoard'
+import { WhyPanel } from './components/WhyPanel'
 import { engineShapes } from './engineShapes'
 import { MAIN, mainlineAncestor } from './tree'
 import type { Color } from './types'
 import { useEngine } from './useEngine'
+import { useInsights } from './useInsights'
 import { useReview } from './useReview'
 
 export default function App() {
@@ -22,6 +24,7 @@ export default function App() {
   const { tree, active, play, playLine } = review
   const position = active?.state
   const engine = useEngine(position ?? null)
+  const insights = useInsights(position ?? null, engine)
   const shapes = useMemo(
     () => (position ? engineShapes(engine.analysis, position.side_to_move) : []),
     [engine.analysis, position],
@@ -65,6 +68,7 @@ export default function App() {
               engine={engine}
               onPlayLine={(moves) => void playLine(position, moves.map((m) => m.uci))}
             />
+            <WhyPanel position={position} view={insights} />
             <section className="panel status" data-testid="status">
               <div>
                 <strong>{position.side_to_move === 'white' ? '白方' : '黑方'}</strong> 走棋 · 第 {position.move_number} 回合 · ply {position.ply}

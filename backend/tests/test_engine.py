@@ -272,3 +272,36 @@ def test_analyze_without_engine_binary_is_503():
         response = client.post("/api/analyze", json={"moves": []})
         assert response.status_code == 503
         assert "fetch_engine.sh" in response.json()["detail"]["message"]
+
+
+@needs_engine
+def test_identical_concurrent_requests_share_one_search():
+    async def go(engine):
+        pid = position_id(STARTING_FEN, ["g1f3"])
+        return await asyncio.gather(
+            engine.analyse(STARTING_FEN, ["g1f3"], pid, 2, 300), engine.analyse(STARTING_FEN, ["g1f3"], pid, 2, 300)
+        )
+
+    a, b = run(with_engine(go))
+    assert a.status == b.status == "ok"
+    assert a.analysis_id == b.analysis_id
+
+
+@needs_engine
+def test_insights_use_the_same_engine_result_as_analyze():
+    moves = ["e2e4", "g8f6", "b1c3", "f6e4", "c3e4", "e7e6"]
+    with TestClient(create_app(SETTINGS)) as client:
+        analysis = client.post("/api/analyze", json={"moves": moves, "movetime_ms": 300}).json()
+        insights = client.post("/api/insights", json={"moves": moves, "movetime_ms": 300}).json()
+        assert insights["analysis_id"] == analysis["analysis_id"]
+        assert insights["position_id"] == analysis["position_id"] == position_id(STARTING_FEN, moves)
+        assert [c["facts"]["move"]["uci"] for c in insights["candidates"]] == [l["pv"][0]["uci"] for l in analysis["lines"]]
+        assert insights["last_move"]["move"]["san"] == "e6"
+        assert insights["position"]["white"]["drop_check_squares"] == {"N": ["d6", "f6"]}
+        for candidate in insights["candidates"]:
+            assert candidate["evaluation_pov"] == "white"
+            assert candidate["pv"][0]["uci"] == candidate["facts"]["move"]["uci"]
+
+        over = client.post("/api/insights", json={"root_fen": WHITE_DROP_MATE, "moves": ["R@e8"]}).json()
+        assert over["engine_status"] == "game_over" and over["candidates"] == []
+        assert over["last_move"]["is_mate"] and "drop_mate" in over["last_move"]["tags"]

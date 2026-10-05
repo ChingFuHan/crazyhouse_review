@@ -74,6 +74,8 @@ class EngineService:
         self._generation = 0
         self._running: chess.engine.AnalysisResult | None = None
         self._cache: OrderedDict[tuple[str, int, int], EngineAnalysis] = OrderedDict()
+        # Identical requests share one search instead of superseding each other.
+        self._inflight: dict[tuple[str, int, int], asyncio.Future[EngineAnalysis]] = {}
 
     async def _ensure_started(self) -> chess.engine.UciProtocol:
         if self._engine is not None and not self._engine.returncode.done():
@@ -110,8 +112,18 @@ class EngineService:
         if key in self._cache:
             self._cache.move_to_end(key)
             return self._cache[key].model_copy(update={"cached": True})
+        if (shared := self._inflight.get(key)) is None:
+            shared = asyncio.ensure_future(self._search(root_fen, moves, position_id, multipv, movetime_ms))
+            self._inflight[key] = shared
+            shared.add_done_callback(lambda done: self._inflight.pop(key, None) if self._inflight.get(key) is done else None)
+        # shield: a caller going away must not cancel a search others are waiting for.
+        return await asyncio.shield(shared)
 
-        # A newer request supersedes the running one: stop it so the lock frees quickly.
+    async def _search(
+        self, root_fen: str, moves: list[str], position_id: str, multipv: int, movetime_ms: int
+    ) -> EngineAnalysis:
+        key = (position_id, multipv, movetime_ms)
+        # A newer, different request supersedes the running one: stop it so the lock frees quickly.
         self._generation += 1
         generation = self._generation
         if self._running is not None:

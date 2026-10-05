@@ -53,6 +53,10 @@ cd frontend && npx vitest run && npx tsc -b && npx playwright test
 - Fairy-Stockfish analysis of the current position: White-POV eval bar, best move, top 3 lines,
   arrows (drops shown as a ghost piece on the target square); click a line move to play it
 
+- "Why this move?": a fact-only explanation of the engine's best move (drop checks, mates,
+  king escape squares before/after, forced replies, main line, pocket changes) and how the other
+  candidates differ, plus alerts for mate threats and hanging pieces
+
 ## Known limitations
 - One engine process is shared; analysing in two tabs at once cancels searches.
-- No position explanations / LLM integration yet.
+- No natural-language (LLM) explanations or Q&A yet.

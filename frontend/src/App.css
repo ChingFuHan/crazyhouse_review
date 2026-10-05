@@ -460,3 +460,80 @@ cg-board square.drop-dest {
 .engine-error {
   color: #f2c4c4;
 }
+
+.why h3 {
+  font-size: 0.85rem;
+  margin: 8px 0 4px;
+  color: var(--text-strong);
+}
+
+.why-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.why-head strong {
+  font-size: 1.1rem;
+  color: var(--text-strong);
+}
+
+.why-score {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+}
+
+.why-items {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.why-item {
+  display: grid;
+  grid-template-columns: 5.5em 1fr;
+  gap: 8px;
+}
+
+.why-item dt {
+  color: var(--muted);
+}
+
+.why-item dd {
+  margin: 0;
+}
+
+.why-compare ul,
+.alerts {
+  margin: 0;
+  padding-left: 1.1em;
+}
+
+.alerts {
+  color: #ecd9a8;
+  margin-bottom: 6px;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.tag {
+  font-size: 0.75rem;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: #3d5a2a;
+  color: #dcefc7;
+}
+
+.why-source {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
