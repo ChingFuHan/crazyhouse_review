@@ -1,0 +1,23 @@
+[
+ {
+  "id": "A7A2AyZ3",
+  "source": "https://lichess.org/A7A2AyZ3",
+  "status": "mate",
+  "pgn": "[Event \"rated variant:crazyhouse game\"]\n[Site \"https://lichess.org/A7A2AyZ3\"]\n[Date \"2026.10.05\"]\n[Round \"-\"]\n[Result \"1-0\"]\n[GameId \"A7A2AyZ3\"]\n[UTCDate \"2026.10.05\"]\n[UTCTime \"20:41:33\"]\n[Variant \"Crazyhouse\"]\n[TimeControl \"60+0\"]\n[ECO \"A46\"]\n[Opening \"Queen's Pawn Game: Veresov Attack, Classical Defense\"]\n[Termination \"Normal\"]\n\n1. d4 e6 2. Nf3 d5 3. Nc3 Nf6 4. Bg5 Bb4 5. Bxf6 gxf6 6. a3 Bxc3+ 7. bxc3 N@e4 8. N@g7+ Ke7 9. B@d2 B@b2 10. Rb1 Bxc3 11. Bxc3 Nxc3 12. Qc1 Nxb1 13. Qxb1 B@c3+ 14. B@d2 P@b2 15. Bxc3 R@c1+ 16. Qxc1 bxc1=Q+ 17. R@d1 Qxa3 18. B@b2 Qb3 19. cxb3 P@e4 20. Nh4 Rg8 21. Nh5 Nc6 22. e3 a5 23. P@c2 a4 24. bxa4 Rxa4 25. P@e5 P@g7 26. exf6+ gxf6 27. Nxf6 Kxf6 28. P@e5+ Ke7 29. P@f6+ Ke8 30. N@g7+ Rxg7 31. fxg7 N@g6 32. Nxg6 N@f8 33. gxf8=Q+ Kd7 34. Qxd8+ Nxd8 35. Q@e7+ Kc6 36. R@c5+ Kb6 37. Qxd8 P@d2+ 38. Rxd2 Q@b1+ 39. N@d1 Qxc2 40. Qxc7+ Ka7 41. P@b6+ Ka8 42. Qxc8# 1-0\n\n\n",
+  "lichess_last_fen": "k1Q5/1p3p1p/1P2p1N1/2RpP3/r2Pp3/2B1P3/1BqR1PPP/3NKB1R/PNNBpp b K - 0 1"
+ },
+ {
+  "id": "G5PteSdX",
+  "source": "https://lichess.org/G5PteSdX",
+  "status": "mate",
+  "pgn": "[Event \"casual variant:crazyhouse game\"]\n[Site \"https://lichess.org/G5PteSdX\"]\n[Date \"2026.10.05\"]\n[Round \"-\"]\n[Result \"1-0\"]\n[GameId \"G5PteSdX\"]\n[UTCDate \"2026.10.05\"]\n[UTCTime \"20:41:01\"]\n[Variant \"Crazyhouse\"]\n[TimeControl \"0+4\"]\n[ECO \"C02\"]\n[Opening \"French Defense: Advance Variation\"]\n[Termination \"Normal\"]\n\n1. e4 e6 2. d4 d5 3. e5 Nc6 4. Nf3 Nge7 5. Nc3 Nf5 6. Bb5 Bd7 7. O-O Be7 8. Bxc6 Bxc6 9. Re1 O-O 10. a3 f6 11. g4 fxe5 12. gxf5 e4 13. fxe6 exf3 14. P@f7+ Kh8 15. Qxf3 B@e4 16. Nxe4 dxe4 17. Qh5 N@f3+ 18. Kh1 P@g2+ 19. Kxg2 Nxe1+ 20. Kf1 R@h1+ 21. B@g1 N@g6 22. P@f5 Nh4 23. P@h6 gxh6 24. Bxh6 P@g7 25. Bxg7+ Kxg7 26. P@h6+ Kf6 27. P@e5# 1-0\n\n\n",
+  "lichess_last_fen": "r2q1r2/ppp1bP1p/2b1Pk1P/4PP1Q/3Pp2n/P7/1PP2P1P/R3nKBr/NNb b - - 3 1"
+ },
+ {
+  "id": "P7MQhV5O",
+  "source": "https://lichess.org/P7MQhV5O",
+  "status": "mate",
+  "pgn": "[Event \"M5 Arena\"]\n[Site \"https://lichess.org/P7MQhV5O\"]\n[Date \"2026.10.05\"]\n[Round \"-\"]\n[Result \"1-0\"]\n[GameId \"P7MQhV5O\"]\n[UTCDate \"2026.10.05\"]\n[UTCTime \"20:40:45\"]\n[WhiteBerserk \"true\"]\n[BlackBerserk \"true\"]\n[Variant \"Crazyhouse\"]\n[TimeControl \"300+1\"]\n[ECO \"C25\"]\n[Opening \"Vienna Game: Anderssen Defense\"]\n[Termination \"Normal\"]\n\n1. e4 e5 2. Nc3 Bc5 3. Nf3 Nc6 4. Bc4 Qf6 5. O-O Nh6 6. h3 g5 7. d3 Rg8 8. Nd5 Qg6 9. Nxc7+ Kd8 10. Nxa8 g4 11. P@c7+ Ke8 12. Bxh6 gxf3 13. Qxf3 Qxg2+ 14. Qxg2 Rxg2+ 15. Kxg2 Q@g6+ 16. P@g5 Qh5 17. R@g8+ Ke7 18. Q@f6# 1-0\n\n\n",
+  "lichess_last_fen": "N1b3R1/ppPpkp1p/2n2Q1B/2b1p1Pq/2B1P3/3P3P/PPP2PK1/R4R2/NRpn b - - 6 1"
+ }
+]
