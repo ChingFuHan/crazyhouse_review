@@ -1,4 +1,4 @@
-import type { GameTreeDto, PositionState } from './types'
+import type { EngineAnalysis, GameTreeDto, PositionState } from './types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -52,4 +52,10 @@ export const api = {
   startPosition: (rootFen?: string) => post<PositionState>('/api/position', { root_fen: rootFen ?? null, moves: [] }),
   move: (from: PositionState, move: string) => post<PositionState>('/api/move', { ...lineOf(from), move }),
   loadPgn: (pgn: string) => post<GameTreeDto>('/api/pgn', { pgn }),
+  analyze: (position: PositionState, options: { movetimeMs?: number; multipv?: number }, signal?: AbortSignal) =>
+    post<EngineAnalysis>(
+      '/api/analyze',
+      { ...lineOf(position), movetime_ms: options.movetimeMs ?? null, multipv: options.multipv ?? null },
+      signal,
+    ),
 }

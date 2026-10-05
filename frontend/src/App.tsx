@@ -2,22 +2,30 @@ import 'chessground/assets/chessground.base.css'
 import 'chessground/assets/chessground.brown.css'
 import 'chessground/assets/chessground.cburnett.css'
 import './App.css'
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { EnginePanel } from './components/EnginePanel'
 import { MoveInput } from './components/MoveInput'
 import { MoveList } from './components/MoveList'
 import { NavControls } from './components/NavControls'
 import { PgnLoader } from './components/PgnLoader'
 import { ReviewBoard } from './components/ReviewBoard'
+import { engineShapes } from './engineShapes'
 import { MAIN, mainlineAncestor } from './tree'
 import type { Color } from './types'
+import { useEngine } from './useEngine'
 import { useReview } from './useReview'
 
 export default function App() {
   const review = useReview()
   const [orientation, setOrientation] = useState<Color>('white')
   const flip = useCallback(() => setOrientation((o) => (o === 'white' ? 'black' : 'white')), [])
-  const { tree, active, play } = review
+  const { tree, active, play, playLine } = review
   const position = active?.state
+  const engine = useEngine(position ?? null)
+  const shapes = useMemo(
+    () => (position ? engineShapes(engine.analysis, position.side_to_move) : []),
+    [engine.analysis, position],
+  )
 
   const playHere = useCallback(
     async (move: string) => (position ? (await play(position, move)) !== null : false),
@@ -47,11 +55,16 @@ export default function App() {
       {tree && active && position && (
         <main className="layout">
           <section className="board-column">
-            <ReviewBoard position={position} orientation={orientation} onPlay={playHere} />
+            <ReviewBoard position={position} orientation={orientation} onPlay={playHere} shapes={shapes} />
             <NavControls onNavigate={review.navigate} onFlip={flip} />
           </section>
 
           <aside className="side-column">
+            <EnginePanel
+              position={position}
+              engine={engine}
+              onPlayLine={(moves) => void playLine(position, moves.map((m) => m.uci))}
+            />
             <section className="panel status" data-testid="status">
               <div>
                 <strong>{position.side_to_move === 'white' ? '白方' : '黑方'}</strong> 走棋 · 第 {position.move_number} 回合 · ply {position.ply}

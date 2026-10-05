@@ -89,6 +89,22 @@ export function useReview() {
     }
   }, [])
 
+  /** Play several moves in a row (e.g. an engine line); stops at the first rejected move. */
+  const playLine = useCallback(async (from: PositionState, moves: string[]): Promise<PositionState | null> => {
+    let current = from
+    try {
+      for (const move of moves) {
+        const child = await api.move(current, move)
+        dispatch({ type: 'added', parentId: current.position_id, state: child })
+        current = child
+      }
+      return current
+    } catch (error) {
+      fail(error)
+      return null
+    }
+  }, [])
+
   const deleteVariation = useCallback((id: string) => dispatch({ type: 'deleted', id }), [])
   const clearError = useCallback(() => dispatch({ type: 'error', message: null }), [])
 
@@ -106,5 +122,5 @@ export function useReview() {
   }, [newGame])
 
   const active = tree && activeId ? tree.nodes[activeId] : null
-  return { ...state, active, newGame, loadPgn, select, play, navigate, deleteVariation, clearError }
+  return { ...state, active, newGame, loadPgn, select, play, playLine, navigate, deleteVariation, clearError }
 }

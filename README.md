@@ -11,12 +11,20 @@ engine output and deterministic position facts.
   no chess rules of its own.
 
 ## Setup
-Requirements: Python ≥ 3.13 with [uv](https://docs.astral.sh/uv/), Node ≥ 22.
+Requirements: Python ≥ 3.13 with [uv](https://docs.astral.sh/uv/), Node ≥ 22, Linux x86-64.
 
 ```bash
 cd backend && uv sync
 cd ../frontend && npm install
+cd .. && ./scripts/fetch_engine.sh   # downloads Fairy-Stockfish 14 into engines/
 ```
+
+## Engine setup
+Crazyhouse analysis uses [Fairy-Stockfish](https://github.com/fairy-stockfish/Fairy-Stockfish)
+(regular Stockfish cannot play crazyhouse). Settings via environment variables:
+`ENGINE_PATH` (default `engines/fairy-stockfish`), `ENGINE_THREADS` (4), `ENGINE_HASH_MB` (256),
+`ENGINE_MOVETIME_MS` (1500), `ENGINE_MULTIPV` (3). All evaluations are reported from White's
+point of view (`evaluation` in pawns, `mate` positive when White mates).
 
 ## Run
 ```bash
@@ -42,5 +50,9 @@ cd frontend && npx vitest run && npx tsc -b && npx playwright test
   promotion chooser, typed moves (SAN/UCI); your moves form variations, the PGN main line
   is never changed; 「回到主線」 returns to where you branched off
 
+- Fairy-Stockfish analysis of the current position: White-POV eval bar, best move, top 3 lines,
+  arrows (drops shown as a ghost piece on the target square); click a line move to play it
+
 ## Known limitations
-- No engine or LLM integration yet.
+- One engine process is shared; analysing in two tabs at once cancels searches.
+- No position explanations / LLM integration yet.

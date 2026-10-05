@@ -85,3 +85,32 @@ class GameTree(BaseModel):
     headers: dict[str, str]
     variant_assumed: bool = Field(description="True when the PGN had no Variant tag and crazyhouse was assumed.")
     root: GameNode
+
+
+class AnalyzeRequest(LineRequest):
+    multipv: int | None = Field(default=None, ge=1, le=5)
+    movetime_ms: int | None = Field(default=None, ge=50)
+
+
+class EngineLine(BaseModel):
+    """One MultiPV line. Scores are always from White's point of view."""
+
+    rank: int
+    evaluation: float | None = Field(description="Pawns, White POV; null when the line is a forced mate.")
+    mate: int | None = Field(description="Moves to mate, White POV: positive = White mates, negative = Black mates.")
+    evaluation_pov: Literal["white"] = "white"
+    depth: int
+    pv: list[MoveModel]
+
+
+class EngineAnalysis(BaseModel):
+    position_id: str
+    status: Literal["ok", "cancelled", "game_over"]
+    engine: str
+    multipv: int
+    movetime_ms: int
+    depth: int
+    lines: list[EngineLine]
+    best_move: MoveModel | None
+    analysis_id: str
+    cached: bool = False

@@ -51,3 +51,27 @@ export interface GameTreeDto {
   variant_assumed: boolean
   root: GameNodeDto
 }
+
+export interface EngineLine {
+  rank: number
+  /** Pawns from White's point of view; null when the line is a forced mate. */
+  evaluation: number | null
+  /** Moves to mate from White's point of view: positive = White mates. */
+  mate: number | null
+  evaluation_pov: 'white'
+  depth: number
+  pv: MoveModel[]
+}
+
+export interface EngineAnalysis {
+  position_id: string
+  status: 'ok' | 'cancelled' | 'game_over'
+  engine: string
+  multipv: number
+  movetime_ms: number
+  depth: number
+  lines: EngineLine[]
+  best_move: MoveModel | null
+  analysis_id: string
+  cached: boolean
+}
