@@ -114,6 +114,11 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   - Auto-explain (opt-in, `src/preferences.ts` localStorage booleans): asks the default question
     only after the active position's analysis is done AND the user stayed 1.5 s; one request per
     thread (answers/cache are reused). Arrow keys navigate unless a text field/select is focused.
+  - Session restore (`src/session.ts`): localStorage keeps only the source (PGN text / FEN) and the
+    UCI lines of user-created nodes + the active line; on load `restore()` re-imports the source and
+    replays user moves through `/api/move` (backend validates everything), then selects the active
+    line. Superseded vs failed restores are distinguished (StrictMode double mount); a failed or
+    corrupt session falls back to a new game and is cleared.
   - LLM requests carry `viewer_side` (board orientation); context `game.viewer_side` (ctx-v2) and the
     system prompt say "我/我的" = viewer side (else side to move), and to say so when the named
     piece does not exist instead of guessing. AnswerView + RichText
@@ -191,8 +196,9 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   on every ply of the real games; insights analysis_id == analyze analysis_id) (incl. real Fairy-Stockfish: drop mates both colors,
   supersede race (deterministic; proven to fail without the fix), crash restart, and FSF `d`/`perft 1`
   vs python-chess FEN + legal-move set for all 174 plies of the 3 real games — identical).
-- `cd frontend && npx vitest run` → 38 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 24 passed (auto-explain: 15 fast plies → zero LLM
+- `cd frontend && npx vitest run` → 40 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
+- `cd frontend && npx playwright test` → 27 passed (session restore after reload incl. user
+  variations/comments/active ply; corrupt session fallback; viewer side; (auto-explain: 15 fast plies → zero LLM
   requests, dwell → exactly one, for the shown position) (incl. click-to-drop, FEN load, engine toggle,
   touch: tap-to-drop + CDP touch drags on board and from pocket, keyboard pocket access) (review: annotations only on main line, critical
   list == flagged moves, click selects the move; eval graph dots == flagged moves, hover tooltip,

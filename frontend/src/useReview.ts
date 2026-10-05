@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { api } from './api'
+import { type Source, type StoredSession, clearSession, loadSession, saveSource, saveState, snapshot } from './session'
 import { type GameTree, addChild, deleteSubtree, fromDto, fromRoot, navigation } from './tree'
 import type { PositionState } from './types'
 
@@ -11,10 +12,11 @@ export interface ReviewState {
   activeId: string | null
   error: string | null
   variantAssumed: boolean
+  source: Source | null
 }
 
 type Action =
-  | { type: 'loaded'; tree: GameTree; variantAssumed: boolean }
+  | { type: 'loaded'; tree: GameTree; variantAssumed: boolean; source: Source; activeId?: string }
   | { type: 'select'; id: string }
   | { type: 'added'; parentId: string; state: PositionState }
   | { type: 'deleted'; id: string }
@@ -23,7 +25,13 @@ type Action =
 function reducer(s: ReviewState, action: Action): ReviewState {
   switch (action.type) {
     case 'loaded':
-      return { tree: action.tree, activeId: action.tree.rootId, error: null, variantAssumed: action.variantAssumed }
+      return {
+        tree: action.tree,
+        activeId: action.activeId ?? action.tree.rootId,
+        error: null,
+        variantAssumed: action.variantAssumed,
+        source: action.source,
+      }
     case 'select':
       return s.tree?.nodes[action.id] ? { ...s, activeId: action.id } : s
     case 'added': {
@@ -56,7 +64,13 @@ export function looksLikeFen(text: string): boolean {
 }
 
 export function useReview() {
-  const [state, dispatch] = useReducer(reducer, { tree: null, activeId: null, error: null, variantAssumed: false })
+  const [state, dispatch] = useReducer(reducer, {
+    tree: null,
+    activeId: null,
+    error: null,
+    variantAssumed: false,
+    source: null,
+  })
 
   const fail = (error: unknown) => dispatch({ type: 'error', message: error instanceof Error ? error.message : String(error) })
   // Only the most recent game load may replace the tree (an older, slower response is stale).
@@ -67,7 +81,7 @@ export function useReview() {
     try {
       const root = await api.startPosition(rootFen)
       if (generation !== loadGeneration.current) return false
-      dispatch({ type: 'loaded', tree: fromRoot(root), variantAssumed: false })
+      dispatch({ type: 'loaded', tree: fromRoot(root), variantAssumed: false, source: { kind: 'fen', fen: rootFen ?? null } })
       return true
     } catch (error) {
       if (generation === loadGeneration.current) fail(error)
@@ -80,7 +94,7 @@ export function useReview() {
     try {
       const dto = await api.loadPgn(pgn)
       if (generation !== loadGeneration.current) return false
-      dispatch({ type: 'loaded', tree: fromDto(dto), variantAssumed: dto.variant_assumed })
+      dispatch({ type: 'loaded', tree: fromDto(dto), variantAssumed: dto.variant_assumed, source: { kind: 'pgn', text: pgn } })
       return true
     } catch (error) {
       if (generation === loadGeneration.current) fail(error)
@@ -93,6 +107,36 @@ export function useReview() {
     (text: string): Promise<boolean> => (looksLikeFen(text) ? newGame(text.trim()) : loadPgn(text)),
     [newGame, loadPgn],
   )
+
+  /** Rebuild a stored session through the backend: source first, then the user's moves in order. */
+  const restore = useCallback(async (session: StoredSession): Promise<'restored' | 'superseded' | 'failed'> => {
+    const generation = ++loadGeneration.current
+    try {
+      let tree: GameTree
+      let variantAssumed = false
+      if (session.source.kind === 'pgn') {
+        const dto = await api.loadPgn(session.source.text)
+        tree = fromDto(dto)
+        variantAssumed = dto.variant_assumed
+      } else {
+        tree = fromRoot(await api.startPosition(session.source.fen ?? undefined))
+      }
+      const byLine = new Map(Object.values(tree.nodes).map((n) => [n.state.moves.join(' '), n.id]))
+      for (const line of session.userLines) {
+        const parentId = byLine.get(line.slice(0, -1).join(' '))
+        if (!parentId || byLine.has(line.join(' '))) continue
+        const child = await api.move(tree.nodes[parentId].state, line[line.length - 1])
+        ;({ tree } = addChild(tree, parentId, child))
+        byLine.set(child.moves.join(' '), child.position_id)
+      }
+      if (generation !== loadGeneration.current) return 'superseded'
+      const activeId = byLine.get(session.activeMoves.join(' ')) ?? tree.rootId
+      dispatch({ type: 'loaded', tree, variantAssumed, source: session.source, activeId })
+      return 'restored'
+    } catch {
+      return generation === loadGeneration.current ? 'failed' : 'superseded'
+    }
+  }, [])
 
   const select = useCallback((id: string) => dispatch({ type: 'select', id }), [])
 
@@ -135,9 +179,24 @@ export function useReview() {
     [tree, activeId],
   )
 
+  // Start from the stored session if there is one (a failed restore falls back to a new game).
   useEffect(() => {
-    void newGame()
-  }, [newGame])
+    const stored = loadSession()
+    void (async () => {
+      const outcome = stored ? await restore(stored) : 'failed'
+      if (outcome !== 'failed') return // restored, or a newer load (e.g. StrictMode re-mount) took over
+      clearSession()
+      await newGame()
+    })()
+  }, [newGame, restore])
+
+  const { source } = state
+  useEffect(() => {
+    if (source) saveSource(source)
+  }, [source])
+  useEffect(() => {
+    if (tree && activeId) saveState(snapshot(tree, activeId))
+  }, [tree, activeId])
 
   const active = tree && activeId ? tree.nodes[activeId] : null
   return { ...state, active, newGame, loadPgn, loadText, select, play, playLine, navigate, deleteVariation, clearError }
