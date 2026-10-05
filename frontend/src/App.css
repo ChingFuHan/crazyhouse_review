@@ -1,0 +1,286 @@
+.app {
+  /* board + two pockets (board/9 each) + header + nav must fit the viewport height */
+  --board: clamp(320px, min(calc((100vh - 150px) * 0.81), calc(100vw - 560px)), 860px);
+  padding: 8px 16px 24px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.topbar h1 {
+  font-size: 1.2rem;
+  margin: 0;
+  color: var(--text-strong);
+}
+
+.players {
+  color: var(--muted);
+}
+
+.pgn-loader {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.pgn-loader.open {
+  flex-direction: column;
+  width: min(560px, 100%);
+}
+
+.pgn-loader .row {
+  display: flex;
+  gap: 8px;
+}
+
+.error,
+.notice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  border-radius: 4px;
+}
+
+.error {
+  background: #4a1f1f;
+  color: #f2c4c4;
+  border: 1px solid var(--danger);
+}
+
+.notice {
+  background: #3d3420;
+  color: #ecd9a8;
+  border: 1px solid var(--warn);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: var(--board) minmax(320px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.board-column {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.board-wrap {
+  width: var(--board);
+  height: var(--board);
+}
+
+.board {
+  width: 100%;
+  height: 100%;
+}
+
+/* Pockets reuse chessground's <piece> sprites. */
+.pocket {
+  display: flex;
+  gap: 4px;
+  height: calc(var(--board) / 9);
+  padding: 2px 4px;
+  background: var(--panel);
+  border-radius: 4px;
+  border: 1px solid transparent;
+}
+
+.pocket.pocket-active {
+  border-color: var(--accent);
+}
+
+.pocket-slot {
+  position: relative;
+  width: calc(var(--board) / 9);
+  height: 100%;
+  touch-action: none;
+}
+
+.pocket-slot.empty {
+  opacity: 0.18;
+}
+
+.pocket-slot.usable {
+  cursor: grab;
+}
+
+.pocket-slot.usable:hover {
+  background: rgba(98, 153, 36, 0.25);
+  border-radius: 4px;
+}
+
+.piece-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.pocket.cg-wrap piece {
+  position: static;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.pocket-count {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  min-width: 1.3em;
+  padding: 0 3px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+  color: #fff;
+  background: #d64f00;
+  border-radius: 6px;
+}
+
+.nav-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.nav-controls button {
+  flex: 1;
+  font-size: 1.1rem;
+}
+
+.nav-controls button[aria-label='flip'] {
+  flex: 0 0 48px;
+}
+
+.side-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.panel {
+  background: var(--panel);
+  border-radius: 4px;
+  padding: 10px 12px;
+}
+
+.panel h2 {
+  font-size: 0.95rem;
+  margin: 0 0 6px;
+  color: var(--text-strong);
+}
+
+.status .fen {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.status .outcome {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.badge {
+  margin-left: 8px;
+  padding: 0 6px;
+  font-size: 0.75rem;
+  border-radius: 8px;
+  background: var(--accent-2);
+  color: #fff;
+}
+
+.moves {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.move-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 4px;
+}
+
+.move {
+  padding: 0 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--text-strong);
+}
+
+.move:hover {
+  background: var(--panel-2);
+}
+
+.move.active {
+  background: var(--accent-2);
+  color: #fff;
+}
+
+.move-number {
+  color: var(--muted);
+  margin-right: 2px;
+}
+
+.move.active .move-number {
+  color: #d8e8f8;
+}
+
+.variation {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 4px;
+  font-size: 0.9em;
+  color: var(--muted);
+}
+
+.variation::before {
+  content: '(';
+}
+
+.variation::after {
+  content: ')';
+}
+
+.variation .move {
+  color: var(--text);
+}
+
+.delete-variation {
+  padding: 0 4px;
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+.comment {
+  flex-basis: 100%;
+  color: #8fb3cf;
+  font-size: 0.85em;
+}
+
+.empty {
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .app {
+    --board: calc(100vw - 32px);
+  }
+
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}

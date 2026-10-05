@@ -1,0 +1,61 @@
+:root {
+  --bg: #161512;
+  --panel: #262421;
+  --panel-2: #302e2c;
+  --border: #3c3a37;
+  --text: #bababa;
+  --text-strong: #e8e6e3;
+  --muted: #8a8784;
+  --accent: #629924;
+  --accent-2: #3692e7;
+  --danger: #cc3333;
+  --warn: #c79a2b;
+  color-scheme: dark;
+  font-family: 'Noto Sans TC', 'Noto Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+}
+
+button {
+  font: inherit;
+  color: var(--text-strong);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: #3a3835;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+textarea,
+input {
+  font: inherit;
+  color: var(--text-strong);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+code {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+}
