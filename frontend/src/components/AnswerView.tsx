@@ -3,7 +3,17 @@ import { RichText } from './RichText'
 
 /** One LLM answer with its provenance (which position / engine result it was grounded on). */
 export function AnswerView({ turn }: { turn: Turn }) {
-  if (turn.pending) return <div className="engine-note">AI 思考中…</div>
+  if (turn.pending) {
+    if (!turn.partial) return <div className="engine-note">AI 思考中…</div>
+    return (
+      <div className="answer streaming" aria-busy="true">
+        <RichText text={turn.partial} />
+        <div className="answer-meta">
+          <span className="spinner" aria-label="streaming" /> 回答中…
+        </div>
+      </div>
+    )
+  }
   if (turn.error) return <div className="engine-error">{turn.error}</div>
   const answer = turn.answer!
   if (answer.refused) return <div className="engine-note">AI 拒絕回答這個問題。</div>

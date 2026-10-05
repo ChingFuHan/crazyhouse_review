@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from app.chess_core import STARTING_FEN, build_board, position_id, position_state
 from app.config import LLMSettings, engine_settings
 from app.llm.candidates import analyse_candidates, extract_candidates
-from app.llm.provider import AnthropicProvider, FakeProvider, LLMError, LLMUnavailable
+from app.llm.provider import AnthropicProvider, FakeProvider, LLMError, LLMUnavailable, complete
 from app.llm.service import SYSTEM_PROMPT, ExplainService
 from app.main import create_app, make_explain_service
 from app.models import EngineAnalysis
@@ -151,27 +151,99 @@ def test_provider_errors_never_expose_the_key():
     client = anthropic.AsyncAnthropic(api_key=secret, base_url="http://127.0.0.1:9", max_retries=0, timeout=2)
     provider = AnthropicProvider("claude-opus-5-5", "medium", 100, client=client)
     with pytest.raises(LLMError) as error:
-        asyncio.run(provider.complete("system", [{"role": "user", "content": "hi"}]))
+        asyncio.run(complete(provider, "system", [{"role": "user", "content": "hi"}]))
     assert secret not in str(error.value) and "無法連線" in str(error.value)
 
 
-def test_refusal_is_reported_not_treated_as_text():
-    class Messages:
-        async def create(self, **kwargs):
-            assert kwargs["fallbacks"] == "default" and kwargs["betas"] == ["server-side-fallback-2026-07-01"]
-            assert kwargs["model"] == "claude-opus-5-5" and kwargs["output_config"] == {"effort": "medium"}
-            return SimpleNamespace(
-                stop_reason="refusal",
-                content=[],
-                model="claude-opus-5-5",
-                usage=None,
-                _request_id="req_1",
-            )
+class StubStream:
+    """Mimics the SDK's async stream manager: text deltas, then a final message."""
 
-    stub = SimpleNamespace(beta=SimpleNamespace(messages=Messages()))
-    provider = AnthropicProvider("claude-opus-5-5", "medium", 100, client=stub)
-    result = asyncio.run(provider.complete("s", [{"role": "user", "content": "x"}]))
-    assert result.refused and result.text == ""
+    def __init__(self, deltas, message):
+        self.deltas, self.message = deltas, message
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    @property
+    async def text_stream(self):
+        for delta in self.deltas:
+            yield delta
+
+    async def get_final_message(self):
+        return self.message
+
+
+def stub_client(deltas, message, seen):
+    class Messages:
+        def stream(self, **kwargs):
+            seen.update(kwargs)
+            return StubStream(deltas, message)
+
+    return SimpleNamespace(beta=SimpleNamespace(messages=Messages()))
+
+
+def test_refusal_is_reported_not_treated_as_text():
+    seen: dict = {}
+    message = SimpleNamespace(stop_reason="refusal", content=[], model="claude-opus-5-5", usage=None, _request_id="r1")
+    provider = AnthropicProvider("claude-opus-5-5", "medium", 100, client=stub_client(["partial "], message, seen))
+    assert seen == {}
+    result = asyncio.run(complete(provider, "s", [{"role": "user", "content": "x"}]))
+    assert result.refused and result.text == "", "a refused stream's partial text is discarded"
+    assert seen["fallbacks"] == "default" and seen["betas"] == ["server-side-fallback-2026-07-01"]
+    assert seen["model"] == "claude-opus-5-5" and seen["output_config"] == {"effort": "medium"}
+
+
+def test_stream_yields_deltas_then_final_text():
+    seen: dict = {}
+    blocks = [SimpleNamespace(type="text", text="甲乙"), SimpleNamespace(type="fallback"), SimpleNamespace(type="text", text="丙")]
+    usage = SimpleNamespace(input_tokens=10, output_tokens=3)
+    message = SimpleNamespace(stop_reason="end_turn", content=blocks, model="claude-opus-5-5", usage=usage, _request_id="r2")
+    provider = AnthropicProvider("claude-opus-5-5", "medium", 100, client=stub_client(["甲", "乙", "丙"], message, seen))
+
+    async def collect():
+        return [item async for item in provider.stream("s", [{"role": "user", "content": "x"}])]
+
+    items = asyncio.run(collect())
+    assert items[:3] == ["甲", "乙", "丙"]
+    assert items[-1].text == "甲乙丙" and items[-1].output_tokens == 3
+
+
+def parse_sse(text: str) -> list[tuple[str, dict]]:
+    events = []
+    for chunk in text.strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in chunk.splitlines())
+        events.append((lines["event"], json.loads(lines["data"])))
+    return events
+
+
+@needs_engine
+def test_stream_endpoint_sends_meta_deltas_and_final(client, fake):
+    body = {"moves": KNIGHT_TRADE_E6, "question": "這裡的重點？", "variation_id": "main"}
+    with client.stream("POST", "/api/explain/stream", json=body) as response:
+        assert response.headers["content-type"].startswith("text/event-stream")
+        events = parse_sse(response.read().decode())
+    kinds = [kind for kind, _ in events]
+    assert kinds[0] == "meta" and kinds[-1] == "done" and kinds.count("delta") >= 2
+    meta, done = events[0][1], events[-1][1]
+    assert meta["position_id"] == done["position_id"] == position_id(STARTING_FEN, KNIGHT_TRADE_E6)
+    assert "".join(data["text"] for kind, data in events if kind == "delta") == done["text"]
+    assert done["text"].startswith("[FAKE LLM]") and not done["cached"]
+    # Same question again: served from cache, no deltas.
+    with client.stream("POST", "/api/explain/stream", json=body) as response:
+        again = parse_sse(response.read().decode())
+    assert [k for k, _ in again] == ["meta", "done"] and again[-1][1]["cached"]
+
+
+def test_stream_endpoint_rules_answer_and_http_errors(client, fake):
+    with client.stream("POST", "/api/explain/stream", json={"moves": KNIGHT_TRADE_E6, "question": "Qxf7 呢？"}) as response:
+        events = parse_sse(response.read().decode())
+    assert [k for k, _ in events] == ["meta", "done"] and events[-1][1]["model"] == "rules"
+    assert fake.calls == []
+    bad = client.post("/api/explain/stream", json={"moves": ["e2e4"], "position_id": "0000000000000000"})
+    assert bad.status_code == 409
 
 
 def test_unavailable_service_raises():

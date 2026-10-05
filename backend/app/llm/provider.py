@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import re
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -38,7 +40,19 @@ class LLMResult:
 class LLMProvider(Protocol):
     name: str
 
-    async def complete(self, system: str, messages: list[dict]) -> LLMResult: ...
+    def stream(self, system: str, messages: list[dict]) -> AsyncIterator[str | LLMResult]:
+        """Yield text deltas, then exactly one final LLMResult."""
+        ...
+
+
+async def complete(provider: LLMProvider, system: str, messages: list[dict]) -> LLMResult:
+    """Drain a provider stream into its final result."""
+    result: LLMResult | None = None
+    async for item in provider.stream(system, messages):
+        if isinstance(item, LLMResult):
+            result = item
+    assert result is not None, "provider stream ended without a result"
+    return result
 
 
 class AnthropicProvider:
@@ -52,18 +66,22 @@ class AnthropicProvider:
         self.max_tokens = max_tokens
         self.client = client or anthropic.AsyncAnthropic()
 
-    async def complete(self, system: str, messages: list[dict]) -> LLMResult:
+    async def stream(self, system: str, messages: list[dict]) -> AsyncIterator[str | LLMResult]:
         try:
-            response = await self.client.beta.messages.create(
+            async with self.client.beta.messages.stream(
                 model=self.name,
                 max_tokens=self.max_tokens,
                 system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
                 messages=messages,
                 output_config={"effort": self.effort},
-                # On a safety decline, retry server-side on Anthropic's recommended model.
+                # On a safety decline, retry server-side on Anthropic's recommended model. A mid-stream
+                # fallback continues the same stream after a `fallback` block, so the text stays coherent.
                 betas=[FALLBACK_BETA],
                 fallbacks="default",
-            )
+            ) as stream:
+                async for text in stream.text_stream:
+                    yield text
+                message = await stream.get_final_message()
         except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as error:
             raise LLMUnavailable("LLM 憑證無效或沒有權限（請檢查 .env 的 ANTHROPIC_API_KEY）") from error
         except anthropic.RateLimitError as error:
@@ -74,15 +92,16 @@ class AnthropicProvider:
         except anthropic.APIConnectionError as error:
             raise LLMError("無法連線到 LLM 服務") from error
 
-        usage = response.usage
-        if response.stop_reason == "refusal":
-            return LLMResult("", response.model, "refusal", refused=True, request_id=response._request_id)
-        text = "".join(block.text for block in response.content if block.type == "text")
-        return LLMResult(
-            text=text,
-            model=response.model,
-            stop_reason=response.stop_reason,
-            request_id=response._request_id,
+        if message.stop_reason == "refusal":
+            # The whole chain declined: any streamed partial must be discarded by the caller.
+            yield LLMResult("", message.model, "refusal", refused=True, request_id=message._request_id)
+            return
+        usage = message.usage
+        yield LLMResult(
+            text="".join(block.text for block in message.content if block.type == "text"),
+            model=message.model,
+            stop_reason=message.stop_reason,
+            request_id=message._request_id,
             input_tokens=usage.input_tokens if usage else None,
             output_tokens=usage.output_tokens if usage else None,
         )
@@ -96,7 +115,7 @@ class FakeProvider:
     name: str = "fake"
     calls: list[dict] = field(default_factory=list)
 
-    async def complete(self, system: str, messages: list[dict]) -> LLMResult:
+    async def stream(self, system: str, messages: list[dict]) -> AsyncIterator[str | LLMResult]:
         self.calls.append({"system": system, "messages": messages})
         last = messages[-1]["content"]
         match = re.search(r"<position_context>\n(.*?)\n</position_context>", last, re.S)
@@ -109,4 +128,7 @@ class FakeProvider:
             f"fen={position.get('fen')} side_to_move={position.get('side_to_move')} best={best.get('san')} "
             f"turns={len(messages)} question={question}"
         )
-        return LLMResult(text=text, model=self.name, stop_reason="end_turn")
+        for start in range(0, len(text), 40):  # stream in small chunks like a real model
+            yield text[start : start + 40]
+            await asyncio.sleep(0.02)
+        yield LLMResult(text=text, model=self.name, stop_reason="end_turn")

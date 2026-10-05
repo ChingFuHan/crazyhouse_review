@@ -71,7 +71,7 @@ key everything else works and the AI button reports that the LLM is not configur
   king escape squares before/after, forced replies, main line, pocket changes) and how the other
   candidates differ, plus alerts for mate threats and hanging pieces
 
-- 「AI 解釋」: on-demand Claude explanation grounded on the same engine result and facts shown on
+- 「AI 解釋」: on-demand, streamed Claude explanation grounded on the same engine result and facts shown on
   screen, aware of the current variation and the game move (requires `ANTHROPIC_API_KEY`)
 
 - "Ask about this position": quick questions and free questions about the current position or

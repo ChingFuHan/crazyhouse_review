@@ -18,6 +18,11 @@ async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promi
 
 async function request<T>(path: string, init: RequestInit): Promise<T> {
   const response = await fetch(path, init)
+  await throwIfFailed(response)
+  return (await response.json()) as T
+}
+
+async function throwIfFailed(response: Response): Promise<void> {
   if (!response.ok) {
     let code = 'http_error'
     let message = `${response.status} ${response.statusText}`
@@ -34,7 +39,30 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
     }
     throw new ApiError(response.status, code, message)
   }
-  return (await response.json()) as T
+}
+
+/** Parse a text/event-stream body: calls `onEvent(name, data)` for each complete event. */
+export async function readSse(body: ReadableStream<Uint8Array>, onEvent: (event: string, data: unknown) => void) {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true }) // multi-byte characters may span chunks
+    let end: number
+    while ((end = buffer.indexOf('\n\n')) >= 0) {
+      const chunk = buffer.slice(0, end)
+      buffer = buffer.slice(end + 2)
+      let event = 'message'
+      const data: string[] = []
+      for (const line of chunk.split('\n')) {
+        if (line.startsWith('event: ')) event = line.slice(7)
+        else if (line.startsWith('data: ')) data.push(line.slice(6))
+      }
+      if (data.length) onEvent(event, JSON.parse(data.join('\n')))
+    }
+  }
 }
 
 /** A line identifies a position: root FEN + UCI moves (+ the id the client believes it has). */
@@ -64,6 +92,40 @@ export const api = {
   /** Ask the LLM about this position; null question = explain the best move. */
   explain: (position: PositionState, meta: LlmMeta, question: string | null, history: ChatTurn[], signal?: AbortSignal) =>
     post<ExplainResponse>('/api/explain', { ...lineOf(position), ...meta, question, history }, signal),
+  /** Same as `explain`, streamed: `onDelta` receives the answer text so far. */
+  explainStream: async (
+    position: PositionState,
+    meta: LlmMeta,
+    question: string | null,
+    history: ChatTurn[],
+    onDelta: (textSoFar: string) => void,
+    signal?: AbortSignal,
+  ): Promise<ExplainResponse> => {
+    const response = await fetch('/api/explain/stream', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...lineOf(position), ...meta, question, history }),
+      signal,
+    })
+    await throwIfFailed(response)
+    let text = ''
+    let final: ExplainResponse | null = null
+    let failure: ApiError | null = null
+    await readSse(response.body!, (event, data) => {
+      if (event === 'delta') {
+        text += (data as { text: string }).text
+        onDelta(text)
+      } else if (event === 'done') {
+        final = data as ExplainResponse
+      } else if (event === 'error') {
+        const { error, message } = data as { error: string; message: string }
+        failure = new ApiError(502, error, message)
+      }
+    })
+    if (failure) throw failure
+    if (!final) throw new ApiError(502, 'stream_incomplete', 'AI 回答串流中斷')
+    return final
+  },
   /** Whole-game review of a line (the main line), run on the backend's separate review engine. */
   startReview: (last: PositionState) => post<ReviewJob>('/api/review', { root_fen: last.root_fen, moves: last.moves }),
   getReview: (jobId: string, signal?: AbortSignal) => request<ReviewJob>(`/api/review/${jobId}`, { signal }),

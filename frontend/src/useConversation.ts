@@ -16,6 +16,8 @@ export interface Turn {
   /** null = "explain the best move" */
   question: string | null
   answer: ExplainResponse | null
+  /** Answer text received so far while streaming. */
+  partial: string
   error: string | null
   pending: boolean
 }
@@ -64,12 +66,19 @@ export function useConversation(tree: GameTree | null, activeId: string | null) 
         }))
       setThreads((all) => ({
         ...all,
-        [threadKey]: [...(all[threadKey] ?? []), { id, question, answer: null, error: null, pending: true }],
+        [threadKey]: [...(all[threadKey] ?? []), { id, question, answer: null, partial: '', error: null, pending: true }],
       }))
       const controller = new AbortController()
       controllers.current.add(controller)
       try {
-        const answer = await api.explain(position, meta, question, history, controller.signal)
+        const answer = await api.explainStream(
+          position,
+          meta,
+          question,
+          history,
+          (partial) => update({ partial }),
+          controller.signal,
+        )
         if (answer.position_id !== position.position_id || answer.variation_id !== meta.variation_id) {
           throw new Error('answer belongs to a different position')
         }

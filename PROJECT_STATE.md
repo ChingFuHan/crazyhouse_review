@@ -59,6 +59,10 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
     `service.py` (cache key = context (incl. position_id, variation_id, analysis_id) + question +
     history + model + context/prompt versions). `POST /api/explain` (503 llm_unavailable, 502
     llm_error, 409 position mismatch / engine superseded). `LLM_PROVIDER` anthropic|fake|none.
+    Providers are streaming-first (`stream()` yields text deltas then one LLMResult; Anthropic via
+    `client.beta.messages.stream` + `text_stream` + `get_final_message`; refused chain → partial
+    discarded). `POST /api/explain/stream` = SSE `meta`/`delta`/`done`/`error`; validation/engine
+    errors are plain HTTP errors before the stream opens; cache hits send meta + done only.
   - `app/llm/candidates.py` (task.md §22): moves named in a question (SAN/UCI/drop/castling, CJK
     neighbours ok; bare squares only if a legal pawn move; max 3) → legality (illegal → Chinese
     reason) → MultiPV hit, or engine analysis of the position after the move (same multipv/movetime)
@@ -99,7 +103,8 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   - `src/llmRequest.ts`: tree → LLM metadata (variation_id, on_main_line, the game's move here or
     at the branch point, PGN comments on the path, headers). `src/useConversation.ts`: turns per
     (position_id, variation_id); answers land in the thread they were asked in (late answers never
-    show on another position); follow-ups send the last 6 Q/A turns. AnswerView + RichText
+    show on another position); follow-ups send the last 6 Q/A turns. Answers stream (`readSse`
+    over fetch, TextDecoder streaming mode) and render progressively. AnswerView + RichText
     (safe minimal markdown). WhyPanel has an on-demand 「AI 解釋」 button.
   - ChatPanel ("Ask about this position"): quick questions (task.md §23, built with the actual best /
     second / game-move SAN) and free questions on the same `/api/explain` pipeline; shows
@@ -165,7 +170,8 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 138 passed (line facts, null-move engine threat) (review classification incl. mate edge cases, review
+- `cd backend && uv run pytest -q` → 141 passed (line facts, null-move engine threat, SSE stream
+  events/cache/rules path, stubbed SDK stream incl. refusal and fallback block) (review classification incl. mate edge cases, review
   job on a real game without disturbing interactive analysis, root_moves) (candidate extraction forms; MultiPV vs fresh engine
   analysis; illegal-only answered by rules without engine/LLM; mixed legal/illegal) (LLM: context == board/engine/analyzer, variation
   context, prompt-injection boundary, cache key separation, missing key 503, key never in errors,
@@ -173,7 +179,7 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   on every ply of the real games; insights analysis_id == analyze analysis_id) (incl. real Fairy-Stockfish: drop mates both colors,
   supersede race (deterministic; proven to fail without the fix), crash restart, and FSF `d`/`perft 1`
   vs python-chess FEN + legal-move set for all 174 plies of the 3 real games — identical).
-- `cd frontend && npx vitest run` → 35 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
+- `cd frontend && npx vitest run` → 37 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
 - `cd frontend && npx playwright test` → 23 passed (incl. click-to-drop, FEN load, engine toggle,
   touch: tap-to-drop + CDP touch drags on board and from pocket, keyboard pocket access) (review: annotations only on main line, critical
   list == flagged moves, click selects the move; eval graph dots == flagged moves, hover tooltip,
@@ -200,4 +206,4 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
 ## Next recommended task
 1. (Needs the user) Verify real Claude answers with an ANTHROPIC_API_KEY in `.env`: run
    `scripts/llm_smoke.py`-style check on a known position and review grounding/POV/language.
-2. Streaming LLM answers (SSE) once real Claude latency can be measured.
+2. With a key: measure real latency/cost per answer and tune effort (medium default) / caching.
