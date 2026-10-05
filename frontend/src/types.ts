@@ -104,6 +104,26 @@ export interface PositionFacts {
   black: SideFacts
 }
 
+export interface LineEffect {
+  attacker: string
+  target: string
+}
+
+export interface OpenedFile {
+  file: string
+  kind: 'open' | 'half_open'
+}
+
+export interface ThreatFacts {
+  side: Color
+  best_move: string
+  evaluation: number | null
+  mate: number | null
+  evaluation_pov: 'white'
+  depth: number
+  pv: string[]
+}
+
 export interface MoveFacts {
   move: MoveModel
   mover: Color
@@ -121,6 +141,10 @@ export interface MoveFacts {
   pocket_after: string[]
   opponent_reply_count: number
   forced_replies: string[]
+  discovered_attacks: LineEffect[]
+  blocked_lines: LineEffect[]
+  opened_file: OpenedFile | null
+  threatens_mate: string[]
   tags: string[]
 }
 
@@ -150,6 +174,7 @@ export interface Insights {
   position: PositionFacts
   last_move: MoveFacts | null
   candidates: CandidateFacts[]
+  threat: ThreatFacts | null
 }
 
 export interface ChatTurn {

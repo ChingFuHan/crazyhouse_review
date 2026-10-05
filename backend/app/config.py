@@ -17,6 +17,8 @@ class EngineSettings:
     movetime_ms: int
     max_movetime_ms: int
     multipv: int
+    # Search time for "what if the side to move passed?" threat analysis.
+    threat_movetime_ms: int = 400
 
 
 def engine_settings() -> EngineSettings:
@@ -27,6 +29,7 @@ def engine_settings() -> EngineSettings:
         movetime_ms=int(os.environ.get("ENGINE_MOVETIME_MS", "1500")),
         max_movetime_ms=int(os.environ.get("ENGINE_MAX_MOVETIME_MS", "10000")),
         multipv=int(os.environ.get("ENGINE_MULTIPV", "3")),
+        threat_movetime_ms=int(os.environ.get("THREAT_MOVETIME_MS", "400")),
     )
 
 

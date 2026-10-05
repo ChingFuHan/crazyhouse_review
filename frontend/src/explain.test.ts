@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { comparison, directEffects, explain, kingSafety, moverValue, positionAlerts, pvText, replies } from './explain'
+import {
+  comparison,
+  directEffects,
+  explain,
+  kingSafety,
+  moverValue,
+  positionAlerts,
+  pvText,
+  replies,
+  threatText,
+} from './explain'
 import type { CandidateFacts, Insights, MoveFacts, SideFacts } from './types'
 
 function move(over: Partial<MoveFacts> & { san: string; uci: string }): MoveFacts {
@@ -22,6 +32,10 @@ function move(over: Partial<MoveFacts> & { san: string; uci: string }): MoveFact
     pocket_after: [],
     opponent_reply_count: 20,
     forced_replies: [],
+    discovered_attacks: [],
+    blocked_lines: [],
+    opened_file: null,
+    threatens_mate: [],
     tags: [],
     ...rest,
   }
@@ -109,6 +123,7 @@ describe('explain', () => {
       },
       last_move: null,
       candidates: [candidate(1, dropMate, null, 1), candidate(2, move({ san: 'Qh5', uci: 'd1h5' }), 2.3, null)],
+      threat: null,
     }
     const e = explain(insights, 18)!
     expect(e.bestSan).toBe('R@e8#')
@@ -117,5 +132,38 @@ describe('explain', () => {
     expect(e.tags).toEqual(['Drop mate', '壓縮逃生格'])
     expect(e.comparisons).toHaveLength(1)
     expect(positionAlerts(insights)).toEqual(['若不處理，黑方有一步殺：R@e1#。', '白方無保護且被攻擊：馬d4。'])
+  })
+})
+
+describe('line facts and threats', () => {
+  it('describes discovered attacks, blocked lines, opened files and mate threats', () => {
+    const f = move({
+      san: 'exd5',
+      uci: 'e4d5',
+      discovered_attacks: [{ attacker: 'Rd1', target: 'Qd8' }],
+      blocked_lines: [{ attacker: 'Bb4', target: 'Qd2' }],
+      opened_file: { file: 'e', kind: 'open' },
+      threatens_mate: ['Re8#'],
+    })
+    expect(directEffects(f)).toEqual([
+      '打開線路，閃擊：車d1→后d8。',
+      '擋住對方的攻擊線：象b4→后d2。',
+      '打開 e 線（全開放）。',
+      '威脅下一步 Re8# 將死。',
+    ])
+  })
+
+  it('does not repeat the blocked check of an interposition drop', () => {
+    const f = move({ san: 'N@d2', uci: 'N@d2', tags: ['drop', 'interposition_drop'], blocked_lines: [{ attacker: 'Bb4', target: 'Ke1' }] })
+    expect(directEffects(f)).toEqual(['從 pocket 打入馬到 d2。', '這個 drop 擋住了對方的將軍。'])
+  })
+
+  it('phrases engine threats from the threatening side', () => {
+    expect(threatText({ side: 'black', best_move: 'R@e1#', evaluation: null, mate: -1, evaluation_pov: 'white', depth: 9, pv: [] })).toBe(
+      '若不處理，黑方有 R@e1#，可在 1 步內將死（#-1）。',
+    )
+    expect(threatText({ side: 'white', best_move: 'Qh5', evaluation: 1.5, mate: null, evaluation_pov: 'white', depth: 9, pv: [] })).toBe(
+      '若停一手，白方最強是 Qh5（+1.50，白方視角）。',
+    )
   })
 })

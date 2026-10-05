@@ -17,6 +17,7 @@ test('why panel explains the engine best move with facts from the same engine re
   await expect(why).toContainText('王的安全')
   await expect(why).toContainText('主要變化')
   await expect(why.locator('.why-compare li')).toHaveCount(2)
+  await expect(why).toContainText('對手威脅')
 })
 
 test('drop mate explanation and opponent mate threat alert', async ({ page }) => {
@@ -33,6 +34,8 @@ test('drop mate explanation and opponent mate threat alert', async ({ page }) =>
   // White to move but Black threatens a back-rank drop mate.
   await loadPgn(page, setup('6k1/5ppp/8/8/8/8/5PPP/6K1[r] w - - 0 1'))
   await expect(why.getByTestId('alerts')).toContainText('若不處理，黑方有一步殺')
+  // Engine threat analysis (null move) agrees: Black mates at once if White passes.
+  await expect(why).toContainText(/對手威脅若不處理，黑方有 R@[a-e]1#，可在 1 步內將死（#-1）。/)
 
   // After the mate the position is over: the panel describes the last move.
   await loadPgn(page, setup('6k1/5ppp/8/8/8/8/5PPP/6K1[R] w - - 0 1'))

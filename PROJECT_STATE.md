@@ -41,6 +41,11 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
     before→after, reply count + forced replies (≤3), tags (drop_check, drop_mate, queen_drop,
     interposition_drop, knight_fork, double_attack, escape_square_reduction, …). PV: per-ply
     check/drop + mover's consecutive checks. `POST /api/insights` → Insights.
+    Line facts per move: `discovered_attacks` (enemy pieces newly attacked by the mover's other
+    sliders), `blocked_lines` (enemy slider attacks on mover pieces cut by the moved/dropped piece),
+    `opened_file` (pawn capture leaving the file open / half-open), `threatens_mate` (mate-in-one
+    next if the opponent passed). Position `threat`: engine search of the null-move position
+    (`run_threat`, THREAT_MOVETIME_MS=400, skipped in check) — also in the LLM context.
   - Engine supersede policy: only a request for a DIFFERENT position stops the running search
     (generation bump); same-position requests with other settings queue (found by E2E: the UI's
     quick look used to cancel a user's explain request).
@@ -146,16 +151,16 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
 - No touch E2E coverage.
 - Engine: single shared process; two browser tabs analysing at once cancel each other's searches.
   No streaming (two fixed-length phases). Classical eval only (NNUE net not installed).
-- Analyzer does not yet detect: opened files/diagonals, line blocks, multi-move mate threats,
-  king-zone pressure scores. "Why" panel is fact-only (no strategic interpretation) until the LLM.
+- Analyzer does not score king-zone pressure; opened diagonals are covered only through
+  discovered attacks. "Why" panel is fact-only (no strategic interpretation) until the LLM.
 - LLM: real Claude output never exercised here (no key). E2E uses LLM_PROVIDER=fake.
 - If the user asks AI about position A and navigates to B before A's engine search finishes,
   A's search can be superseded → that turn shows "請再問一次".
-- One E2E failure seen once (engine.spec drop-mate test, a toContainText) right after a backend
-  change; not reproduced in 8 later runs incl. --repeat-each stress. Watch for recurrence.
+- (Resolved) The intermittent engine.spec failure was a wrong test expectation (ply 1 instead of 2
+  for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 130 passed (review classification incl. mate edge cases, review
+- `cd backend && uv run pytest -q` → 138 passed (line facts, null-move engine threat) (review classification incl. mate edge cases, review
   job on a real game without disturbing interactive analysis, root_moves) (candidate extraction forms; MultiPV vs fresh engine
   analysis; illegal-only answered by rules without engine/LLM; mixed legal/illegal) (LLM: context == board/engine/analyzer, variation
   context, prompt-injection boundary, cache key separation, missing key 503, key never in errors,
@@ -163,7 +168,7 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   on every ply of the real games; insights analysis_id == analyze analysis_id) (incl. real Fairy-Stockfish: drop mates both colors,
   supersede race (deterministic; proven to fail without the fix), crash restart, and FSF `d`/`perft 1`
   vs python-chess FEN + legal-move set for all 174 plies of the 3 real games — identical).
-- `cd frontend && npx vitest run` → 32 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
+- `cd frontend && npx vitest run` → 35 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
 - `cd frontend && npx playwright test` → 20 passed (incl. click-to-drop, FEN load, engine toggle) (review: annotations only on main line, critical
   list == flagged moves, click selects the move; eval graph dots == flagged moves, hover tooltip,
   click jumps to the nearest ply) (core flow §55: PGN → engine → why → AI → ask

@@ -14,7 +14,7 @@ from ..llm.context import CONTEXT_VERSION, build_context
 from ..llm.provider import LLMError, LLMUnavailable
 from ..llm.service import DEFAULT_QUESTION, ExplainService
 from ..models import ExplainRequest, ExplainResponse
-from .engine import engine_service, run_engine
+from .engine import engine_service, run_engine, run_threat
 from .game import check_line
 
 router = APIRouter(prefix="/api")
@@ -65,8 +65,9 @@ async def explain(body: ExplainRequest, request: Request) -> ExplainResponse:
             status_code=409, detail={"error": "engine_cancelled", "message": "Engine 分析被較新的局面取代，請再問一次"}
         )
     await analyse_candidates(checks, board, root_fen, body.moves, analysis, engine)
+    threat = await run_threat(board, engine) if analysis.status == "ok" else None
     state = position_state(root_fen, body.moves, board)
-    facts = compute_insights(root_fen, body.moves, board, analysis)
+    facts = compute_insights(root_fen, body.moves, board, analysis, threat)
     context = build_context(body, state, analysis, facts)
     if checks:
         context["candidate_analysis"] = [c.context() for c in checks]

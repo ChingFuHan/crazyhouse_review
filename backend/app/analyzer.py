@@ -16,11 +16,14 @@ from .models import (
     EngineAnalysis,
     EngineLine,
     Insights,
+    LineEffect,
     MoveFacts,
+    OpenedFile,
     PieceOnSquare,
     PositionFacts,
     PvPly,
     SideFacts,
+    ThreatFacts,
 )
 
 FORCED_REPLY_LIMIT = 3
@@ -111,6 +114,75 @@ def mating_moves(board: CrazyhouseBoard) -> list[str]:
     return out
 
 
+def _label(board: chess.Board, square: chess.Square) -> str:
+    piece = board.piece_at(square)
+    return f"{piece.symbol().upper() if piece else ''}{chess.square_name(square)}"
+
+
+def _sliders(board: chess.Board, color: chess.Color) -> chess.Bitboard:
+    return board.occupied_co[color] & (board.bishops | board.rooks | board.queens)
+
+
+def discovered_attacks(before: CrazyhouseBoard, after: CrazyhouseBoard, move: chess.Move) -> list[LineEffect]:
+    """Enemy pieces newly attacked by the mover's other long-range pieces: the move opened their line."""
+    mover = before.turn
+    out = []
+    for square in chess.scan_forward(_sliders(after, mover) & ~chess.BB_SQUARES[move.to_square]):
+        if before.piece_at(square) != after.piece_at(square):
+            continue  # e.g. the castling rook: it moved, it did not get a line opened
+        gained = after.attacks_mask(square) & ~before.attacks_mask(square) & after.occupied_co[not mover]
+        out += [LineEffect(attacker=_label(after, square), target=_label(after, t)) for t in chess.scan_forward(gained)]
+    return out
+
+
+def blocked_lines(before: CrazyhouseBoard, after: CrazyhouseBoard, move: chess.Move) -> list[LineEffect]:
+    """Enemy long-range attacks on the mover's pieces that the moved or dropped piece now blocks."""
+    mover = before.turn
+    to_bb = chess.BB_SQUARES[move.to_square]
+    ours = after.occupied_co[mover] & ~to_bb
+    out = []
+    for square in chess.scan_forward(_sliders(after, not mover)):
+        lost = before.attacks_mask(square) & ~after.attacks_mask(square) & ours
+        out += [
+            LineEffect(attacker=_label(after, square), target=_label(after, t))
+            for t in chess.scan_forward(lost)
+            if chess.between(square, t) & to_bb
+        ]
+    return out
+
+
+def opened_file(before: CrazyhouseBoard, after: CrazyhouseBoard, move: chess.Move) -> OpenedFile | None:
+    """A pawn capture that leaves its file without the mover's pawns."""
+    if move.drop or before.piece_type_at(move.from_square) != chess.PAWN:
+        return None
+    file = chess.square_file(move.from_square)
+    if chess.square_file(move.to_square) == file:
+        return None
+    mask = chess.BB_FILES[file]
+    if after.pawns & after.occupied_co[before.turn] & mask:
+        return None
+    return OpenedFile(file=chess.FILE_NAMES[file], kind="half_open" if after.pawns & mask else "open")
+
+
+def null_move_view(board: CrazyhouseBoard) -> CrazyhouseBoard | None:
+    """The position if the side to move passed, or None when passing is impossible (check, game over)."""
+    if board.is_check() or board.is_game_over():
+        return None
+    view = _as_turn(board, not board.turn)
+    return None if view.is_game_over() else view
+
+
+def threat_from_line(view: CrazyhouseBoard, line: EngineLine) -> ThreatFacts:
+    return ThreatFacts(
+        side=color_name(view.turn),
+        best_move=line.pv[0].san,
+        evaluation=line.evaluation,
+        mate=line.mate,
+        depth=line.depth,
+        pv=[m.san for m in line.pv[:6]],
+    )
+
+
 def side_facts(board: CrazyhouseBoard, color: chess.Color) -> SideFacts:
     king = board.king(color)
     king_zone = chess.BB_KING_ATTACKS[king] if king is not None else 0
@@ -167,6 +239,10 @@ def move_facts(board: CrazyhouseBoard, move: chess.Move) -> MoveFacts:
     replies = list(after.legal_moves)
     escape_after = king_escape_squares(after, opponent)
     is_mate = after.is_checkmate()
+    discovered_list = discovered_attacks(board, after, move)
+    blocked = blocked_lines(board, after, move)
+    file_opened = opened_file(board, after, move)
+    threatens = [] if gives_check or after.is_game_over() else mating_moves(_as_turn(after, mover))
 
     tags: list[str] = []
     if model.drop:
@@ -191,6 +267,14 @@ def move_facts(board: CrazyhouseBoard, move: chess.Move) -> MoveFacts:
         tags.append("capture")
     if move.promotion:
         tags.append("promotion")
+    if any(effect.target[0] != "K" for effect in discovered_list):
+        tags.append("discovered_attack")
+    if blocked:
+        tags.append("blocks_line")
+    if file_opened:
+        tags.append("opens_file")
+    if threatens:
+        tags.append("mate_threat")
 
     return MoveFacts(
         move=model,
@@ -209,6 +293,10 @@ def move_facts(board: CrazyhouseBoard, move: chess.Move) -> MoveFacts:
         pocket_after=pocket_list(after, mover),
         opponent_reply_count=len(replies),
         forced_replies=[move_model(after, r).san for r in replies] if len(replies) <= FORCED_REPLY_LIMIT else [],
+        discovered_attacks=discovered_list,
+        blocked_lines=blocked,
+        opened_file=file_opened,
+        threatens_mate=threatens,
         tags=tags,
     )
 
@@ -253,7 +341,13 @@ def candidate_facts(board: CrazyhouseBoard, analysis: EngineAnalysis) -> list[Ca
     return out
 
 
-def insights(root_fen: str, moves: list[str], board: CrazyhouseBoard, analysis: EngineAnalysis) -> Insights:
+def insights(
+    root_fen: str,
+    moves: list[str],
+    board: CrazyhouseBoard,
+    analysis: EngineAnalysis,
+    threat: ThreatFacts | None = None,
+) -> Insights:
     """Engine result + facts for the position at the end of the line, its last move and each candidate."""
     last_move = None
     if moves:
@@ -265,4 +359,5 @@ def insights(root_fen: str, moves: list[str], board: CrazyhouseBoard, analysis: 
         position=position_facts(board),
         last_move=last_move,
         candidates=candidate_facts(board, analysis) if analysis.status == "ok" else [],
+        threat=threat,
     )

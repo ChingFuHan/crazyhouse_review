@@ -335,3 +335,18 @@ def test_root_moves_restrict_the_search_and_are_part_of_the_cache_key():
     assert best.lines[0].mate == 1
     assert forced.lines[0].pv[0].uci == "h2h3" and forced.lines[0].mate is None
     assert not forced.cached and forced.analysis_id != best.analysis_id
+
+
+@needs_engine
+def test_insights_include_engine_threat_of_a_null_move():
+    with TestClient(create_app(SETTINGS)) as client:
+        fen = "6k1/5ppp/8/8/8/8/5PPP/6K1[r] w - - 0 1"  # White to move; Black threatens a drop mate
+        insights = client.post("/api/insights", json={"root_fen": fen, "moves": [], "movetime_ms": 200}).json()
+        threat = insights["threat"]
+        assert threat["side"] == "black" and threat["mate"] == -1 and threat["evaluation_pov"] == "white"
+        assert threat["best_move"].startswith("R@") and threat["best_move"].endswith("#")
+        # In check there is no null move, so no threat analysis.
+        checked = client.post(
+            "/api/insights", json={"moves": ["e2e4", "g8f6", "b1c3", "f6e4", "c3e4", "e7e6", "N@d6"], "movetime_ms": 200}
+        ).json()
+        assert checked["threat"] is None

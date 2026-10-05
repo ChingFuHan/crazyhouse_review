@@ -6,9 +6,10 @@ import chess.variant
 from fastapi import APIRouter, HTTPException, Request
 
 from ..analyzer import insights as compute_insights
+from ..analyzer import null_move_view, threat_from_line
 from ..chess_core import LineError, build_board, position_id
 from ..engine import EngineService, EngineUnavailable, analysis_id
-from ..models import AnalyzeRequest, EngineAnalysis, Insights
+from ..models import AnalyzeRequest, EngineAnalysis, Insights, ThreatFacts
 from .game import check_line
 
 router = APIRouter(prefix="/api")
@@ -47,6 +48,21 @@ async def run_engine(body: AnalyzeRequest, engine: EngineService) -> tuple[str, 
         raise HTTPException(status_code=503, detail={"error": "engine_unavailable", "message": str(error)}) from error
 
 
+async def run_threat(board: chess.variant.CrazyhouseBoard, engine: EngineService) -> ThreatFacts | None:
+    """Engine search of the null-move position: what the opponent would do if the side to move passed."""
+    view = null_move_view(board)
+    if view is None:
+        return None
+    fen = view.fen()
+    try:
+        analysis = await engine.analyse(fen, [], position_id(fen, []), 1, engine.settings.threat_movetime_ms)
+    except EngineUnavailable:
+        return None
+    if analysis.status != "ok" or not analysis.lines:
+        return None
+    return threat_from_line(view, analysis.lines[0])
+
+
 @router.post("/analyze", response_model=EngineAnalysis)
 async def analyze(body: AnalyzeRequest, request: Request) -> EngineAnalysis:
     _, _, analysis = await run_engine(body, engine_service(request))
@@ -56,5 +72,7 @@ async def analyze(body: AnalyzeRequest, request: Request) -> EngineAnalysis:
 @router.post("/insights", response_model=Insights)
 async def insights(body: AnalyzeRequest, request: Request) -> Insights:
     """Engine result + deterministic facts for the position, its last move and each candidate."""
-    root_fen, board, analysis = await run_engine(body, engine_service(request))
-    return compute_insights(root_fen, body.moves, board, analysis)
+    engine = engine_service(request)
+    root_fen, board, analysis = await run_engine(body, engine)
+    threat = await run_threat(board, engine) if analysis.status == "ok" else None
+    return compute_insights(root_fen, body.moves, board, analysis, threat)

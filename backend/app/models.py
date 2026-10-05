@@ -148,6 +148,18 @@ class PositionFacts(BaseModel):
     black: SideFacts
 
 
+class LineEffect(BaseModel):
+    """A long-range attack along a line, e.g. attacker "Rd1" -> target "Qd8"."""
+
+    attacker: str
+    target: str
+
+
+class OpenedFile(BaseModel):
+    file: str
+    kind: Literal["open", "half_open"] = Field(description="open: no pawns at all; half_open: no mover pawns")
+
+
 class MoveFacts(BaseModel):
     move: MoveModel
     mover: Color
@@ -165,6 +177,16 @@ class MoveFacts(BaseModel):
     pocket_after: list[str]
     opponent_reply_count: int
     forced_replies: list[str] = Field(description="All opponent replies (SAN) when there are at most 3.")
+    discovered_attacks: list[LineEffect] = Field(
+        default=[], description="Enemy pieces newly attacked by the mover's OTHER long-range pieces (line opened)."
+    )
+    blocked_lines: list[LineEffect] = Field(
+        default=[], description="Enemy long-range attacks on the mover's pieces cut by the moved/dropped piece."
+    )
+    opened_file: OpenedFile | None = None
+    threatens_mate: list[str] = Field(
+        default=[], description="Mate-in-one moves the mover would have next if the opponent did nothing."
+    )
     tags: list[str]
 
 
@@ -187,6 +209,18 @@ class CandidateFacts(BaseModel):
     forcing_checks: int = Field(description="Consecutive checks by the mover from the start of the PV.")
 
 
+class ThreatFacts(BaseModel):
+    """Engine answer to "what if the side to move passed?" (null move): the opponent's best move."""
+
+    side: Color = Field(description="The side that would move (the opponent of the side to move).")
+    best_move: str
+    evaluation: float | None
+    mate: int | None
+    evaluation_pov: Literal["white"] = "white"
+    depth: int
+    pv: list[str]
+
+
 class Insights(BaseModel):
     position_id: str
     analysis_id: str
@@ -194,6 +228,7 @@ class Insights(BaseModel):
     position: PositionFacts
     last_move: MoveFacts | None
     candidates: list[CandidateFacts]
+    threat: ThreatFacts | None = None
 
 
 class PgnComment(BaseModel):

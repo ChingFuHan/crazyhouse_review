@@ -59,6 +59,10 @@ def move_facts_dict(f: MoveFacts) -> dict:
         "pocket": {"before": f.pocket_before, "after": f.pocket_after},
         "opponent_reply_count": f.opponent_reply_count,
         "opponent_forced_replies": f.forced_replies,
+        "discovered_attacks": [f"{e.attacker}->{e.target}" for e in f.discovered_attacks],
+        "blocked_enemy_lines": [f"{e.attacker}->{e.target}" for e in f.blocked_lines],
+        "opened_file": f.opened_file.model_dump() if f.opened_file else None,
+        "threatens_mate_in_one_next": f.threatens_mate,
         "tags": f.tags,
     }
 
@@ -164,6 +168,7 @@ def build_context(
             "opponent_mate_in_one_threats_if_ignored": p.opponent_mate_threats,
             "white": _side(p.white),
             "black": _side(p.black),
+            "threat_if_side_to_move_passes": insights.threat.model_dump() if insights.threat else None,
             "last_move": move_facts_dict(insights.last_move) if insights.last_move else None,
             "candidates": [_candidate(c, state.ply) for c in insights.candidates],
         },

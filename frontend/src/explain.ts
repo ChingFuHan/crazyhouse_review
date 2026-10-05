@@ -2,7 +2,7 @@
 // Every sentence here restates an engine output or a rules fact; no interpretation.
 
 import { formatScore, scoreOwner } from './evaluation'
-import type { CandidateFacts, Color, Insights, MoveFacts, PieceOnSquare, PvPly } from './types'
+import type { CandidateFacts, Color, Insights, LineEffect, MoveFacts, PieceOnSquare, PvPly, ThreatFacts } from './types'
 
 export const PIECE_NAMES: Record<string, string> = { P: '兵', N: '馬', B: '象', R: '車', Q: '后', K: '王' }
 const SIDE: Record<Color, string> = { white: '白方', black: '黑方' }
@@ -21,10 +21,17 @@ export const TAG_LABELS: Record<string, string> = {
   escape_square_reduction: '壓縮逃生格',
   capture: '吃子',
   promotion: '升變',
+  discovered_attack: '閃擊',
+  blocks_line: '擋線',
+  opens_file: '開線',
+  mate_threat: '殺棋威脅',
 }
 
 const opposite = (color: Color): Color => (color === 'white' ? 'black' : 'white')
 const piece = (p: PieceOnSquare) => `${PIECE_NAMES[p.piece]}${p.square}`
+/** "Rd1" -> "車d1"; a bare square stays as is. */
+const named = (label: string) => (PIECE_NAMES[label[0]] ? `${PIECE_NAMES[label[0]]}${label.slice(1)}` : label)
+const lines = (effects: LineEffect[]) => effects.map((e) => `${named(e.attacker)}→${named(e.target)}`).join('、')
 const squares = (list: string[]) => (list.length ? list.join(', ') : '無')
 
 /** Score from the mover's point of view, comparable across lines (mate dominates). */
@@ -70,8 +77,28 @@ export function directEffects(facts: MoveFacts): string[] {
   const targets = facts.attacks.filter((p) => p.piece !== 'K')
   if (facts.attacks.length >= 2) out.push(`同時攻擊 ${facts.attacks.map(piece).join('、')}。`)
   else if (targets.length === 1 && !facts.is_capture) out.push(`攻擊 ${piece(targets[0])}。`)
+  const discovered = facts.discovered_attacks.filter((e) => e.target[0] !== 'K')
+  if (discovered.length > 0) out.push(`打開線路，閃擊：${lines(discovered)}。`)
+  const blocked = facts.tags.includes('interposition_drop')
+    ? facts.blocked_lines.filter((e) => e.target[0] !== 'K')
+    : facts.blocked_lines
+  if (blocked.length > 0) out.push(`擋住對方的攻擊線：${lines(blocked)}。`)
+  if (facts.opened_file) {
+    out.push(`打開 ${facts.opened_file.file} 線（${facts.opened_file.kind === 'open' ? '全開放' : '己方半開放'}）。`)
+  }
+  if (facts.threatens_mate.length > 0) out.push(`威脅下一步 ${facts.threatens_mate.slice(0, 3).join('、')} 將死。`)
   if (out.length === 0) out.push('安靜著：不將軍、不吃子、不 drop。')
   return out
+}
+
+/** The engine's answer to "what if the side to move passed?". */
+export function threatText(threat: ThreatFacts): string {
+  const sign = threat.side === 'white' ? 1 : -1
+  const mates = threat.mate !== null && threat.mate * sign > 0
+  const score = formatScore(threat)
+  return mates
+    ? `若不處理，${SIDE[threat.side]}有 ${threat.best_move}，可在 ${Math.abs(threat.mate!)} 步內將死（${score}）。`
+    : `若停一手，${SIDE[threat.side]}最強是 ${threat.best_move}（${score}，白方視角）。`
 }
 
 export function kingSafety(facts: MoveFacts): string {
@@ -133,6 +160,8 @@ export function positionAlerts(insights: Insights): string[] {
   if (p.in_check) alerts.push(`${SIDE[mover]}正被將軍（${p.checkers.map(piece).join('、')}）。`)
   if (p.opponent_mate_threats.length > 0) {
     alerts.push(`若不處理，${SIDE[opposite(mover)]}有一步殺：${p.opponent_mate_threats.slice(0, 4).join('、')}。`)
+  } else if (insights.threat && insights.threat.mate !== null && insights.threat.mate * (insights.threat.side === 'white' ? 1 : -1) > 0) {
+    alerts.push(threatText(insights.threat))
   }
   if (own.hanging_pieces.length > 0) alerts.push(`${SIDE[mover]}無保護且被攻擊：${own.hanging_pieces.map(piece).join('、')}。`)
   const valuables = own.attacked_queens_rooks.filter((v) => !own.hanging_pieces.some((h) => h.square === v.square))
@@ -156,6 +185,7 @@ export function explain(insights: Insights, moveNumber: number): Explanation | n
         (best.forcing_checks >= 2 ? `（${SIDE[mover]}開頭連續 ${best.forcing_checks} 次將軍）` : ''),
     },
   ]
+  if (insights.threat) items.push({ label: '對手威脅', text: threatText(insights.threat) })
   if (facts.is_drop || facts.is_capture) {
     items.push({ label: 'Pocket', text: `${SIDE[mover]}：[${facts.pocket_before.join('')}] → [${facts.pocket_after.join('')}]` })
   }

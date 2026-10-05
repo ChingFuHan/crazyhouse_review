@@ -23,7 +23,8 @@ test('engine finds a drop mate, shows White-POV mate score and a drop marker', a
 
   // Clicking a PV move plays it as a variation; the mated position is not analysed.
   await page.locator('.engine-line[data-rank="1"] .pv-move').first().click()
-  await activePly(page, 1)
+  // Black to move at fullmove 1 is ply 1, so the mating drop leads to ply 2.
+  await activePly(page, 2)
   await expect(page.getByTestId('status')).toContainText('checkmate')
   await expect(page.getByTestId('engine')).toContainText('對局已結束')
   await expectBoardConsistent(page)

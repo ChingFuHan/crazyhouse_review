@@ -144,3 +144,57 @@ def test_facts_on_every_ply_of_real_games_are_consistent():
             mover = "white" if b.turn else "black"
             assert mf.pocket_after == getattr(child.state.pockets, mover)
             node = child
+
+
+def test_discovered_attack_when_a_piece_leaves_the_line():
+    f = facts("3qk3/8/8/8/3N4/8/8/3RK3[] w - - 0 1", "Nf5")
+    assert [(e.attacker, e.target) for e in f.discovered_attacks] == [("Rd1", "Qd8")]
+    assert "discovered_attack" in f.tags
+
+
+def test_discovered_check_is_reported_as_attack_on_king():
+    f = facts("4k3/8/8/8/4N3/8/8/4RK2[] w - - 0 1", "Nc5")
+    assert ("Re1", "Ke8") in [(e.attacker, e.target) for e in f.discovered_attacks]
+    assert "discovered_check" in f.tags and "discovered_attack" not in f.tags
+
+
+def test_castling_rook_is_not_a_discovered_attack():
+    f = facts("3rk3/8/8/8/8/8/8/4K2R[] w K - 0 1", "O-O")
+    assert f.discovered_attacks == []
+
+
+def test_blocking_drop_cuts_the_enemy_line():
+    f = facts("4k3/8/8/8/1b6/8/8/4K3[N] w - - 0 1", "N@d2")
+    assert [(e.attacker, e.target) for e in f.blocked_lines] == [("Bb4", "Ke1")]
+    assert {"blocks_line", "interposition_drop"} <= set(f.tags)
+    # A move that stands on no enemy line blocks nothing.
+    assert facts(STARTING_FEN, "e4").blocked_lines == []
+    # Blocking an attack on the queen (not only checks).
+    q = facts("4k3/8/8/b7/8/8/3Q4/4K3[P] w - - 0 1", "P@c3")
+    assert [(e.attacker, e.target) for e in q.blocked_lines] == [("Ba5", "Qd2")]
+    assert "interposition_drop" not in q.tags
+
+
+def test_pawn_capture_opens_file():
+    f = facts("4k3/8/8/3p4/4P3/8/8/4K3[] w - - 0 1", "exd5")
+    assert f.opened_file.model_dump() == {"file": "e", "kind": "open"}
+    half = facts("4k3/4p3/8/3p4/4P3/8/8/4K3[] w - - 0 1", "exd5")
+    assert half.opened_file.model_dump() == {"file": "e", "kind": "half_open"}
+    still = facts("4k3/8/8/3p4/4P3/8/4P3/4K3[] w - - 0 1", "exd5")
+    assert still.opened_file is None and "opens_file" not in still.tags
+    assert facts("4k3/8/8/8/8/8/4P3/4K3[] w - - 0 1", "e4").opened_file is None
+
+
+def test_quiet_move_that_threatens_mate():
+    f = facts("6k1/p4ppp/8/8/8/8/R4PPP/6K1[] w - - 0 1", "Re2")
+    assert f.threatens_mate == ["Re8#"] and "mate_threat" in f.tags
+    assert facts("6k1/p4ppp/8/8/8/8/R4PPP/6K1[] w - - 0 1", "h3").threatens_mate == []
+
+
+def test_null_move_view():
+    from app.analyzer import null_move_view
+
+    view = null_move_view(board("6k1/5ppp/8/8/8/8/5PPP/6K1[r] w - - 0 1"))
+    assert view is not None and view.turn == chess.BLACK
+    in_check = build_board(STARTING_FEN, ["e2e4", "g8f6", "b1c3", "f6e4", "c3e4", "e7e6", "N@d6"])
+    assert null_move_view(in_check) is None
