@@ -16,12 +16,14 @@ Requirements: Python ≥ 3.13 with [uv](https://docs.astral.sh/uv/), Node ≥ 22
 ```bash
 cd backend && uv sync
 cd ../frontend && npm install
-cd .. && ./scripts/fetch_engine.sh   # downloads Fairy-Stockfish 14 into engines/
+cd .. && ./scripts/fetch_engine.sh   # Fairy-Stockfish 14 + crazyhouse NNUE into engines/
 ```
 
 ## Engine setup
 Crazyhouse analysis uses [Fairy-Stockfish](https://github.com/fairy-stockfish/Fairy-Stockfish)
-(regular Stockfish cannot play crazyhouse). Settings via environment variables:
+(regular Stockfish cannot play crazyhouse) with the crazyhouse NNUE network from
+https://fairy-stockfish.github.io/nnue/ (checksum-verified by the fetch script; set
+`ENGINE_EVAL_FILE=` empty to use the classical evaluation). Settings via environment variables:
 `ENGINE_PATH` (default `engines/fairy-stockfish`), `ENGINE_THREADS` (4), `ENGINE_HASH_MB` (256),
 `ENGINE_MOVETIME_MS` (1500), `ENGINE_MULTIPV` (3). All evaluations are reported from White's
 point of view (`evaluation` in pawns, `mate` positive when White mates).

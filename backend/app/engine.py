@@ -85,15 +85,21 @@ class EngineService:
             return self._engine
         if not self.settings.path.exists():
             raise EngineUnavailable(f"engine not found at {self.settings.path}; run scripts/fetch_engine.sh")
+        options: dict[str, str | int] = {"Threads": self.settings.threads, "Hash": self.settings.hash_mb}
+        if self.settings.eval_file is not None:
+            if not self.settings.eval_file.exists():
+                raise EngineUnavailable(f"NNUE file not found at {self.settings.eval_file}; run scripts/fetch_engine.sh")
+            options["EvalFile"] = str(self.settings.eval_file)
         try:
             _, engine = await chess.engine.popen_uci(str(self.settings.path))
-            await engine.configure({"Threads": self.settings.threads, "Hash": self.settings.hash_mb})
+            await engine.configure(options)
         except (OSError, chess.engine.EngineError) as error:
             raise EngineUnavailable(f"cannot start engine: {error}") from error
         if "crazyhouse" not in engine.options["UCI_Variant"].var:
             await engine.quit()
             raise EngineUnavailable("engine does not support the crazyhouse variant")
-        self.name = engine.id.get("name", self.name)
+        # The evaluation mode is part of the name, so results (and analysis_id) of the two never mix.
+        self.name = engine.id.get("name", self.name) + (" NNUE" if self.settings.eval_file else " classical")
         self._engine = engine
         return engine
 

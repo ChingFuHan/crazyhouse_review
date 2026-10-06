@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+# Crazyhouse NNUE for Fairy-Stockfish (+1136 Elo over the classical eval); fetched by
+# scripts/fetch_engine.sh. The hash in the name is the start of the file's sha256.
+DEFAULT_EVAL_FILE = REPO_ROOT / "engines" / "crazyhouse-8ebf84784ad2.nnue"
 
 
 @dataclass(frozen=True)
@@ -19,6 +22,8 @@ class EngineSettings:
     multipv: int
     # Search time for "what if the side to move passed?" threat analysis.
     threat_movetime_ms: int = 400
+    # NNUE network; None = Fairy-Stockfish's classical evaluation.
+    eval_file: Path | None = None
 
 
 def engine_settings() -> EngineSettings:
@@ -30,7 +35,16 @@ def engine_settings() -> EngineSettings:
         max_movetime_ms=int(os.environ.get("ENGINE_MAX_MOVETIME_MS", "10000")),
         multipv=int(os.environ.get("ENGINE_MULTIPV", "3")),
         threat_movetime_ms=int(os.environ.get("THREAT_MOVETIME_MS", "400")),
+        eval_file=_eval_file(),
     )
+
+
+def _eval_file() -> Path | None:
+    """ENGINE_EVAL_FILE overrides (empty = classical eval); default: the bundled net if fetched."""
+    configured = os.environ.get("ENGINE_EVAL_FILE")
+    if configured is not None:
+        return Path(configured) if configured else None
+    return DEFAULT_EVAL_FILE if DEFAULT_EVAL_FILE.exists() else None
 
 
 def review_engine_settings() -> EngineSettings:
@@ -43,6 +57,7 @@ def review_engine_settings() -> EngineSettings:
         movetime_ms=int(os.environ.get("REVIEW_MOVETIME_MS", "300")),
         max_movetime_ms=base.max_movetime_ms,
         multipv=1,
+        eval_file=base.eval_file,
     )
 
 

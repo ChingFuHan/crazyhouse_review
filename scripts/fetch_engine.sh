@@ -24,3 +24,16 @@ chmod +x "$DEST/$BUILD"
 ln -sf "$BUILD" "$DEST/fairy-stockfish"
 sha256sum "$DEST/$BUILD"
 printf 'uci\nquit\n' | "$DEST/fairy-stockfish" | grep -E '^id name'
+
+# Crazyhouse NNUE network (https://fairy-stockfish.github.io/nnue/, +1136 Elo over the classical
+# evaluation). Fairy-Stockfish names networks <variant>-<first 12 hex of sha256>.nnue: verify it.
+NET="crazyhouse-8ebf84784ad2.nnue"
+NET_URL="https://drive.google.com/u/0/uc?id=1nieguR4yCb0BlME-AUhcrFYkmyIOGvqs&export=download"
+if [ ! -f "$DEST/$NET" ]; then
+  echo "Downloading $NET"
+  curl -fL --retry 3 -o "$DEST/$NET.tmp" "$NET_URL"
+  case "$(sha256sum "$DEST/$NET.tmp" | cut -c1-12)" in
+    8ebf84784ad2) mv "$DEST/$NET.tmp" "$DEST/$NET" ;;
+    *) rm -f "$DEST/$NET.tmp"; echo "NNUE checksum mismatch; the engine will use its classical evaluation" >&2 ;;
+  esac
+fi

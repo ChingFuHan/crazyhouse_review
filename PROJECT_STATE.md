@@ -93,7 +93,11 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
     (mate_missed, mate_allowed; downgraded/ignored when the position is already decisive).
   - `EngineService.analyse(..., root_moves=())` — part of the cache key.
   - `scripts/fetch_engine.sh` → `engines/fairy-stockfish` (gitignored; fairy_sf_14 release, bmi2
-    build here, sha256 9c8ff22d…). Classical eval (no crazyhouse NNUE file installed).
+    build here, sha256 9c8ff22d…) + crazyhouse NNUE `engines/crazyhouse-8ebf84784ad2.nnue` (55.8 MB,
+    +1136 Elo vs classical per fairy-stockfish.github.io/nnue; sha256 prefix verified; license of
+    this 2022 net not stated → downloaded locally, never committed). `EngineSettings.eval_file`
+    (ENGINE_EVAL_FILE, empty = classical); engine name ends with " NNUE"/" classical" so analysis_id
+    and caches never mix the two. Verified NNUE is active through python-chess (FSF info string).
 - `frontend/` React 19 + TS + Vite 8 + Chessground 9.2. NO rules logic in the browser.
   - `src/tree.ts`: pure game tree of backend states (id = position_id). Invariant check on every
     insert (child line = parent line + 1 move). `variationId` = "main" or `v:<first node id>`;
@@ -185,7 +189,7 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
 - Board squares themselves are not keyboard-navigable (moves/drops by keyboard go through the
   move input).
 - Engine: single shared process; two browser tabs analysing at once cancel each other's searches.
-  No streaming (two fixed-length phases). Classical eval only (NNUE net not installed).
+  No streaming (two fixed-length phases).
 - Analyzer reports king-zone attackers but no weighted pressure score; opened diagonals are covered
   only through discovered attacks; "tempo" is expressed only through checks/forced replies. "Why" panel is fact-only (no strategic interpretation) until the LLM.
 - LLM: real Claude output never exercised here (no key). E2E uses LLM_PROVIDER=fake.
@@ -195,7 +199,7 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 151 passed (incl. PGN export round trip, answer grounding). Rules suite (drops, pawn ranks, drop mates, promoted
+- `cd backend && uv run pytest -q` → 154 passed (incl. PGN export round trip, answer grounding). Rules suite (drops, pawn ranks, drop mates, promoted
   capture → pawn, FEN round trip, castling rights); 3 real lichess games reach lichess's final FEN;
   real Fairy-Stockfish: drop mates both colors, White-POV signs, supersede race (deterministic, proven
   to fail without the fix), crash restart, root_moves, FSF `d`/`perft 1` == python-chess FEN and

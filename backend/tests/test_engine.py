@@ -350,3 +350,35 @@ def test_insights_include_engine_threat_of_a_null_move():
             "/api/insights", json={"moves": ["e2e4", "g8f6", "b1c3", "f6e4", "c3e4", "e7e6", "N@d6"], "movetime_ms": 200}
         ).json()
         assert checked["threat"] is None
+
+
+def test_nnue_is_loaded_when_configured():
+    """The configured network is really used for crazyhouse (raw check of FSF's own report)."""
+    if SETTINGS.eval_file is None:
+        pytest.skip("NNUE not fetched (scripts/fetch_engine.sh)")
+
+    async def go():
+        _, engine = await chess.engine.popen_uci(str(SETTINGS.path))
+        await engine.configure({"EvalFile": str(SETTINGS.eval_file)})
+        strings = []
+        with await engine.analysis(CrazyhouseBoard(), chess.engine.Limit(depth=4), info=chess.engine.INFO_ALL) as analysis:
+            async for info in analysis:
+                strings += [info["string"]] if "string" in info else []
+        await engine.quit()
+        return strings
+
+    assert any("NNUE evaluation using" in s and SETTINGS.eval_file.name in s for s in run(go()))
+
+
+@needs_engine
+def test_engine_name_records_the_evaluation_mode():
+    result = run(with_engine(lambda e: e.analyse(STARTING_FEN, [], position_id(STARTING_FEN, []), 1, 100)))
+    assert result.engine.endswith(" NNUE" if SETTINGS.eval_file else " classical")
+
+
+def test_missing_nnue_file_is_reported():
+    settings = replace(SETTINGS, eval_file=Path("/nonexistent/crazyhouse.nnue"))
+    with TestClient(create_app(settings)) as client:
+        response = client.post("/api/analyze", json={"moves": []})
+        assert response.status_code == 503
+        assert "NNUE file not found" in response.json()["detail"]["message"]
