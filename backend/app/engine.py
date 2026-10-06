@@ -6,6 +6,7 @@ All evaluations leave this module normalized to White's point of view.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging
@@ -71,6 +72,11 @@ def analysis_id(position_id: str, engine: str, lines: list[EngineLine]) -> str:
     return hashlib.sha256(content.encode()).hexdigest()[:16]
 
 
+def _stop_when_started(starting: asyncio.Future[chess.engine.AnalysisResult]) -> None:
+    if not starting.cancelled() and starting.exception() is None:
+        starting.result().stop()
+
+
 class EngineService:
     def __init__(self, settings: EngineSettings) -> None:
         self.settings = settings
@@ -88,8 +94,17 @@ class EngineService:
         self._cache: OrderedDict[tuple, EngineAnalysis] = OrderedDict()
         # Identical requests share one search instead of superseding each other.
         self._inflight: dict[tuple, asyncio.Future[EngineAnalysis]] = {}
+        # The start of a search whose stream was cancelled meanwhile (see stream()).
+        self._abandoned: asyncio.Future[chess.engine.AnalysisResult] | None = None
 
     async def _ensure_started(self) -> chess.engine.UciProtocol:
+        if self._abandoned is not None:
+            # No new command may reach python-chess while an abandoned search is still starting: it
+            # would cancel that start, and python-chess would then begin the search anyway, with
+            # nobody left to stop it. Once started, the search is stopped at once.
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(asyncio.shield(self._abandoned), timeout=TIMEOUT_MARGIN_S)
+            self._abandoned = None
         if self._engine is not None and not self._engine.returncode.done():
             return self._engine
         if not self.settings.path.exists():
@@ -270,12 +285,23 @@ class EngineService:
             try:
                 await engine.configure({"Threads": settings.threads, "Hash": settings.hash_mb})
                 started = loop.time()
-                analysis = await engine.analysis(
-                    board,
-                    chess.engine.Limit(time=seconds, depth=settings.depth),
-                    multipv=settings.multipv,
-                    info=chess.engine.INFO_SCORE | chess.engine.INFO_PV | chess.engine.INFO_BASIC,
+                starting = asyncio.ensure_future(
+                    engine.analysis(
+                        board,
+                        chess.engine.Limit(time=seconds, depth=settings.depth),
+                        multipv=settings.multipv,
+                        info=chess.engine.INFO_SCORE | chess.engine.INFO_PV | chess.engine.INFO_BASIC,
+                    )
                 )
+                try:
+                    analysis = await asyncio.shield(starting)
+                except asyncio.CancelledError:
+                    # The client left while the search was starting. Cancelling the start itself would
+                    # not help: python-chess still sends `go` once the engine is ready, leaving a
+                    # search nobody stops. Let it start, then stop it at once.
+                    starting.add_done_callback(_stop_when_started)
+                    self._abandoned = starting
+                    raise
             except (chess.engine.EngineError, chess.engine.EngineTerminatedError) as error:
                 await self._restart()
                 raise EngineUnavailable(f"engine failed: {error!r}") from error

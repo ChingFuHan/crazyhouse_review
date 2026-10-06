@@ -182,3 +182,42 @@ def test_questions_about_a_long_analysis_search_candidates_within_the_time_cap()
         assert [c["source"] for c in answer["checked_moves"]] == ["engine_after_move"]
         after = position_id(STARTING_FEN, [*LINE, candidate])
         assert (after, 2, 400, (), None) in client.app.state.review.engine._cache
+
+
+@needs_engine
+def test_a_stream_cancelled_while_the_search_starts_leaves_no_search_running():
+    """A client that leaves while the search is starting (python-chess still sends `go` after the
+    cancellation) must not leave an infinite search occupying the engine."""
+    engine = EngineService(SETTINGS)
+    infinite = SearchSettings(multipv=1, movetime_ms=None, threads=2, hash_mb=32)
+
+    async def go():
+        uci = await engine._ensure_started()
+        original, starting = uci.analysis, asyncio.Event()
+
+        async def analysis(*args, **kwargs):
+            starting.set()
+            return await original(*args, **kwargs)
+
+        uci.analysis = analysis
+
+        async def consume():
+            async for _ in engine.stream(STARTING_FEN, LINE, PID, infinite):
+                pass
+
+        task = asyncio.create_task(consume())
+        await starting.wait()  # the stream is now waiting for the engine to start searching
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        uci.analysis = original
+        start = time.monotonic()
+        other = position_id(STARTING_FEN, ["d2d4"])
+        result = await asyncio.wait_for(engine.analyse(STARTING_FEN, ["d2d4"], other, 1, 200), timeout=10)
+        elapsed = time.monotonic() - start
+        await engine.close()
+        return result, elapsed
+
+    result, elapsed = run(go())
+    assert result.status == "ok" and result.lines
+    assert elapsed < 3, "the next search waited for an orphaned one"
