@@ -44,6 +44,9 @@ scan buttons (「全局掃描：白方／黑方 miss 的錯誤」).
 Then: viewer choice of the AI CLI, model and effort, enumerated live from the CLIs (never hard-coded).
 Found on the way: on a phone the move list's scrollIntoView scrolled the whole page after every move,
 moving the board away mid-interaction (now only the move panel scrolls).
+Then (user report "AI 回答逾時"): the user's codex whole-game scans timed out (195 s limit; codex ran
+with their personal setup — xhigh default effort, caveman proxy, MCP, hooks). Codex now runs clean,
+the CLI limit is 600 s (`LLM_CLI_TIMEOUT_S`), pending answers show the AI and a cancel button.
 No task in progress.
 
 ## Current architecture
@@ -153,9 +156,12 @@ No task in progress.
     without the LLM.
   - AI choice: `app/llm/provider.py` `CliProvider` (shared runner: private empty temp dir, stdin or
     argv prompt, deadline = timeout + CLI_GRACE_S, kill on early close, stderr drained, auth errors →
-    LLMUnavailable) with `AgyProvider` (`-p`, `--model`, `--effort`, plan mode, sandbox), `CodexProvider`
-    (`exec --json --skip-git-repo-check --ephemeral -s read-only -C dir [-m] [-c
-    model_reasoning_effort="E"] -`, prompt on stdin, one complete agent_message, no partial text),
+    LLMUnavailable; timeout = `LLM_CLI_TIMEOUT_S` (600, falls back to AGY_TIMEOUT_S), message names the AI,
+    the limit and what to try) with `AgyProvider` (`-p`, `--model`, `--effort`, plan mode, sandbox), `CodexProvider`
+    (`exec --json --skip-git-repo-check --ephemeral -s read-only -C dir` + `CODEX_CLEAN`
+    (`--ignore-user-config --ignore-rules --disable hooks/plugins/apps/shell_tool/shell_snapshot/
+    multi_agent/browser_use/computer_use`) `[-m] [-c model_reasoning_effort="E"] -`, prompt on stdin, one
+    complete agent_message, no partial text; ~/.codex/AGENTS.md is still read — with no tools it is inert),
     `ClaudeCliProvider` (`-p --output-format stream-json --include-partial-messages --verbose
     --system-prompt S --tools "" --no-session-persistence --strict-mcp-config --setting-sources ""
     [--model] [--effort]`, prompt on stdin; not `--bare`, which ignores the subscription login). Provider
@@ -244,6 +250,9 @@ No task in progress.
     Fake CLIs for E2E: `frontend/e2e/fake-cli/` (symlinks agy/codex/claude → fake_cli.py; catalog
     changes through `FAKE_CLI_STATE`).
   - MoveList reveals the active move by scrolling only its own panel (`revealInPanel`), never the page.
+  - Cancel: `useConversation.cancel(id)` / `useGameScan.cancel(side)` abort the request (Turn shows
+    CANCELLED); closing the SSE stream makes the server close the provider stream, which kills the CLI.
+    Turns carry `aiLabel` (shown while waiting). E2E drag helpers scroll the board into view first.
   - `src/useGameScan.ts`: per main line (root_fen + moves) and side: pending / review progress / partial
     / answer; a changed main line aborts and hides scans; requests guarded by id. App starts the review
     panel's own review too (same backend job), ChatPanel shows the two scan buttons and results.
@@ -344,7 +353,9 @@ No task in progress.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 214 passed (incl. `tests/test_cli_providers.py` for all three CLIs
+- `cd backend && uv run pytest -q` → 215 passed (incl. a real uvicorn server + real connection: a client
+  that drops `/api/explain/stream` ends the CLI run within seconds; clean codex argv; timeout message)
+  (incl. `tests/test_cli_providers.py` for all three CLIs
   against a fake executable replaying recorded real output — argv, stdin, private dir, effort flags,
   failures, login errors, timeout and early-close kills; `tests/test_llm_catalog.py`: catalog parsers on
   real help/catalog text, live re-read when a CLI update adds/drops a model, refused choices, flag
@@ -372,7 +383,8 @@ No task in progress.
   and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
   503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
 - `cd frontend && npx vitest run` → 49 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 37 passed (incl. picking Codex CLI + model + effort from the
+- `cd frontend && npx playwright test` → 38 passed (incl. cancelling a slow codex answer and a slow scan,
+  then asking again) (incl. picking Codex CLI + model + effort from the
   live list and getting that CLI's answer about the board FEN, kept after reload; a CLI update dropping
   the chosen model → notice and fallback; on a phone, playing a move no longer scrolls the page) (incl. answer warnings for an unanalysed move and a
   +9.9 evaluation, 「AI 看到的資料」 with the board FEN, whole-game scans of both sides that survive
@@ -396,6 +408,10 @@ No task in progress.
   final FEN (board, pocket, side, castling). Ongoing TV games mismatch only because lichess
   delays published moves of games in progress (not a rules issue).
 
+- Codex timing (2026-10-07, same whole-game scan prompt, gpt-6.1-sol): personal setup (xhigh, proxy, hooks)
+  104 s / 2070 reasoning tokens; `--ignore-user-config` 32 s; final clean flags 32 s, 0 reasoning tokens;
+  answers equally grounded. Probes: the personal hooks injected no caveman instructions in exec; RTK
+  rules (AGENTS.md) load in every mode.
 - Real AI CLIs (2026-10-07): live catalogs agy 14 models / 5 efforts, codex 7 models / 6 efforts,
   claude 3 aliases / 5 efforts; one real answer each — codex gpt-6.1-sol low (14 s), claude sonnet low
   (8 s), agy gemini-3.8-flash-low low (18 s) — Chinese, engine values quoted, 0 warnings.

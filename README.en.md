@@ -115,7 +115,7 @@ above is used):
 | CLI | Models from | Effort levels from | How it runs |
 |---|---|---|---|
 | agy | `agy models` | `--effort` in `agy --help` | `agy -p`, plan mode, terminal sandbox |
-| codex | `codex debug models` (hidden models left out; levels per model) | same | `codex exec --json`, read-only sandbox, no session kept |
+| codex | `codex debug models` (hidden models left out; levels per model) | same | `codex exec --json`, run clean: only the login is shared — no personal `config.toml` (proxy, MCP, default effort), rules, hooks or plugins, all tools off; read-only sandbox, no session kept |
 | claude | aliases named for `--model` in `claude --help` | `--effort` in `claude --help` | `claude -p` with this project's system prompt instead of the default, all tools, MCP servers and setting files off, no session kept |
 
 Nothing is hard-coded: opening the settings asks the CLIs again (the server also keeps a catalog for
@@ -123,7 +123,15 @@ up to 2 minutes and re-reads it when a request names an unknown option), so a mo
 update can be chosen at once, and a stored model or effort that disappeared falls back to the default
 with a notice. Every request is checked against the current catalog before any CLI runs (422; no
 arbitrary string reaches a CLI). Executables: `AGY_PATH`, `CODEX_PATH`, `CLAUDE_PATH`; each CLI runs
-in a private empty temporary directory.
+in a private empty temporary directory. Choosing the "CLI default" effort means the model's own
+default level (e.g. low for codex's gpt-6.1-sol), not the value in a personal config file.
+
+Each answer may take up to `LLM_CLI_TIMEOUT_S` seconds (default 600; the older `AGY_TIMEOUT_S` still
+works). A pending answer shows which AI is working and for how long, and its 「取消」 (cancel) button
+aborts the request; the server then ends that CLI run, so no more quota is spent. A timeout message
+names the AI and the limit and suggests a lower effort or another model. Measured (2026-10-07, the same
+whole-game scan): codex with the personal setup (xhigh, through the proxy, hooks) 104 s; run clean
+(the model's default, low) 32 s.
 
 ### Guarding against hallucinations
 - **Rules** (`backend/app/llm/system_prompt.md`, sent every time): best moves, candidates and lines come

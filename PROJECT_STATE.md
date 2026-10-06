@@ -37,6 +37,9 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
 真實 LLM 評測（`scripts/llm_eval.py`）；以及全局掃描按鈕（「全局掃描：白方／黑方 miss 的錯誤」）。
 再之後：觀看者自選 AI CLI、model 與 effort，清單即時從 CLI 列舉（從不寫死）。過程中發現：手機上著法列表的
 scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑掉（現在只捲動著法面板）。
+再之後（使用者回報「AI 回答逾時」）：使用者用 codex 跑全局掃描時逾時（上限 195 秒；codex 沿用了個人設定——
+預設 effort xhigh、caveman proxy、MCP、hooks）。現在 codex 乾淨執行、CLI 上限改為 600 秒（`LLM_CLI_TIMEOUT_S`），
+等待中的回答顯示使用中的 AI 並有取消按鈕。
 目前沒有進行中的任務。
 
 ## 目前架構
@@ -132,10 +135,13 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
     lichess fixture 4 個 + 2 個戰術局面）×（預設解釋 + 一個快捷問題），報告與含每題 context 的 JSON 寫到
     `backend/reports/`（git-ignore）；`--recheck file.json` 不呼叫 LLM 重新套用檢查。
   - AI 選擇：`app/llm/provider.py` `CliProvider`（共用執行流程：私有空暫存目錄、stdin 或 argv 傳 prompt、
-    期限 = timeout + CLI_GRACE_S、提早關閉時結束程序、同時讀取 stderr、認證錯誤 → LLMUnavailable），子類別
+    期限 = timeout + CLI_GRACE_S、提早關閉時結束程序、同時讀取 stderr、認證錯誤 → LLMUnavailable；上限 = `LLM_CLI_TIMEOUT_S`（600，後備 AGY_TIMEOUT_S），逾時訊息寫明哪個 AI、上限與
+    可嘗試的做法），子類別
     `AgyProvider`（`-p`、`--model`、`--effort`、plan mode、sandbox）、`CodexProvider`（`exec --json
-    --skip-git-repo-check --ephemeral -s read-only -C dir [-m] [-c model_reasoning_effort="E"] -`，prompt 走
-    stdin，最後一次給出完整 agent_message，沒有逐字串流）、`ClaudeCliProvider`（`-p --output-format
+    --skip-git-repo-check --ephemeral -s read-only -C dir` + `CODEX_CLEAN`（`--ignore-user-config --ignore-rules
+    --disable hooks/plugins/apps/shell_tool/shell_snapshot/multi_agent/browser_use/computer_use`）`[-m]
+    [-c model_reasoning_effort="E"] -`，prompt 走 stdin，最後一次給出完整 agent_message，沒有逐字串流；
+    ~/.codex/AGENTS.md 仍會被讀取——沒有工具可用，因此不起作用）、`ClaudeCliProvider`（`-p --output-format
     stream-json --include-partial-messages --verbose --system-prompt S --tools "" --no-session-persistence
     --strict-mcp-config --setting-sources "" [--model] [--effort]`，prompt 走 stdin；不用 `--bare`，它不讀
     訂閱登入）。Provider 名稱 = `cli:model (effort)`（屬於 LLM 快取鍵）。`app/llm/catalog.py` `ProviderPool`：
@@ -211,6 +217,8 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
     WhyPanel 顯示目前的 AI。E2E 用的假 CLI：`frontend/e2e/fake-cli/`（agy/codex/claude 符號連結到
     fake_cli.py；透過 `FAKE_CLI_STATE` 改變清單）。
   - MoveList 只捲動自己的面板來顯示目前著法（`revealInPanel`），絕不捲動整個頁面。
+  - 取消：`useConversation.cancel(id)`／`useGameScan.cancel(side)` 中止請求（該則顯示 CANCELLED）；SSE 串流關閉後
+    伺服器會關閉 provider 串流並結束 CLI 程序。Turn 帶有 `aiLabel`（等待時顯示）。E2E 拖曳輔助函式會先把棋盤捲進畫面。
   - `src/useGameScan.ts`：依主線（root_fen + moves）與哪一方記錄 pending／整局分析進度／部分回答／回答；
     主線改變時中止並隱藏掃描；請求以 id 防止舊回答覆蓋。App 同時啟動整局分析面板（後端同一個工作），
     ChatPanel 顯示兩個掃描按鈕與結果。
@@ -298,7 +306,8 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
   於著法落地前執行時才通過。
 
 ## 驗證狀態
-- `cd backend && uv run pytest -q` → 214 passed（含 `tests/test_cli_providers.py`：三個 CLI 以重播真實輸出
+- `cd backend && uv run pytest -q` → 215 passed（含：真的 uvicorn 伺服器與連線——用戶端中途斷開
+  `/api/explain/stream` 後數秒內 CLI 程序被結束；codex 乾淨執行參數；逾時訊息）（含 `tests/test_cli_providers.py`：三個 CLI 以重播真實輸出
   的假執行檔測試——argv、stdin、私有目錄、effort 參數、失敗、未登入、逾時與提早關閉時結束程序；
   `tests/test_llm_catalog.py`：以真實 help／清單文字測試解析、CLI 更新新增／移除 model 時即時重讀、拒絕的
   選擇、拒絕夾帶參數、所選 CLI 經 /api/explain 回答）（含 `tests/test_grounding.py` 中真實評測發現的每個誤報的
@@ -321,7 +330,7 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
   候選著流程、SSE 事件、缺 key 時 503、key 永不出現在錯誤中、以模擬 SDK 串流測試拒答／fallback。
   沒有真實的 Claude 呼叫。
 - `cd frontend && npx vitest run` → 49 passed；`npx tsc -b`、`npm run lint`、`npx vite build` 無誤。
-- `cd frontend && npx playwright test` → 37 passed（含：從即時清單選 Codex CLI + model + effort，並取得該 CLI
+- `cd frontend && npx playwright test` → 38 passed（含：取消慢速的 codex 回答與全局掃描後再提問）（含：從即時清單選 Codex CLI + model + effort，並取得該 CLI
   針對棋盤 FEN 的回答，重新整理後保留；CLI 更新移除所選 model → 提示並改回預設；手機上走棋不再捲動頁面）（含：未分析著法與 +9.9 評估的回答警告、含棋盤 FEN 的
   「AI 看到的資料」、雙方全局掃描且瀏覽時保留）（含：AI 解釋被延遲 4 秒期間仍可送出自由問題與快捷
   問題、連點只送出一次、整次執行 server 沒有 traceback）（storageState 預設 1 秒搜尋；
@@ -339,6 +348,9 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
   （棋盤、pocket、走子方、易位權）。進行中的 TV 對局不一致只是因為 lichess 會延遲公開進行中對局的
   著法（不是規則問題）。
 
+- Codex 計時（2026-10-07，同一份全局掃描 prompt，gpt-6.1-sol）：個人設定（xhigh、proxy、hooks）104 秒／推理
+  2070 token；`--ignore-user-config` 32 秒；最終乾淨參數 32 秒、推理 0 token；回答同樣有依據。探測：exec 模式下
+  個人 hooks 沒有注入 caveman 指示；RTK 規則（AGENTS.md）在各模式都會載入。
 - 真實 AI CLI（2026-10-07）：即時清單 agy 14 個 model／5 種 effort、codex 7 個 model／6 種 effort、claude
   3 個別名／5 種 effort；各一題真實回答——codex gpt-6.1-sol low（14 秒）、claude sonnet low（8 秒）、agy
   gemini-3.8-flash-low low（18 秒）——皆為中文、引用 engine 數值、0 個警告。

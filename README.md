@@ -106,13 +106,19 @@ cd frontend && npx vitest run && npx tsc -b && npx playwright test
 | CLI | model 清單來源 | effort 清單來源 | 執行方式 |
 |---|---|---|---|
 | agy | `agy models` | `agy --help` 的 `--effort` | `agy -p`，plan mode、terminal sandbox |
-| codex | `codex debug models`（隱藏的 model 不列；effort 依各 model） | 同左 | `codex exec --json`，read-only sandbox、不保存 session |
+| codex | `codex debug models`（隱藏的 model 不列；effort 依各 model） | 同左 | `codex exec --json`，乾淨執行：只沿用登入帳號，不載入個人 `config.toml`（proxy、MCP、預設 effort）、rules、hooks、plugins，並關閉所有工具；read-only sandbox、不保存 session |
 | claude | `claude --help` 中 `--model` 列出的別名 | `claude --help` 的 `--effort` | `claude -p`，以本專案的 system prompt 取代預設、關閉所有工具、MCP 與設定檔、不保存 session |
 
 清單從不寫死：每次開啟設定都向 CLI 重新查詢（伺服器另有最多 2 分鐘的快取，遇到未知選項會再查一次），
 所以 CLI 更新後新的 model 立即可選；原本選的 model 或 effort 若已不提供，會自動改回預設並提示。每個請求
 在執行 CLI 前都會依最新清單驗證（422，不會把任意字串傳給 CLI）。執行檔路徑：`AGY_PATH`、`CODEX_PATH`、
-`CLAUDE_PATH`；每個 CLI 都在空的私有暫存目錄中執行。
+`CLAUDE_PATH`；每個 CLI 都在空的私有暫存目錄中執行。effort 選「CLI 預設」時用的是該 model 自己的預設等級
+（例如 codex 的 gpt-6.1-sol 是 low），不是個人設定檔裡的值。
+
+每個回答最多等 `LLM_CLI_TIMEOUT_S` 秒（預設 600 秒，舊的 `AGY_TIMEOUT_S` 仍有效）；等待中的回答會顯示正在使用的
+AI 與經過秒數，旁邊的「取消」會中止請求，伺服器隨即結束該 CLI 程序，不再消耗額度。逾時訊息會寫明是哪個 AI
+與上限，並建議降低 effort 或換 model。實測（2026-10-07，同一份全局掃描）：codex 沿用個人設定（xhigh、經
+proxy、hooks）104 秒；乾淨執行（model 預設 low）32 秒。
 
 ### 防止幻覺
 - **規則**（`backend/app/llm/system_prompt.md`，每次都送）：最佳著、候選著與變化只來自 Fairy-Stockfish，
