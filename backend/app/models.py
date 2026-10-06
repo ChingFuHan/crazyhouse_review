@@ -90,6 +90,7 @@ class GameTree(BaseModel):
 class AnalyzeRequest(LineRequest):
     multipv: int | None = Field(default=None, ge=1, le=5)
     movetime_ms: int | None = Field(default=None, ge=50)
+    depth: int | None = Field(default=None, ge=1, le=99, description="Optional depth cap (time still applies).")
 
 
 class EngineLine(BaseModel):

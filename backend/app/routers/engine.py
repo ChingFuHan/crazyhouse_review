@@ -45,7 +45,9 @@ async def run_engine(
             analysis_id=analysis_id(pid, engine.name, []),
         )
     try:
-        return root_fen, board, await engine.analyse(root_fen, body.moves, pid, multipv, movetime_ms, protected=protected)
+        return root_fen, board, await engine.analyse(
+            root_fen, body.moves, pid, multipv, movetime_ms, protected=protected, depth=body.depth
+        )
     except EngineUnavailable as error:
         raise HTTPException(status_code=503, detail={"error": "engine_unavailable", "message": str(error)}) from error
 

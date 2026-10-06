@@ -420,3 +420,21 @@ def test_protected_request_joining_a_superseded_search_reruns_it():
     background, asked = run(with_engine(go))
     assert background.status == "cancelled"
     assert asked.status == "ok" and asked.position_id == position_id(STARTING_FEN, ["g1f3"])
+
+
+@needs_engine
+def test_depth_cap_stops_the_search_early_and_is_part_of_the_cache_key():
+    async def go(engine):
+        pid = position_id(STARTING_FEN, ["e2e4", "e7e5"])
+        start = time.monotonic()
+        shallow = await engine.analyse(STARTING_FEN, ["e2e4", "e7e5"], pid, 1, 5000, depth=6)
+        elapsed = time.monotonic() - start
+        timed = await engine.analyse(STARTING_FEN, ["e2e4", "e7e5"], pid, 1, 300)
+        return shallow, elapsed, timed
+
+    shallow, elapsed, timed = run(with_engine(go))
+    assert shallow.depth <= 6 and elapsed < 4, "depth 6 ends long before the 5 s movetime"
+    assert not timed.cached and timed.depth > 6
+    with TestClient(create_app(SETTINGS)) as client:
+        body = client.post("/api/analyze", json={"moves": ["d2d4"], "depth": 5, "movetime_ms": 5000}).json()
+        assert body["status"] == "ok" and body["depth"] <= 5

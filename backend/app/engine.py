@@ -77,9 +77,9 @@ class EngineService:
         self._latest_position: str | None = None
         self._running: chess.engine.AnalysisResult | None = None
         self._running_protected = False
-        self._cache: OrderedDict[tuple[str, int, int, tuple[str, ...]], EngineAnalysis] = OrderedDict()
+        self._cache: OrderedDict[tuple, EngineAnalysis] = OrderedDict()
         # Identical requests share one search instead of superseding each other.
-        self._inflight: dict[tuple[str, int, int, tuple[str, ...]], asyncio.Future[EngineAnalysis]] = {}
+        self._inflight: dict[tuple, asyncio.Future[EngineAnalysis]] = {}
 
     async def _ensure_started(self) -> chess.engine.UciProtocol:
         if self._engine is not None and not self._engine.returncode.done():
@@ -124,17 +124,19 @@ class EngineService:
         movetime_ms: int,
         root_moves: tuple[str, ...] = (),
         protected: bool = False,
+        depth: int | None = None,
     ) -> EngineAnalysis:
-        """``root_moves`` (UCI) restricts the search to those moves (UCI ``searchmoves``).
+        """``root_moves`` (UCI) restricts the search to those moves (UCI ``searchmoves``); ``depth``
+        additionally caps the search depth (the search stops at whichever limit comes first).
 
         ``protected`` searches (asked for explicitly by the user, e.g. an explanation) take no part in
         superseding: they never stop other searches and are never stopped; they only queue.
         """
-        key = (position_id, multipv, movetime_ms, root_moves)
+        key = (position_id, multipv, movetime_ms, root_moves, depth)
         if key in self._cache:
             self._cache.move_to_end(key)
             return self._cache[key].model_copy(update={"cached": True})
-        args = (root_fen, moves, position_id, multipv, movetime_ms, root_moves)
+        args = (root_fen, moves, position_id, multipv, movetime_ms, root_moves, depth)
         shared = self._inflight.get(key) or self._start(key, args, protected)
         # shield: a caller going away must not cancel a search others are waiting for.
         result = await asyncio.shield(shared)
@@ -156,9 +158,10 @@ class EngineService:
         multipv: int,
         movetime_ms: int,
         root_moves: tuple[str, ...],
+        depth: int | None,
         protected: bool = False,
     ) -> EngineAnalysis:
-        key = (position_id, multipv, movetime_ms, root_moves)
+        key = (position_id, multipv, movetime_ms, root_moves, depth)
         # A request for another position supersedes the running search: stop it so the lock frees quickly.
         if not protected and position_id != self._latest_position:
             self._latest_position = position_id
@@ -176,7 +179,7 @@ class EngineService:
             try:
                 analysis = await engine.analysis(
                     board,
-                    chess.engine.Limit(time=movetime_ms / 1000),
+                    chess.engine.Limit(time=movetime_ms / 1000, depth=depth),
                     multipv=multipv,
                     info=chess.engine.INFO_SCORE | chess.engine.INFO_PV | chess.engine.INFO_BASIC,
                     root_moves=[chess.Move.from_uci(uci) for uci in root_moves] or None,
