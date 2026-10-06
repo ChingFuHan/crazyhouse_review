@@ -36,8 +36,11 @@ test('touch: drag a piece, tap-to-drop from the pocket, drag from the pocket', a
   await slot.tap()
   await expect(slot).toHaveAttribute('aria-pressed', 'true')
   const d6 = await squarePoint(page, 'd6')
+  const scrolled = await page.evaluate(() => window.scrollY)
   await page.touchscreen.tap(d6.x, d6.y)
   await activePly(page, 7)
+  // The move list reveals the new move inside its own panel; the page (and the board) stays put.
+  expect(await page.evaluate(() => window.scrollY)).toBe(scrolled)
   await expect(page.locator('.move.active')).toHaveText(/N@d6\+$/)
   await expectBoardConsistent(page)
 

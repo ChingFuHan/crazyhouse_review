@@ -12,12 +12,24 @@ export interface MoveListProps {
   review?: Map<string, ReviewPly>
 }
 
+/** Bring `el` into view inside its own scrolling panel only. scrollIntoView would also scroll the
+ * page, which on a phone (single column) moves the board away right after each move. */
+function revealInPanel(el: HTMLElement) {
+  let panel = el.parentElement
+  while (panel && !/(auto|scroll)/.test(getComputedStyle(panel).overflowY)) panel = panel.parentElement
+  if (!panel) return
+  const box = panel.getBoundingClientRect()
+  const item = el.getBoundingClientRect()
+  if (item.top < box.top) panel.scrollTop -= box.top - item.top
+  else if (item.bottom > box.bottom) panel.scrollTop += item.bottom - box.bottom
+}
+
 /** Lichess-style move list: main line with inline (variations). */
 export function MoveList({ tree, activeId, onSelect, onDelete, review }: MoveListProps) {
   const activeRef = useRef<HTMLSpanElement | null>(null)
 
   useEffect(() => {
-    activeRef.current?.scrollIntoView({ block: 'nearest' })
+    if (activeRef.current) revealInPanel(activeRef.current)
   }, [activeId])
 
   const moveToken = (id: string, withNumber: boolean): ReactNode => {

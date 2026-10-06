@@ -24,4 +24,11 @@ test('every ply of a real lichess game renders the backend position exactly', as
   // ArrowRight at the end stays put.
   await page.keyboard.press('ArrowRight')
   await expect(page.getByTestId('status')).toContainText('ply 83')
+  // The move list kept the current move visible inside its scrolling panel.
+  const inside = await page.evaluate(() => {
+    const panel = document.querySelector('.panel.moves')!.getBoundingClientRect()
+    const move = document.querySelector('.move.active')!.getBoundingClientRect()
+    return move.top >= panel.top - 1 && move.bottom <= panel.bottom + 1
+  })
+  expect(inside).toBe(true)
 })
