@@ -321,6 +321,24 @@ class CheckedMove(BaseModel):
     evaluation_pov: Literal["white"] = "white"
 
 
+class AnswerWarning(BaseModel):
+    """One statement of an LLM answer that the engine / rules data does not back."""
+
+    kind: Literal["illegal_move", "unanalysed_move", "evaluation", "mate", "advantage"]
+    quote: str = Field(description="The text of the answer the warning is about, e.g. 'Bd3' or '+2.3'.")
+    detail: str = Field(description="Explanation for the user (Traditional Chinese).")
+
+
+class PromptMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str  # the latest user message carries the whole <position_context> block
+
+
+class PromptRecord(BaseModel):
+    system: str
+    messages: list[PromptMessage]
+
+
 class ExplainResponse(BaseModel):
     position_id: str
     variation_id: str
@@ -333,8 +351,11 @@ class ExplainResponse(BaseModel):
     refused: bool
     cached: bool
     checked_moves: list[CheckedMove] = []
-    unverified_moves: list[str] = Field(
-        default=[], description="Moves the answer mentions that are neither legal now nor in the context data."
+    warnings: list[AnswerWarning] = Field(
+        default=[], description="Automatic post-check: statements in the answer that the data does not back."
+    )
+    prompt: PromptRecord | None = Field(
+        default=None, description="Exactly what the model received (None when the rules answered)."
     )
 
 

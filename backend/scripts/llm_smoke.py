@@ -3,7 +3,8 @@
     cd backend && uv run python scripts/llm_smoke.py            # needs ANTHROPIC_API_KEY in ../.env
     cd backend && LLM_PROVIDER=fake uv run python scripts/llm_smoke.py --allow-fake   # harness check
 
-Each answer must: not be refused, be mostly Chinese, mention no unverified move, and mention what
+Each answer must: not be refused, be mostly Chinese, get no automatic-check warning (unbacked move,
+evaluation, mate or advantage claim), and mention what
 the case expects (e.g. the engine's best move). Exit code 1 if any check fails.
 """
 
@@ -70,15 +71,15 @@ def main() -> int:
             checks = {
                 "answered": bool(text) and not answer["refused"],
                 "chinese": len(CJK.findall(text)) >= 0.3 * max(1, len(re.sub(r"\s", "", text))),
-                "grounded": not answer["unverified_moves"],
+                "grounded": not answer["warnings"],
                 "on topic": all(token in text for token in case["expect"]),
             }
             ok = all(checks.values())
             failures += not ok
             flags = " ".join(f"{k}={'ok' if v else 'NO'}" for k, v in checks.items())
             print(f"{'PASS' if ok else 'FAIL'} {case['name']} ({elapsed:.1f}s, {answer['model']}): {flags}")
-            if answer["unverified_moves"]:
-                print(f"     unverified moves: {answer['unverified_moves']}")
+            for warning in answer["warnings"]:
+                print(f"     {warning['kind']}: {warning['detail']}")
             if os.environ.get("SHOW_ANSWERS"):
                 print("     " + text.replace("\n", "\n     "))
         return 1 if failures else 0

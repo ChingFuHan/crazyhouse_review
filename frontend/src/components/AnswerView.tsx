@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { PromptRecord } from '../types'
 import type { Turn } from '../useConversation'
 import { RichText } from './RichText'
 
@@ -11,6 +12,29 @@ function Elapsed() {
     return () => clearInterval(timer)
   }, [])
   return seconds > 0 ? <span>（{seconds} 秒）</span> : null
+}
+
+/** Everything the model received for this answer, so the viewer can check what it was told. */
+function PromptView({ prompt }: { prompt: PromptRecord }) {
+  return (
+    <details className="ai-input" data-testid="ai-input">
+      <summary>AI 看到的資料</summary>
+      <h4>System prompt（固定規則）</h4>
+      <pre>{prompt.system}</pre>
+      {prompt.messages.map((message, index) => (
+        <div key={index}>
+          <h4>
+            {message.role === 'assistant'
+              ? '先前的 AI 回答'
+              : index === prompt.messages.length - 1
+                ? '這次的提問（含 <position_context> 局面資料）'
+                : '先前的提問'}
+          </h4>
+          <pre>{message.content}</pre>
+        </div>
+      ))}
+    </details>
+  )
 }
 
 /** One LLM answer with its provenance (which position / engine result it was grounded on). */
@@ -38,9 +62,16 @@ export function AnswerView({ turn }: { turn: Turn }) {
   return (
     <div className="answer" data-position-id={answer.position_id} data-analysis-id={answer.analysis_id}>
       <RichText text={answer.text} />
-      {answer.unverified_moves.length > 0 && (
-        <div className="unverified" role="note" data-testid="unverified">
-          注意：回答提到的 {answer.unverified_moves.join('、')} 沒有 Engine 分析或規則依據支持（不合法，或未經分析），相關說法可能不正確。
+      {answer.warnings.length > 0 && (
+        <div className="unverified" role="note" data-testid="answer-warnings">
+          自動檢查發現以下說法沒有 Engine 或規則依據，可能不正確：
+          <ul>
+            {answer.warnings.map((warning) => (
+              <li key={`${warning.kind}:${warning.quote}`} data-kind={warning.kind}>
+                {warning.detail}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       <div className="answer-meta">
@@ -53,6 +84,7 @@ export function AnswerView({ turn }: { turn: Turn }) {
         )}
         {answer.cached && <span>（快取）</span>}
       </div>
+      {answer.prompt && <PromptView prompt={answer.prompt} />}
     </div>
   )
 }

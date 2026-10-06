@@ -227,8 +227,21 @@ export interface ExplainResponse {
   refused: boolean
   cached: boolean
   checked_moves: CheckedMove[]
-  /** Moves the answer mentions that nothing backs (illegal now, or never analysed by the engine). */
-  unverified_moves: string[]
+  /** Automatic post-check: statements in the answer that the engine / rules data does not back. */
+  warnings: AnswerWarning[]
+  /** Exactly what the model received; null when the rules answered without an LLM. */
+  prompt: PromptRecord | null
+}
+
+export interface AnswerWarning {
+  kind: 'illegal_move' | 'unanalysed_move' | 'evaluation' | 'mate' | 'advantage'
+  quote: string
+  detail: string
+}
+
+export interface PromptRecord {
+  system: string
+  messages: { role: 'user' | 'assistant'; content: string }[]
 }
 
 export type MoveClassification = 'inaccuracy' | 'mistake' | 'blunder' | 'mate_missed' | 'mate_allowed'

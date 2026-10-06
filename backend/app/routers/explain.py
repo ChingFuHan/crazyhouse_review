@@ -16,10 +16,10 @@ from ..chess_core import LineError, build_board, position_state
 from ..chess_core import position_id as position_id_of
 from ..llm.candidates import CandidateCheck, analyse_candidates, extract_candidates, illegal_only_answer
 from ..llm.context import CONTEXT_VERSION, build_context
-from ..llm.grounding import unverified_moves
+from ..llm.grounding import check_answer
 from ..llm.provider import LLMError, LLMResult, LLMUnavailable
-from ..llm.service import DEFAULT_QUESTION, ExplainService, new_request_id
-from ..models import ExplainRequest, ExplainResponse
+from ..llm.service import DEFAULT_QUESTION, SYSTEM_PROMPT, ExplainService, build_messages, new_request_id
+from ..models import ExplainRequest, ExplainResponse, PromptRecord
 from .engine import background_engine, engine_service, has_lines, resolve_analysis, run_threat
 from .game import check_line
 
@@ -43,6 +43,12 @@ class Prepared:
     rules_answer: str = ""
     board: CrazyhouseBoard | None = None
 
+    def prompt(self) -> PromptRecord | None:
+        """Exactly what the model receives for this question (None when the rules answer it)."""
+        if self.context is None:
+            return None
+        return PromptRecord(system=SYSTEM_PROMPT, messages=build_messages(self.context, self.question, self.body.history))
+
     def response(self, request_id: str, text: str, model: str, refused=False, cached=False) -> ExplainResponse:
         return ExplainResponse(
             position_id=self.position_id,
@@ -56,7 +62,7 @@ class Prepared:
             refused=refused,
             cached=cached,
             checked_moves=[c.summary() for c in self.checks],
-            unverified_moves=unverified_moves(text, self.context, self.board)
+            warnings=check_answer(text, self.context, self.board)
             if self.context is not None and self.board is not None and text
             else [],
         )
@@ -110,7 +116,9 @@ async def prepare(body: ExplainRequest, request: Request) -> Prepared:
 
 
 def _final(prepared: Prepared, request_id: str, result: LLMResult, cached: bool) -> ExplainResponse:
-    return prepared.response(request_id, "" if result.refused else result.text, result.model, result.refused, cached)
+    response = prepared.response(request_id, "" if result.refused else result.text, result.model, result.refused, cached)
+    response.prompt = prepared.prompt()
+    return response
 
 
 @router.post("/explain", response_model=ExplainResponse)

@@ -34,6 +34,13 @@ def cache_key(context: dict, question: str, history: list[ChatTurn], model: str)
     return hashlib.sha256(material.encode()).hexdigest()
 
 
+def build_messages(context: dict, question: str, history: list[ChatTurn]) -> list[dict]:
+    """The conversation sent to the model: earlier turns, then the question with the context block."""
+    messages = [{"role": t.role, "content": t.content} for t in history]
+    messages.append({"role": "user", "content": render_user_message(context, question)})
+    return messages
+
+
 class ExplainService:
     def __init__(self, provider: LLMProvider | None, unavailable_reason: str = "LLM 未設定") -> None:
         self.provider = provider
@@ -61,8 +68,7 @@ class ExplainService:
             self._cache.move_to_end(key)
             yield self._cache[key], True
             return
-        messages = [{"role": t.role, "content": t.content} for t in history]
-        messages.append({"role": "user", "content": render_user_message(context, question)})
+        messages = build_messages(context, question, history)
         result: LLMResult | None = None
         async for item in self.provider.stream(SYSTEM_PROMPT, messages):
             if isinstance(item, LLMResult):

@@ -100,17 +100,29 @@ test('illegal candidate is rejected by the rules without engine or LLM; quick qu
   await expect(chat.locator('.chat-turn').last().getByTestId('checked-moves')).toContainText('N@d6+')
 })
 
-test('moves in an answer that nothing backs are flagged as unverified', async ({ page }) => {
+test('statements in an answer that nothing backs are flagged, and the model input can be inspected', async ({ page }) => {
   await page.goto('/')
   await loadPgn(page, GAME)
   await page.locator('.move.main', { hasText: /e6$/ }).click()
   await activePly(page, 6)
   const chat = page.getByTestId('chat')
-  // Every named move is legality-checked, but only three get a fresh engine search: the fourth (Rb1)
-  // is marked as not analysed, and the fake LLM's echo of it is flagged as unverified.
-  await chat.getByLabel('提問').fill('a3、h3、b3 還是 Rb1？')
+  // Every named move is legality-checked, but only three get a fresh engine search: the fourth (N@a6)
+  // is marked as not analysed. The fake LLM echoes the question, so its answer "claims" N@a6 and an
+  // evaluation of +9.9 that no engine result backs.
+  await chat.getByLabel('提問').fill('a3、h3、b3 還是 N@a6？會是 +9.9 嗎？')
   await chat.getByLabel('提問').press('Enter')
   const turn = chat.locator('.chat-turn').last()
-  await expect(turn.getByTestId('checked-moves')).toContainText('Rb1：合法，但未做 Engine 分析', { timeout: 20_000 })
-  await expect(turn.getByTestId('unverified')).toContainText('Rb1')
+  await expect(turn.getByTestId('checked-moves')).toContainText('N@a6：合法，但未做 Engine 分析', { timeout: 20_000 })
+  const warnings = turn.getByTestId('answer-warnings')
+  await expect(warnings.locator('[data-kind="unanalysed_move"]')).toContainText('N@a6')
+  await expect(warnings.locator('[data-kind="evaluation"]')).toContainText('+9.9')
+  await expect(warnings.locator('li')).toHaveCount(2) // a3, h3, b3 were analysed by the engine
+
+  // "AI 看到的資料": the rules and exactly this position, as sent to the model.
+  const input = turn.getByTestId('ai-input')
+  await input.locator('summary').click()
+  await expect(input).toContainText('你是一名專門解釋 Crazyhouse 的棋局分析助手')
+  const fen = (await page.locator('.board').getAttribute('data-fen'))!
+  await expect(input.locator('pre').last()).toContainText(`"fen": "${fen}"`)
+  await expect(input.locator('pre').last()).toContainText('a3、h3、b3 還是 N@a6？')
 })

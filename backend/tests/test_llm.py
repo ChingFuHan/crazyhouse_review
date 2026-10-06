@@ -335,6 +335,7 @@ def test_illegal_only_question_is_answered_by_rules_without_engine_or_llm(client
     assert "沒有后能走到 f7" in answer["text"]
     assert answer["checked_moves"][0]["legal"] is False
     assert fake.calls == []
+    assert answer["prompt"] is None, "no model was asked"
 
 
 @needs_engine
@@ -399,13 +400,15 @@ class ScriptedProvider:
 
 @needs_engine
 def test_answers_mentioning_unbacked_moves_are_flagged():
-    service = ExplainService(ScriptedProvider("白方應該走 Qxf7#，不然 Nf3 也可以。"))
+    service = ExplainService(ScriptedProvider("白方應該走 Qxf7#，不然 N@a6 也可以，白方約 +9.9。"))
     with TestClient(create_app(SETTINGS, service)) as c:
         answer = c.post("/api/explain", json={"moves": KNIGHT_TRADE_E6}).json()
-        assert answer["unverified_moves"] == ["Qxf7#"]
+        expected = [["illegal_move", "Qxf7#"], ["unanalysed_move", "N@a6"], ["evaluation", "+9.9"]]
+        assert [[w["kind"], w["quote"]] for w in answer["warnings"]] == expected
+        assert all(w["detail"] for w in answer["warnings"])
         with c.stream("POST", "/api/explain/stream", json={"moves": KNIGHT_TRADE_E6, "question": "再說一次"}) as response:
             done = parse_sse(response.read().decode())[-1][1]
-        assert done["unverified_moves"] == ["Qxf7#"]
+        assert [[w["kind"], w["quote"]] for w in done["warnings"]] == expected
 
 
 @needs_engine
@@ -420,4 +423,18 @@ def test_named_moves_beyond_the_search_cap_are_marked_not_analysed_and_flagged(c
     entry = context_of(fake.calls[-1])["candidate_analysis"][3]
     assert entry["source"] == "not_analyzed" and "evaluation" not in entry
     # The fake echoes the question, so the answer "mentions" N@a6: unbacked by any analysis.
-    assert answer["unverified_moves"] == ["N@a6"]
+    assert [(w["kind"], w["quote"]) for w in answer["warnings"]] == [("unanalysed_move", "N@a6")]
+
+
+@needs_engine
+def test_the_answer_shows_exactly_what_the_model_received(client, fake):
+    first = client.post("/api/explain", json={"moves": KNIGHT_TRADE_E6, "question": "為什麼是這步？"}).json()
+    history = [{"role": "user", "content": first["question"]}, {"role": "assistant", "content": first["text"]}]
+    answer = client.post(
+        "/api/explain", json={"moves": KNIGHT_TRADE_E6, "question": "那黑方呢？", "history": history}
+    ).json()
+    sent = fake.calls[-1]
+    assert answer["prompt"] == {"system": sent["system"], "messages": sent["messages"]}
+    assert answer["prompt"]["system"] == SYSTEM_PROMPT
+    assert answer["prompt"]["messages"][:2] == history
+    assert "<position_context>" in answer["prompt"]["messages"][-1]["content"]
