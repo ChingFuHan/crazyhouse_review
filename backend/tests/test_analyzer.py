@@ -233,3 +233,15 @@ def test_king_zone_attackers_and_material():
     pf = position_facts(b)
     assert pf.black.king_zone_attackers == ["Nd6"]
     assert position_facts(board(STARTING_FEN)).white.board_material == {"Q": 1, "R": 2, "B": 2, "N": 2, "P": 8}
+
+
+def test_attacked_and_defended_squares():
+    from app.analyzer import attacked_squares, defended_squares
+
+    start = board(STARTING_FEN)
+    assert len(attacked_squares(start, chess.WHITE)) == 22
+    assert {"a3", "h3", "f3"} <= set(attacked_squares(start, chess.WHITE)) and "e4" not in attacked_squares(start, chess.WHITE)
+    # a1/h1 rooks and the king are not "defended"; everything else on the back two ranks is.
+    assert defended_squares(start, chess.WHITE) == ["a2", "b1", "b2", "c1", "c2", "d1", "d2", "e2", "f1", "f2", "g1", "g2", "h2"]
+    lone = board("4k3/8/8/3q4/8/8/8/3RK3[] w - - 0 1")
+    assert defended_squares(lone, chess.BLACK) == [] and defended_squares(lone, chess.WHITE) == ["d1"]

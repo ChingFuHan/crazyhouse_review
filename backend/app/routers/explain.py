@@ -98,7 +98,7 @@ async def prepare(body: ExplainRequest, request: Request) -> Prepared:
     facts = compute_insights(root_fen, body.moves, board, analysis, threat)
     prepared.analysis_id = analysis.analysis_id
     prepared.board = board
-    prepared.context = build_context(body, state, analysis, facts)
+    prepared.context = build_context(body, state, analysis, facts, prepared.question)
     if prepared.checks:
         prepared.context["candidate_analysis"] = [c.context() for c in prepared.checks]
     return prepared

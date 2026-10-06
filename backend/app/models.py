@@ -136,6 +136,8 @@ class SideFacts(BaseModel):
     )
     king_zone_attackers: list[str] = Field(default=[], description="Enemy pieces hitting the king or its neighbours.")
     board_material: dict[str, int] = Field(default={}, description="Pieces on the board (pocket listed separately).")
+    attacked_squares: list[str] = Field(default=[], description="Squares this side attacks.")
+    defended_squares: list[str] = Field(default=[], description="Squares of this side's pieces it defends (king excluded).")
 
 
 class PositionFacts(BaseModel):

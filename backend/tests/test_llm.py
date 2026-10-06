@@ -65,7 +65,18 @@ def test_context_matches_board_engine_and_analyzer(client, fake):
     assert ctx["engine"]["best_move"]["uci"] == analysis["best_move"]["uci"]
     assert ctx["engine"]["analysis_id"] == analysis["analysis_id"]
     assert [c["facts"]["uci"] for c in ctx["analysis"]["candidates"]] == [l["pv"][0]["uci"] for l in analysis["lines"]]
-    assert ctx["analysis"]["white"]["drop_check_squares"] == {"N": ["d6", "f6"]}
+    assert ctx["analysis"]["important_drop_squares"]["white"] == {"N": ["d6", "f6"]}
+    # §7 canonical record of the active position, §18 field names.
+    position = ctx["position"]
+    assert position["variation_id"] == "main" and position["ply"] == 6
+    assert position["move_history"] == KNIGHT_TRADE_E6
+    assert (position["white_pocket"], position["black_pocket"]) == (["N"], ["P"])
+    assert position["last_move"] == {"uci": "e7e6", "san": "e6"} and position["promoted_pieces_on"] == []
+    assert ctx["user_question"] == "為什麼是這步？"
+    assert ctx["analysis"]["checks"]["side_to_move_in_check"] is False
+    assert ctx["analysis"]["mate_threats"]["opponent_mate_in_one_if_ignored"] == []
+    assert ctx["analysis"]["king_escape_squares"]["black"] == ["e7"]
+    assert "d3" in ctx["analysis"]["white"]["attacked_squares"]
     assert fake.calls[-1]["system"] == SYSTEM_PROMPT
     assert fake.calls[-1]["messages"][-1]["content"].endswith("為什麼是這步？")
     assert answer["text"].startswith("[FAKE LLM]") and answer["model"] == "fake"

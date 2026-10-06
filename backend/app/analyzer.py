@@ -198,6 +198,21 @@ def king_zone_attackers(board: CrazyhouseBoard, color: chess.Color) -> list[str]
     return [_label(board, sq) for sq in chess.scan_forward(attackers)]
 
 
+def attacked_squares(board: CrazyhouseBoard, color: chess.Color) -> list[str]:
+    """Every square attacked by at least one piece of ``color`` (attack geometry, pins ignored)."""
+    mask = 0
+    for square in chess.scan_forward(board.occupied_co[color]):
+        mask |= board.attacks_mask(square)
+    return _names(chess.scan_forward(mask))
+
+
+def defended_squares(board: CrazyhouseBoard, color: chess.Color) -> list[str]:
+    """Squares of ``color``'s own pieces (king excluded) that another piece of ``color`` defends."""
+    return _names(
+        sq for sq in chess.scan_forward(board.occupied_co[color] & ~board.kings) if board.is_attacked_by(color, sq)
+    )
+
+
 def board_material(board: CrazyhouseBoard, color: chess.Color) -> dict[str, int]:
     return {
         chess.piece_symbol(pt).upper(): count
@@ -257,6 +272,8 @@ def side_facts(board: CrazyhouseBoard, color: chess.Color) -> SideFacts:
         drop_check_squares=drop_check_squares(board, color),
         king_zone_attackers=king_zone_attackers(board, color),
         board_material=board_material(board, color),
+        attacked_squares=attacked_squares(board, color),
+        defended_squares=defended_squares(board, color),
     )
 
 

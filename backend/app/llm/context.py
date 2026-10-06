@@ -14,7 +14,7 @@ from chess.variant import CrazyhouseBoard
 from ..chess_core import IllegalMoveError, build_board, move_model, parse_move
 from ..models import CandidateFacts, EngineAnalysis, ExplainRequest, Insights, MoveFacts, PositionState, SideFacts
 
-CONTEXT_VERSION = "ctx-v2"
+CONTEXT_VERSION = "ctx-v3"
 RECENT_PLIES = 12
 PV_PLIES = 10
 
@@ -98,19 +98,21 @@ def _game_move(root_fen: str, moves: list[str], start_ply: int, request: Explain
 def _side(s: SideFacts) -> dict:
     return {
         "king_square": s.king_square,
-        "king_escape_squares": s.king_escape_squares,
         "king_zone_squares_attacked_by_opponent": s.king_zone_attacks,
         "hanging_pieces": [f"{x.piece}{x.square}" for x in s.hanging_pieces],
         "attacked_queens_rooks": [f"{x.piece}{x.square}" for x in s.attacked_queens_rooks],
-        "drop_check_squares": s.drop_check_squares,
         "king_zone_attackers": s.king_zone_attackers,
+        "attacked_squares": s.attacked_squares,
+        "defended_squares": s.defended_squares,
         "board_material": s.board_material,
     }
 
 
 def build_context(
-    request: ExplainRequest, state: PositionState, analysis: EngineAnalysis, insights: Insights
+    request: ExplainRequest, state: PositionState, analysis: EngineAnalysis, insights: Insights, question: str
 ) -> dict:
+    """task.md §18 context. `position` is the full §7 canonical record of the active position:
+    the backend PositionState plus the variation it belongs to in the UI tree."""
     root_fen, moves = state.root_fen, state.moves
     sans = _sans(root_fen, moves)
     start_ply = state.ply - len(moves)
@@ -128,11 +130,16 @@ def build_context(
         "position": {
             "position_id": state.position_id,
             "variation_id": request.variation_id,
+            "ply": state.ply,
             "fen": state.fen,
             "side_to_move": state.side_to_move,
+            "white_pocket": state.pockets.white,
+            "black_pocket": state.pockets.black,
+            "move_history": state.moves,
+            "last_move": {"uci": state.last_move.uci, "san": state.last_move.san} if state.last_move else None,
+            "promoted_pieces_on": state.promoted,
             "is_check": state.is_check,
             "outcome": state.outcome.model_dump() if state.outcome else None,
-            "promoted_pieces_on": state.promoted,
         },
         "pockets": {"white": state.pockets.white, "black": state.pockets.black},
         "game": {
@@ -165,19 +172,30 @@ def build_context(
             ],
         },
         "analysis": {
-            "side_to_move_in_check": p.in_check,
-            "checkers": [f"{x.piece}{x.square}" for x in p.checkers],
+            "checks": {
+                "side_to_move_in_check": p.in_check,
+                "checkers": [f"{x.piece}{x.square}" for x in p.checkers],
+                "mate_in_one_for_side_to_move": p.mate_in_one,
+            },
+            "mate_threats": {
+                "opponent_mate_in_one_if_ignored": p.opponent_mate_threats,
+                "moves_after_which_opponent_has_no_mate_in_one": p.defenses_to_mate_threats,
+                "threat_if_side_to_move_passes": insights.threat.model_dump() if insights.threat else None,
+            },
+            "king_escape_squares": {"white": p.white.king_escape_squares, "black": p.black.king_escape_squares},
+            "important_drop_squares": {
+                "description": "pocket piece -> empty squares where dropping it gives check",
+                "white": p.white.drop_check_squares,
+                "black": p.black.drop_check_squares,
+            },
             "legal_move_count": p.legal_move_count,
-            "mate_in_one_for_side_to_move": p.mate_in_one,
-            "opponent_mate_in_one_threats_if_ignored": p.opponent_mate_threats,
-            "moves_after_which_opponent_has_no_mate_in_one": p.defenses_to_mate_threats,
             "white": _side(p.white),
             "black": _side(p.black),
-            "threat_if_side_to_move_passes": insights.threat.model_dump() if insights.threat else None,
             "last_move": move_facts_dict(insights.last_move) if insights.last_move else None,
             "candidates": [_candidate(c, state.ply) for c in insights.candidates],
         },
         "pgn_comments": [{"ply": c.ply, "text": c.text} for c in request.comments],
+        "user_question": question,
     }
 
 
