@@ -18,6 +18,8 @@ Milestone 4 (chat + candidate re-analysis + variation-aware Q&A) DONE; the task.
 passes end-to-end with the fake LLM (e2e/core-flow.spec.ts) and real answers pass via agy.
 Whole-game review (critical moves, task.md §30) + eval graph DONE.
 Lichess-style engine settings + streamed analysis DONE (user request after task.md, 2026-10-06).
+Anti-hallucination layer (answer checks, model-input viewer, real-LLM eval) and whole-game scans of
+each side's errors DONE (user requests, 2026-10-07).
 
 ## Current task status
 Strict verification against task.md (2026-10-06) found and fixed: stale README/PROJECT_STATE,
@@ -34,7 +36,11 @@ searches used the displayed search time unbounded (60 s setting → up to 3 min 
 explanations without a displayed result used the review engine's 1 line / 300 ms, and a stream
 cancelled while its search was starting left an orphaned search occupying the engine (python-chess
 still sends `go`; infinite → up to 10 min).
-No task in progress.
+Then (user worried about hallucinations): answer checks for moves / evaluations / mates / advantage,
+「AI 看到的資料」 viewer, tighter system prompt, real-LLM eval (`scripts/llm_eval.py`); and whole-game
+scan buttons (「全局掃描：白方／黑方 miss 的錯誤」).
+NEXT (requested, not started): let the user pick the AI source — agy / codex / claude CLI subscriptions —
+plus model and effort, enumerated live from each CLI every time (see Next recommended task).
 
 ## Current architecture
 - `backend/` Python 3.13 (uv), FastAPI, python-chess 1.11.2.
@@ -124,11 +130,30 @@ No task in progress.
     killed if the stream is closed early; stderr drained concurrently. Do NOT add
     `--disable-slash-commands`: agy then ignores `--mode plan`. `LLM_PROVIDER=auto` default.
     Recorded real output: `tests/fixtures/agy_stream_*.ndjson`.
-  - `app/llm/grounding.py`: after each answer, move tokens (SAN/UCI/drops/castling; bare squares
-    ignored) that are neither legal now nor present anywhere in the context JSON (PVs, candidates,
-    game moves, threat line) → `ExplainResponse.unverified_moves`; the UI shows a warning under the
-    answer. `scripts/llm_smoke.py`: 4 fixed cases against the REAL provider (answered, mostly Chinese,
-    no unverified moves, on topic); exit 2 when no key, `--allow-fake` to check the harness.
+  - `app/llm/grounding.py` `check_answer(answer, context, board|None)` → `ExplainResponse.warnings`
+    (`AnswerWarning{kind, quote, detail}`): `illegal_move` (not legal now, not in the context);
+    `unanalysed_move` (legal now, named-but-not-analysed, or the LLM's own continuation — legal after a
+    null move or after an engine first move; with board None (game scan) any move missing from the
+    data); `evaluation` (signed number matching no context evaluation by absolute value, ±0.15 / ±0.5 for
+    whole numbers; "mate -1" skipped); `mate` ("N 步殺 / mate in N / #N / M N" longer than any context
+    mate, mate-in-one lists and `threatens_mate_in_one_next` count as 1; Chinese claims only when the
+    clause names a side or a move); `advantage` ("白方優勢 / 對黑方有利 …" with no evaluation ≥ 0.2 for
+    that side). Negations earlier in the same clause skip a claim. Evidence excludes user_question,
+    PGN comments/headers and not-analysed candidates; rule drop checks ("N@h6") count as evidence.
+    Every answer also carries `prompt` (`PromptRecord{system, messages}`, built by
+    `service.build_messages`, exactly what the provider receives; None for rules answers), shown in
+    AnswerView as 「AI 看到的資料」. `scripts/llm_smoke.py`: 4 fixed cases against the REAL provider
+    (answered, mostly Chinese, no warnings, on topic). `scripts/llm_eval.py`: 14 positions (4 per
+    lichess fixture game + 2 tactics) × (default explanation + a quick question), report + JSON with each
+    answer's context in `backend/reports/` (git-ignored); `--recheck file.json` re-applies the checks
+    without the LLM.
+  - `app/llm/game_scan.py` + `POST /api/explain/game/stream` (`GameScanRequest{line, side, headers}`):
+    starts or reuses the whole-game review job, SSE `progress` until it is done, then the side's flagged
+    moves (most severe 12, game order; mover from ply parity of the root) with fen/pockets before, the
+    engine's best line and the line after the played move (review engine, cached searches, protected),
+    and move facts of both → context `task: "game_scan"` (system prompt has a 「整局掃描」 section); no
+    flagged move → rules answer without LLM. Response = ExplainResponse (analysis_id = review job id,
+    warnings via check_answer(board=None), prompt).
   - `app/llm/candidates.py` (task.md §22): moves named in a question (SAN/UCI/drop/castling, CJK
     neighbours ok; bare squares only if a legal pawn move; up to 10) → legality for all (illegal →
     Chinese reason) → MultiPV hit (free), or a fresh engine search of the position after the move
@@ -194,6 +219,9 @@ No task in progress.
     system prompt say "我/我的" ("I/my") = viewer side (else side to move), and to say so when the named
     piece does not exist instead of guessing. AnswerView + RichText
     (safe minimal markdown). WhyPanel has an on-demand 「AI 解釋」 (AI explanation) button.
+  - `src/useGameScan.ts`: per main line (root_fen + moves) and side: pending / review progress / partial
+    / answer; a changed main line aborts and hides scans; requests guarded by id. App starts the review
+    panel's own review too (same backend job), ChatPanel shows the two scan buttons and results.
   - ChatPanel ("Ask about this position"): quick questions (task.md §23, built with the actual best /
     second / game-move SAN) and free questions on the same `/api/explain` pipeline; shows
     checked moves (illegal reason / engine score + source) above each answer. Asking never waits
@@ -279,6 +307,8 @@ No task in progress.
 - Engine: single shared interactive process; two tabs analysing different positions replace each
   other's searches (shown as 已中斷 "interrupted" + 重新分析 "analyse again"). Threads/Hash choices affect the whole machine.
 - At 390 px width chessground's file coordinates overflow by 2 px (pre-existing).
+- Answer checks cover moves, evaluations, mates and advantage claims only (not piece placement or other
+  statements); Chinese mate claims without a side or move in the clause are not checked.
 - Analyzer reports king-zone attackers but no weighted pressure score; opened diagonals are covered
   only through discovered attacks; "tempo" is expressed only through checks/forced replies. "Why" panel is fact-only (no strategic interpretation) until the LLM.
 - LLM: Claude path never exercised (no key); agy answers take ~30–60 s (agy start-up + thinking;
@@ -287,7 +317,10 @@ No task in progress.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 188 passed (incl. candidate searches of a 60 s analysis capped
+- `cd backend && uv run pytest -q` → 204 passed (incl. `tests/test_grounding.py` with regressions for
+  every false alarm found by the real evaluations; `tests/test_game_scan.py`: one side only, most severe
+  moments in game order, black-to-move roots, progress then grounded answer, cached repeat, rules answer
+  without flagged moves, invalid line 422) (incl. candidate searches of a 60 s analysis capped
   by ENGINE_MAX_MOVETIME_MS, fallback explanations with 3 lines / default time, and a stream
   cancelled while its search starts leaving no orphaned search — that test timed out before the
   fix) (incl. `tests/test_docs.py`: every document has
@@ -308,7 +341,9 @@ No task in progress.
   and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
   503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
 - `cd frontend && npx vitest run` → 46 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 34 passed (incl. asking a free and a quick question while
+- `cd frontend && npx playwright test` → 35 passed (incl. answer warnings for an unanalysed move and a
+  +9.9 evaluation, 「AI 看到的資料」 with the board FEN, whole-game scans of both sides that survive
+  browsing) (incl. asking a free and a quick question while
   the AI explanation is held back 4 s; a double click sends once; no server tracebacks in the run)
   (storageState presets 1 s searches;
   `e2e/engine-settings.spec.ts`: lines 1→5, depth limit 15 ends early, settings persist + reset,
@@ -328,6 +363,11 @@ No task in progress.
   final FEN (board, pocket, side, castling). Ongoing TV games mismatch only because lichess
   delays published moves of games in progress (not a rules issue).
 
+- Real LLM eval (agy gemini-3.8-flash-high, 2026-10-07, `scripts/llm_eval.py`, 2 × 28 answers, ~70 s
+  each): run 1 → 5/28 answers with warnings, run 2 (tighter prompt) → 2/28; every warning reviewed by
+  hand: all 8 were checker false alarms (fixed + regression tests; recheck of run 2 → 0/28), no
+  confirmed hallucination; spot-checked unflagged answers were factually right. Real game scans (fixture
+  game 3, both sides) answered from the flagged moments only, 0 warnings.
 - Real LLM (agy, 2026-10-06): `cd backend && LLM_PROVIDER=agy SHOW_ANSWERS=1 uv run python
   scripts/llm_smoke.py` → 4/4 PASS (answered, Chinese, no unverified moves, on topic; White-POV
   wording correct, defenses match the analyzer). Browser via serve.sh: streamed answer, model shown,
@@ -344,7 +384,16 @@ No task in progress.
 ## Next recommended task
 1. Optional: if an ANTHROPIC_API_KEY becomes available, run `scripts/llm_smoke.py` with
    `LLM_PROVIDER=anthropic` to verify the Claude path too.
-2. Optional: sharing the interactive engine across several viewers without mutual cancellation
+2. REQUESTED: AI source choice. Providers: agy (`agy models` lists ids; `--effort` levels parsed from
+   `agy --help`), codex (`codex debug models` JSON: slug, visibility, supported_reasoning_levels; run
+   `codex exec --json --skip-git-repo-check --ephemeral -s read-only -C <empty dir> -m M -c
+   model_reasoning_effort=E`, answer = `item.completed` agent_message, no deltas), claude (`claude -p
+   --output-format stream-json --include-partial-messages --verbose --system-prompt S --tools ""
+   --no-session-persistence --strict-mcp-config --setting-sources "" --model M --effort E`, deltas in
+   stream_event content_block_delta; model aliases and effort levels parsed from `claude --help`; NOT
+   `--bare`, which ignores the subscription login). Enumerate live each time, validate requests against
+   the fresh catalog, fall back to the default (agy gemini-3.8-flash-high) when a stored choice vanished.
+3. Optional: sharing the interactive engine across several viewers without mutual cancellation
    (e.g. one engine process per active viewer, bounded by CPU count).
 
 All task.md requirements are implemented and tested, including real LLM answers (via agy).

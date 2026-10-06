@@ -18,6 +18,7 @@ Milestone 4（對話 + 候選著重新分析 + 能感知變化的問答）完成
 端到端通過（e2e/core-flow.spec.ts），真實回答經 agy 通過。
 整局分析（關鍵著法，task.md §30）+ 評估曲線圖完成。
 類 lichess 的 engine 設定 + 串流分析完成（task.md 之後的使用者需求，2026-10-06）。
+防幻覺機制（回答自動檢查、「AI 看到的資料」、真實 LLM 評測）與雙方全局掃描完成（使用者需求，2026-10-07）。
 
 ## 目前任務狀態
 依 task.md 嚴格驗證（2026-10-06）發現並修正：README/PROJECT_STATE 過時、LLM context 缺
@@ -31,7 +32,10 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
 搜尋沿用畫面上的搜尋時間且沒有上限（設 60 秒 → LLM 開始前最多等 3 分鐘）；沒有畫面上結果時的解釋
 用了 review engine 的 1 條線／300 ms；串流在搜尋啟動中被取消時會留下孤兒搜尋佔住 engine（python-chess
 仍會送出 `go`；無限分析時最多 10 分鐘）。
-目前沒有進行中的任務。
+再之後（使用者擔心幻覺）：著法／評估／將殺／優勢的回答自動檢查、「AI 看到的資料」、加嚴的 system prompt、
+真實 LLM 評測（`scripts/llm_eval.py`）；以及全局掃描按鈕（「全局掃描：白方／黑方 miss 的錯誤」）。
+下一個（已要求、尚未開始）：讓使用者選擇 AI 來源——agy／codex／claude CLI 訂閱——以及 model 與 effort，
+每次都從各 CLI 即時列舉（見「建議的下一個任務」）。
 
 ## 目前架構
 - `backend/` Python 3.13（uv）、FastAPI、python-chess 1.11.2。
@@ -112,11 +116,25 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
     逾時（print-timeout + AGY_GRACE_S）→ LLMError，登入／認證錯誤 → LLMUnavailable；串流提早關閉時
     結束 process；同時讀取 stderr。**不要**加 `--disable-slash-commands`：加了之後 agy 會忽略
     `--mode plan`。預設 `LLM_PROVIDER=auto`。錄下的真實輸出：`tests/fixtures/agy_stream_*.ndjson`。
-  - `app/llm/grounding.py`：每個回答之後，既非目前合法、也沒出現在 context JSON 任何地方（PV、候選著、
-    對局著法、威脅線）的著法 token（SAN/UCI/打入/易位；單獨的格子名稱忽略）→
-    `ExplainResponse.unverified_moves`；UI 在回答下方顯示警告。`scripts/llm_smoke.py`：對「真實」
-    provider 跑 4 個固定案例（有回答、大部分為中文、沒有未驗證著法、切題）；沒有 key 時 exit 2，
-    `--allow-fake` 用來檢查測試框架本身。
+  - `app/llm/grounding.py` `check_answer(answer, context, board|None)` → `ExplainResponse.warnings`
+    （`AnswerWarning{kind, quote, detail}`）：`illegal_move`（目前不合法且不在 context 中）；`unanalysed_move`
+    （目前合法、使用者提到但未分析，或 AI 自行推演的後續——空著後或 engine 第一步後合法；board 為 None
+    （整局掃描）時則是資料中沒有的任何著法）；`evaluation`（帶正負號的數字與 context 任何評估的絕對值都不符，
+    容許 ±0.15，整數 ±0.5；「mate -1」略過）；`mate`（「N 步殺／mate in N／#N／M N」超過 context 中最長的
+    將殺；一步殺清單與 `threatens_mate_in_one_next` 算 1；中文說法只在同一子句提到某方或著法時才檢查）；
+    `advantage`（「白方優勢／對黑方有利…」但沒有任何評估對該方 ≥ 0.2）。同一子句前面有否定詞時不檢查。
+    證據不含 user_question、PGN 註解／標頭與未分析的候選著；規則算出的打入將軍（"N@h6"）算證據。
+    每個回答也帶 `prompt`（`PromptRecord{system, messages}`，由 `service.build_messages` 產生，正是 provider
+    收到的內容；規則回答時為 None），在 AnswerView 顯示為「AI 看到的資料」。`scripts/llm_smoke.py`：對真實
+    provider 跑 4 個固定案例（有回答、中文、沒有警告、切題）。`scripts/llm_eval.py`：14 個局面（每盤
+    lichess fixture 4 個 + 2 個戰術局面）×（預設解釋 + 一個快捷問題），報告與含每題 context 的 JSON 寫到
+    `backend/reports/`（git-ignore）；`--recheck file.json` 不呼叫 LLM 重新套用檢查。
+  - `app/llm/game_scan.py` + `POST /api/explain/game/stream`（`GameScanRequest{line, side, headers}`）：
+    啟動或沿用整局分析工作，分析期間以 SSE `progress` 回報，完成後取該方被判錯的著法（最嚴重 12 個、依時間
+    順序；走子方由 root 的 ply 奇偶判斷），附走子前 fen／pocket、engine 最佳線、實戰著後的變化（review
+    engine、快取搜尋、protected）與兩步棋的規則事實 → context `task: "game_scan"`（system prompt 有「整局掃描」
+    段落）；沒有被判錯的著法 → 規則回答，不呼叫 LLM。回應為 ExplainResponse（analysis_id = 整局分析工作 id，
+    warnings 以 check_answer(board=None) 產生，含 prompt）。
   - `app/llm/candidates.py`（task.md §22）：問題中提到的著法（SAN/UCI/打入/易位，可緊鄰中文字；
     單獨的格子只在是合法兵步時算；最多 10 個）→ 全部檢查合法性（不合法 → 中文原因）→ 命中 MultiPV
     （免費），或對走完該著後的局面重新做 engine 搜尋（相同 multipv/movetime，每個問題最多 3 次；
@@ -173,6 +191,9 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
   - LLM 請求帶有 `viewer_side`（棋盤方向）；context `game.viewer_side`（ctx-v2）與 system prompt 說明
     「我/我的」= 觀看者那一方（否則為走子方），且所指棋子不存在時要直說而不是猜。AnswerView + RichText
     （安全的極簡 markdown）。WhyPanel 有按需的「AI 解釋」按鈕。
+  - `src/useGameScan.ts`：依主線（root_fen + moves）與哪一方記錄 pending／整局分析進度／部分回答／回答；
+    主線改變時中止並隱藏掃描；請求以 id 防止舊回答覆蓋。App 同時啟動整局分析面板（後端同一個工作），
+    ChatPanel 顯示兩個掃描按鈕與結果。
   - ChatPanel（"Ask about this position"）：快速問題（task.md §23，用實際的最佳／次佳／實戰著 SAN 組成）
     與自由提問，走同一條 `/api/explain` 流程；在每個回答上方顯示檢查過的著法（不合法原因／engine 分數
     + 來源）。提問永遠不必等其他回答完成（可同時有多個在進行；追問歷史只帶已完成的問答）；只有
@@ -245,6 +266,8 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
 - Engine：只有一個共用的互動 process；兩個分頁分析不同局面時會互相取代對方的搜尋（顯示為 已中斷 +
   重新分析）。Threads/Hash 的選擇會影響整台機器。
 - 寬度 390 px 時 chessground 的檔案座標會超出 2 px（原本就有）。
+- 回答自動檢查只涵蓋著法、評估、將殺與優勢方向（不含棋子位置等其他敘述）；子句中沒提到某方或著法的中文
+  將殺說法不檢查。
 - Analyzer 會回報王區攻擊者，但沒有加權的壓力分數；開放的斜線只透過閃擊涵蓋；「先手」只以將軍／被迫
   應著表達。「Why」面板只陳述事實（策略性詮釋交給 LLM）。
 - LLM：Claude 路徑從未實際執行（沒有 key）；agy 回答約需 30–60 秒（agy 啟動 + 思考；文字接近最後才
@@ -253,7 +276,9 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
   於著法落地前執行時才通過。
 
 ## 驗證狀態
-- `cd backend && uv run pytest -q` → 188 passed（含：60 秒分析下候選著搜尋受 ENGINE_MAX_MOVETIME_MS
+- `cd backend && uv run pytest -q` → 204 passed（含 `tests/test_grounding.py` 中真實評測發現的每個誤報的
+  回歸測試；`tests/test_game_scan.py`：只取一方、依時間順序的最嚴重時刻、黑方先走的 root、先回報進度再給出
+  有依據的回答、重複請求命中快取、沒有被判錯的著法時由規則回答、不合法序列 422）（含：60 秒分析下候選著搜尋受 ENGINE_MAX_MOVETIME_MS
   限制、退回搜尋的解釋使用 3 條線／預設時間、串流在搜尋啟動中被取消後不留下孤兒搜尋——此測試在修正前
   會逾時）（含 `tests/test_docs.py`：每份文件都有兩種語言、
   切換按鈕、標題數相同、指令區塊一字不差——每項檢查都曾在故意改壞的副本上確認會失敗）（含
@@ -271,7 +296,8 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
   候選著流程、SSE 事件、缺 key 時 503、key 永不出現在錯誤中、以模擬 SDK 串流測試拒答／fallback。
   沒有真實的 Claude 呼叫。
 - `cd frontend && npx vitest run` → 46 passed；`npx tsc -b`、`npm run lint`、`npx vite build` 無誤。
-- `cd frontend && npx playwright test` → 34 passed（含：AI 解釋被延遲 4 秒期間仍可送出自由問題與快捷
+- `cd frontend && npx playwright test` → 35 passed（含：未分析著法與 +9.9 評估的回答警告、含棋盤 FEN 的
+  「AI 看到的資料」、雙方全局掃描且瀏覽時保留）（含：AI 解釋被延遲 4 秒期間仍可送出自由問題與快捷
   問題、連點只送出一次、整次執行 server 沒有 traceback）（storageState 預設 1 秒搜尋；
   `e2e/engine-settings.spec.ts`：線數 1→5、深度上限 15 提早結束、設定持久化 + 恢復預設、無限分析逐步
   加深且事實來自進行中的里程碑、停止 → 最終事實）。真實 backend + 真實 Fairy-Stockfish + vite，
@@ -287,6 +313,10 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
   （棋盤、pocket、走子方、易位權）。進行中的 TV 對局不一致只是因為 lichess 會延遲公開進行中對局的
   著法（不是規則問題）。
 
+- 真實 LLM 評測（agy gemini-3.8-flash-high，2026-10-07，`scripts/llm_eval.py`，2 × 28 題，每題約 70 秒）：
+  第 1 輪 5/28 題有警告，第 2 輪（加嚴 prompt 後）2/28；所有警告都人工檢視：8 個全是檢查規則的誤報（已修正並
+  加回歸測試；第 2 輪重新檢查 → 0/28），沒有確認的幻覺；抽查的無警告回答事實正確。真實全局掃描（fixture 第 3
+  盤，雙方）只根據被判錯的時刻回答，0 個警告。
 - 真實 LLM（agy，2026-10-06）：`cd backend && LLM_PROVIDER=agy SHOW_ANSWERS=1 uv run python
   scripts/llm_smoke.py` → 4/4 PASS（有回答、中文、沒有未驗證著法、切題；白方視角用語正確、防守與
   analyzer 一致）。透過 serve.sh 用瀏覽器測試：串流回答、顯示模型、Qh5 重新分析、0 個未驗證。發現並
@@ -302,7 +332,15 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
 ## 建議的下一個任務
 1. 選用：若取得 ANTHROPIC_API_KEY，以 `LLM_PROVIDER=anthropic` 執行 `scripts/llm_smoke.py`，也驗證
    Claude 路徑。
-2. 選用：讓多位觀看者共用互動 engine 而不互相取消（例如每位活躍觀看者一個 engine process，以 CPU 數
+2. 已要求：AI 來源選擇。Provider：agy（`agy models` 列出 id；`--effort` 等級從 `agy --help` 解析）、codex
+   （`codex debug models` JSON：slug、visibility、supported_reasoning_levels；以 `codex exec --json
+   --skip-git-repo-check --ephemeral -s read-only -C <空目錄> -m M -c model_reasoning_effort=E` 執行，回答在
+   `item.completed` 的 agent_message，沒有逐字串流）、claude（`claude -p --output-format stream-json
+   --include-partial-messages --verbose --system-prompt S --tools "" --no-session-persistence
+   --strict-mcp-config --setting-sources "" --model M --effort E`，逐字內容在 stream_event 的
+   content_block_delta；model 別名與 effort 等級從 `claude --help` 解析；不能用 `--bare`，它不讀訂閱登入）。
+   每次即時列舉、依最新清單驗證請求，儲存的選項消失時改回預設（agy gemini-3.8-flash-high）。
+3. 選用：讓多位觀看者共用互動 engine 而不互相取消（例如每位活躍觀看者一個 engine process，以 CPU 數
    為上限）。
 
 task.md 的所有需求都已實作並測試，包括真實 LLM 回答（透過 agy）。
