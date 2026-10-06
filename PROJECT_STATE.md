@@ -236,6 +236,11 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
 - `cd frontend && npx playwright test` (starts its own servers on 8821/5181)
 
 ## Next recommended task
-1. (Needs the user) Put ANTHROPIC_API_KEY in `.env`, then `cd backend && SHOW_ANSWERS=1 uv run python
-   scripts/llm_smoke.py` and review the answers (grounding/POV/language); tune the prompt if needed.
-2. With a key: measure real latency/cost per answer and tune effort (medium default) / caching.
+1. (Blocked on the user) Put ANTHROPIC_API_KEY in `.env`, then
+   `cd backend && SHOW_ANSWERS=1 uv run python scripts/llm_smoke.py` and review the real answers
+   (grounding / White-POV wording / Traditional Chinese). Tune `app/llm/system_prompt.md` if needed;
+   then measure latency/cost per answer and revisit effort (medium) and caching.
+2. Optional, no current requirement in task.md: progressive (streamed) engine depth like lichess;
+   sharing one engine across several browser tabs without mutual cancellation.
+
+All task.md requirements other than real-LLM verification are implemented and tested (see above).
