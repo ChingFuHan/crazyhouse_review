@@ -36,12 +36,15 @@ function checkedText(move: CheckedMove): string {
 export function ChatPanel(props: ChatPanelProps) {
   const { turns, onAsk } = props
   const [text, setText] = useState('')
-  const pending = turns.some((t) => t.pending)
   const chat = turns.filter((t) => t.question !== null)
+  // Answers take a while (agy: 30–60 s), so asking never waits for other answers (including the
+  // AI explanation); only a question that is already waiting cannot be sent twice.
+  const waiting = new Set(chat.filter((t) => t.pending).map((t) => t.question))
 
   const send = (question: string) => {
-    if (!question.trim() || pending) return
-    onAsk(question.trim())
+    const trimmed = question.trim()
+    if (!trimmed || waiting.has(trimmed)) return
+    onAsk(trimmed)
     setText('')
   }
 
@@ -50,7 +53,7 @@ export function ChatPanel(props: ChatPanelProps) {
       <h2>Ask about this position</h2>
       <div className="quick-questions">
         {quickQuestions(props).map((q) => (
-          <button key={q} className="chip" disabled={pending} onClick={() => send(q)}>
+          <button key={q} className="chip" disabled={waiting.has(q)} onClick={() => send(q)}>
             {q}
           </button>
         ))}
@@ -86,7 +89,7 @@ export function ChatPanel(props: ChatPanelProps) {
           maxLength={1000}
           onChange={(e) => setText(e.target.value)}
         />
-        <button type="submit" disabled={pending || !text.trim()}>
+        <button type="submit" disabled={!text.trim() || waiting.has(text.trim())}>
           Send
         </button>
       </form>

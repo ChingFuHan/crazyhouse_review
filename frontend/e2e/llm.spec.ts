@@ -117,3 +117,32 @@ test('asking and immediately browsing away still produces the answer (user searc
   await expect(ai.locator('.answer')).toContainText(/best=\S/)
   await expect(ai.locator('.answer')).not.toHaveAttribute('data-analysis-id', '')
 })
+
+test('questions can be sent while the AI explanation is still being written', async ({ page }) => {
+  // A real model takes 30–60 s: hold the AI explanation request back (the answer itself still comes
+  // from the real backend) and ask questions meanwhile.
+  await page.route('**/api/explain/stream', async (route) => {
+    if (route.request().postDataJSON().question === null) await new Promise((resolve) => setTimeout(resolve, 4000))
+    await route.continue()
+  })
+  await page.goto('/')
+  await loadPgn(page, GAME)
+  await page.keyboard.press('End')
+  await activePly(page, 7)
+  await expect(page.getByTestId('engine')).toHaveAttribute('data-status', 'done')
+  const ai = page.getByTestId('ai-explain')
+  await ai.getByRole('button', { name: 'AI 解釋' }).click()
+  await expect(ai.getByTestId('ai-waiting')).toBeVisible()
+
+  const chat = page.getByTestId('chat')
+  await chat.getByLabel('提問').fill('這裡真正的威脅是什麼？')
+  await chat.getByRole('button', { name: 'Send' }).click()
+  await expect(chat.locator('.chat-turn .answer')).toContainText('question=這裡真正的威脅是什麼？')
+  // A quick question works too; a double click sends it only once.
+  await chat.locator('.chip').first().dblclick()
+  await expect(chat.locator('.chat-turn')).toHaveCount(2)
+  await expect(chat.locator('.chat-turn .answer')).toHaveCount(2)
+  await expect(ai.getByTestId('ai-waiting')).toBeVisible() // the explanation is still on its way
+  await expect(ai.locator('.answer')).toContainText('[FAKE LLM]', { timeout: 15_000 })
+  await expect(chat.locator('.chat-turn')).toHaveCount(2)
+})
