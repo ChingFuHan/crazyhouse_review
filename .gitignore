@@ -17,3 +17,6 @@ frontend/playwright-report/
 
 # engine binaries (fetched by scripts/fetch_engine.sh)
 engines/
+
+# LLM eval reports (scripts/llm_eval.py)
+backend/reports/
