@@ -167,7 +167,14 @@ comments as evidence, SAN used as React keys (§9). No task in progress.
     position_id + analysis_id); `src/explain.ts` turns facts into fact-only Traditional Chinese
     sentences (direct effect, king safety, replies, PV, pocket, candidate comparison in mover POV,
     alerts); `WhyPanel` renders them (or the last move when the game is over).
-  - Vite dev server :5180 proxies `/api` → backend :8820. `scripts/serve.sh` builds the UI and
+  - Vite dev server :5180 proxies `/api` → backend :8820.
+  - LAN deployment: `scripts/install_service.sh` → systemd user service `crazyhouse-review`
+    (enabled, Linger=yes so it starts at boot) running `scripts/run_server.sh` with HOST=0.0.0.0,
+    PORT=8820, ALLOWED_CLIENT_NETWORKS=127.0.0.0/8,::1/128,192.168.0.0/24. `app/access.py`
+    (pure ASGI) answers 403 to any other peer address (X-Forwarded-For ignored): verified Tailscale
+    source 100.70.168.53 → 403 and a Docker container (172.17.0.3) → 403 — Docker bridge traffic
+    reaches the port despite ufw, so the app-level allowlist matters. ufw (default DROP) needs
+    `sudo ufw allow from 192.168.0.0/24 to any port 8820 proto tcp` (user runs it; no sudo here). `scripts/serve.sh` builds the UI and
     the backend serves `frontend/dist` at `/` (StaticFiles mounted after the API routes).
   - Click-to-drop: pocket click toggles a selection mirrored into chessground's drop mode; one
     board click per selection, then re-sync (an occupied-square click leaves chessground's
@@ -229,7 +236,7 @@ comments as evidence, SAN used as React keys (§9). No task in progress.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 170 passed (incl. AgyProvider against a fake executable replaying
+- `cd backend && uv run pytest -q` → 172 passed (incl. AgyProvider against a fake executable replaying
   recorded agy output: streaming, error result, not-logged-in, timeout kill, kill on early close) (incl. PGN export round trip, answer grounding). Rules suite (drops, pawn ranks, drop mates, promoted
   capture → pawn, FEN round trip, castling rights); 3 real lichess games reach lichess's final FEN;
   real Fairy-Stockfish: drop mates both colors, White-POV signs, supersede race (deterministic, proven

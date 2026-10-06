@@ -7,6 +7,8 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from .access import IPNetwork, parse_networks
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 # Crazyhouse NNUE for Fairy-Stockfish (+1136 Elo over the classical eval); fetched by
 # scripts/fetch_engine.sh. The hash in the name is the start of the file's sha256.
@@ -94,3 +96,10 @@ def llm_settings() -> LLMSettings:
         agy_path=agy_path,
         agy_timeout_s=float(os.environ.get("AGY_TIMEOUT_S", "180")),
     )
+
+
+def allowed_client_networks() -> list[IPNetwork] | None:
+    """ALLOWED_CLIENT_NETWORKS (comma-separated CIDRs); None = no client check (default: the server
+    only listens on 127.0.0.1 unless HOST says otherwise). A malformed entry fails at startup."""
+    raw = os.environ.get("ALLOWED_CLIENT_NETWORKS", "").strip()
+    return parse_networks(raw) if raw else None

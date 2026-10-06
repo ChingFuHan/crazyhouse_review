@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.chess_core import STARTING_FEN, position_id
@@ -60,3 +61,30 @@ def test_built_frontend_is_served_after_api_routes(tmp_path):
     assert served.post("/api/position", json={"moves": []}).status_code == 200
     without = TestClient(create_app(frontend_dist=None))
     assert without.get("/").status_code == 404
+
+
+def test_client_network_allowlist():
+    from app.access import parse_networks
+
+    lan = parse_networks("127.0.0.0/8, ::1/128, 192.168.0.0/24")
+    app = create_app(frontend_dist=None, allowed_networks=lan)
+    assert TestClient(app, client=("192.168.0.5", 50000)).get("/api/health").status_code == 200
+    assert TestClient(app, client=("127.0.0.1", 50000)).get("/api/health").status_code == 200
+    assert TestClient(app, client=("::ffff:192.168.0.9", 50000)).get("/api/health").status_code == 200
+    for outsider in ("100.70.168.53", "172.17.0.2", "192.168.1.5", "testclient"):
+        response = TestClient(app, client=(outsider, 50000)).post("/api/position", json={"moves": []})
+        assert response.status_code == 403, outsider
+        assert response.json()["detail"]["error"] == "forbidden"
+    # Forwarding headers are not trusted.
+    spoof = TestClient(app, client=("100.70.168.53", 50000)).get("/api/health", headers={"X-Forwarded-For": "192.168.0.5"})
+    assert spoof.status_code == 403
+
+
+def test_allowlist_from_environment(monkeypatch):
+    monkeypatch.setenv("ALLOWED_CLIENT_NETWORKS", "192.168.0.0/24")
+    assert TestClient(create_app(frontend_dist=None), client=("10.0.0.1", 1)).get("/api/health").status_code == 403
+    monkeypatch.setenv("ALLOWED_CLIENT_NETWORKS", "192.168.0.0/33")
+    with pytest.raises(ValueError):
+        create_app(frontend_dist=None)
+    monkeypatch.delenv("ALLOWED_CLIENT_NETWORKS")
+    assert TestClient(create_app(frontend_dist=None), client=("10.0.0.1", 1)).get("/api/health").status_code == 200

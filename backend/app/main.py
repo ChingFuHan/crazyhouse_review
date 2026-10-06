@@ -4,14 +4,22 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from .config import REPO_ROOT, EngineSettings, LLMSettings, engine_settings, llm_settings, review_engine_settings
+from .access import ClientNetworkAllowlist, IPNetwork
+from .config import (
+    REPO_ROOT,
+    EngineSettings,
+    LLMSettings,
+    allowed_client_networks,
+    engine_settings,
+    llm_settings,
+    review_engine_settings,
+)
 from .engine import EngineService
 from .llm.provider import AgyProvider, AnthropicProvider, FakeProvider, LLMProvider, LLMUnavailable
 from .llm.service import ExplainService
@@ -40,8 +48,10 @@ def create_app(
     explain_service: ExplainService | None = None,
     review_settings: EngineSettings | None = None,
     frontend_dist: Path | None = REPO_ROOT / "frontend" / "dist",
+    allowed_networks: list[IPNetwork] | None = None,
 ) -> FastAPI:
     load_dotenv(REPO_ROOT / ".env", override=False)
+    networks = allowed_networks if allowed_networks is not None else allowed_client_networks()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -55,6 +65,8 @@ def create_app(
         app.state.explain.close()
 
     app = FastAPI(title="Crazyhouse Review", lifespan=lifespan)
+    if networks:
+        app.add_middleware(ClientNetworkAllowlist, networks=networks)
     app.include_router(game.router)
     app.include_router(engine.router)
     app.include_router(explain.router)
