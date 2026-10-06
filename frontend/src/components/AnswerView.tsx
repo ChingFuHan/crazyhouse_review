@@ -1,10 +1,28 @@
+import { useEffect, useState } from 'react'
 import type { Turn } from '../useConversation'
 import { RichText } from './RichText'
+
+/** Seconds since mount, ticking: a real model can think for a minute before the first word. */
+function Elapsed() {
+  const [seconds, setSeconds] = useState(0)
+  useEffect(() => {
+    const started = Date.now()
+    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  return seconds > 0 ? <span>（{seconds} 秒）</span> : null
+}
 
 /** One LLM answer with its provenance (which position / engine result it was grounded on). */
 export function AnswerView({ turn }: { turn: Turn }) {
   if (turn.pending) {
-    if (!turn.partial) return <div className="engine-note">AI 思考中…</div>
+    if (!turn.partial) {
+      return (
+        <div className="engine-note" data-testid="ai-waiting">
+          AI 思考中…<Elapsed />
+        </div>
+      )
+    }
     return (
       <div className="answer streaming" aria-busy="true">
         <RichText text={turn.partial} />

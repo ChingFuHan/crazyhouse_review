@@ -1,12 +1,14 @@
 import type { ReactNode } from 'react'
 
-// Minimal, safe rendering of LLM markdown: paragraphs, headings, bullet/numbered lists, **bold**.
-// Everything is rendered as React text nodes (no HTML injection).
+// Minimal, safe rendering of LLM markdown: paragraphs, headings, bullet/numbered lists, rules,
+// **bold** and `code`. Everything is rendered as React text nodes (no HTML injection).
 
 function inline(text: string): ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
-    part.startsWith('**') && part.endsWith('**') && part.length > 4 ? <strong key={i}>{part.slice(2, -2)}</strong> : part,
-  )
+  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) return <strong key={i}>{inline(part.slice(2, -2))}</strong>
+    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) return <code key={i}>{part.slice(1, -1)}</code>
+    return part
+  })
 }
 
 export function RichText({ text }: { text: string }) {
@@ -33,6 +35,10 @@ export function RichText({ text }: { text: string }) {
     }
     flush()
     if (!line.trim()) continue
+    if (/^\s*([-*_])\1{2,}\s*$/.test(line)) {
+      blocks.push(<hr key={blocks.length} />)
+      continue
+    }
     const heading = line.match(/^#{1,6}\s+(.*)$/)
     blocks.push(heading ? <h4 key={blocks.length}>{inline(heading[1])}</h4> : <p key={blocks.length}>{inline(line)}</p>)
   }

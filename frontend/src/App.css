@@ -859,3 +859,17 @@ cg-board square.kb-cursor {
   white-space: nowrap;
   border: 0;
 }
+
+.rich-text code {
+  padding: 0 3px;
+  font-size: 0.9em;
+  border-radius: 3px;
+  background: var(--panel-2);
+  color: var(--text-strong);
+}
+
+.rich-text hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 8px 0;
+}

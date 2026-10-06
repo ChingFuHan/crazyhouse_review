@@ -50,10 +50,15 @@ cd frontend && npx vitest run && npx tsc -b && npx playwright test
 ```
 
 ## LLM setup
-Natural-language explanations use Claude through the official Anthropic SDK. Copy `.env.example`
-to `.env` (git-ignored) and set `ANTHROPIC_API_KEY`. Defaults: `LLM_MODEL=claude-opus-5-5`,
-`LLM_EFFORT=medium`; server-side refusal fallback (`fallbacks="default"`) is enabled. Without a
-key everything else works and the AI button reports that the LLM is not configured.
+Natural-language explanations come from one of two providers (`LLM_PROVIDER=auto` picks the first
+available; see `.env.example`):
+- **Claude** via the official Anthropic SDK when `ANTHROPIC_API_KEY` is set in `.env` (git-ignored):
+  `claude-opus-5-5`, effort `medium`, server-side refusal fallback (`fallbacks="default"`).
+- **The local `agy` CLI** otherwise (uses its own login and subscription quota):
+  `gemini-3.8-flash-high`, run headless per question in an empty private directory, plan mode,
+  terminal sandbox, prompted not to use tools. Answers take roughly 30–60 s (shown as a counter).
+
+Without either, everything else works and the AI button reports that no LLM is configured.
 `LLM_PROVIDER=fake` is a deterministic stand-in used only by automated tests.
 
 Every answer is post-checked: moves it mentions that are neither legal now nor part of the engine /
@@ -97,4 +102,4 @@ cd backend && SHOW_ANSWERS=1 uv run python scripts/llm_smoke.py   # a few reques
 
 ## Known limitations
 - One engine process is shared; analysing in two tabs at once cancels searches.
-- Real Claude responses have not been verified in this repository's test runs (tests use a fake).
+- Automated tests use a fake LLM; real answers are checked with `scripts/llm_smoke.py` (agy verified).

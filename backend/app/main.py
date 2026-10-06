@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import REPO_ROOT, EngineSettings, LLMSettings, engine_settings, llm_settings, review_engine_settings
 from .engine import EngineService
-from .llm.provider import AnthropicProvider, FakeProvider, LLMProvider, LLMUnavailable
+from .llm.provider import AgyProvider, AnthropicProvider, FakeProvider, LLMProvider, LLMUnavailable
 from .llm.service import ExplainService
 from .review import ReviewService
 from .routers import engine, explain, game, review
@@ -21,15 +21,17 @@ from .routers import engine, explain, game, review
 
 def make_explain_service(settings: LLMSettings) -> ExplainService:
     provider: LLMProvider
-    if settings.provider == "fake":
-        provider = FakeProvider()
-    elif settings.provider == "anthropic":
-        try:
+    try:
+        if settings.provider == "fake":
+            provider = FakeProvider()
+        elif settings.provider == "anthropic":
             provider = AnthropicProvider(settings.model, settings.effort, settings.max_tokens)
-        except LLMUnavailable as error:
-            return ExplainService(None, str(error))
-    else:
-        return ExplainService(None, "LLM 已停用（LLM_PROVIDER=none）")
+        elif settings.provider == "agy":
+            provider = AgyProvider(settings.model, settings.agy_path, settings.agy_timeout_s)
+        else:
+            return ExplainService(None, "LLM 未設定：請在 .env 設定 ANTHROPIC_API_KEY，或安裝並登入 agy CLI")
+    except LLMUnavailable as error:
+        return ExplainService(None, str(error))
     return ExplainService(provider)
 
 

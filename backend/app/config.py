@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -61,18 +62,35 @@ def review_engine_settings() -> EngineSettings:
     )
 
 
+DEFAULT_MODELS = {"anthropic": "claude-opus-5-5", "agy": "gemini-3.8-flash-high"}
+
+
 @dataclass(frozen=True)
 class LLMSettings:
-    provider: str  # "anthropic" | "fake" | "none"
+    provider: str  # "anthropic" | "agy" | "fake" | "none"
     model: str
     effort: str
     max_tokens: int
+    agy_path: str = "agy"
+    agy_timeout_s: float = 180
 
 
 def llm_settings() -> LLMSettings:
+    """LLM_PROVIDER=auto (default): Anthropic if a key is set, else the local agy CLI if installed."""
+    agy_path = os.environ.get("AGY_PATH", "agy")
+    provider = os.environ.get("LLM_PROVIDER", "auto")
+    if provider == "auto":
+        if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+            provider = "anthropic"
+        elif shutil.which(agy_path):
+            provider = "agy"
+        else:
+            provider = "none"
     return LLMSettings(
-        provider=os.environ.get("LLM_PROVIDER", "anthropic"),
-        model=os.environ.get("LLM_MODEL", "claude-opus-5-5"),
+        provider=provider,
+        model=os.environ.get("LLM_MODEL") or DEFAULT_MODELS.get(provider, ""),
         effort=os.environ.get("LLM_EFFORT", "medium"),
         max_tokens=int(os.environ.get("LLM_MAX_TOKENS", "16000")),
+        agy_path=agy_path,
+        agy_timeout_s=float(os.environ.get("AGY_TIMEOUT_S", "180")),
     )

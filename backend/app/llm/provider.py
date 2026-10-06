@@ -7,6 +7,8 @@ import json
 import logging
 import os
 import re
+import shutil
+import tempfile
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -104,6 +106,130 @@ class AnthropicProvider:
             request_id=message._request_id,
             input_tokens=usage.input_tokens if usage else None,
             output_tokens=usage.output_tokens if usage else None,
+        )
+
+
+# agy enforces --print-timeout itself; this extra margin only catches a hung process.
+AGY_GRACE_S = 15
+AGY_TOOL_RULE = "只用文字直接回答使用者的最後一個問題；不要使用任何工具、不要讀寫檔案、不要瀏覽網頁。"
+
+
+def agy_prompt(system: str, messages: list[dict]) -> str:
+    """agy has no system role: the rules lead the single prompt, then earlier turns, then the question."""
+    parts = [system.strip(), "", "# 輸出規則", AGY_TOOL_RULE]
+    if len(messages) > 1:
+        parts += ["", "# 先前的對話（僅供參考）"]
+        parts += [f"[{'使用者' if m['role'] == 'user' else '助手'}] {m['content']}" for m in messages[:-1]]
+    parts += ["", "# 目前的問題", messages[-1]["content"]]
+    return "\n".join(parts)
+
+
+def parse_agy_event(line: str | bytes) -> tuple[str, object] | None:
+    """One `agy --output-format stream-json` line -> ("delta", text) | ("result", dict) | None."""
+    try:
+        data = json.loads(line)
+    except ValueError:
+        return None
+    if data.get("event") == "step_update":
+        step = data.get("step_update") or {}
+        if step.get("step_type") == "agent_response" and step.get("text_delta"):
+            return "delta", step["text_delta"]
+    elif data.get("event") == "result":
+        return "result", data.get("result") or {}
+    return None
+
+
+class AgyProvider:
+    """The local `agy` CLI (its own login and subscription quota), run headless per request.
+
+    Each run happens in a private empty directory in plan mode with the terminal sandbox on, so the
+    agent sees no project files and cannot edit anything; the prompt also forbids tool use.
+    """
+
+    def __init__(self, model: str, command: str = "agy", timeout_s: float = 180) -> None:
+        executable = shutil.which(command)
+        if executable is None:
+            raise LLMUnavailable(f"找不到 agy CLI（AGY_PATH={command}）")
+        self.executable = executable
+        self.model = model
+        self.name = f"agy:{model}"
+        self.timeout_s = timeout_s
+        self._workdir: str | None = None
+
+    def _cwd(self) -> str:
+        if self._workdir is None:
+            self._workdir = tempfile.mkdtemp(prefix="crazyhouse-agy-")
+        return self._workdir
+
+    async def stream(self, system: str, messages: list[dict]) -> AsyncIterator[str | LLMResult]:
+        args = [
+            "-p", agy_prompt(system, messages),
+            "--model", self.model,
+            "--output-format", "stream-json",
+            "--mode", "plan",
+            "--sandbox",
+            "--print-timeout", f"{int(self.timeout_s)}s",
+        ]  # fmt: skip
+        try:
+            process = await asyncio.create_subprocess_exec(
+                self.executable,
+                *args,
+                cwd=self._cwd(),
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except OSError as error:
+            raise LLMUnavailable(f"無法啟動 agy CLI：{error}") from error
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.timeout_s + AGY_GRACE_S
+        result: dict | None = None
+        assert process.stdout is not None and process.stderr is not None
+        stderr = asyncio.ensure_future(process.stderr.read())  # drained concurrently: a full pipe would block agy
+        try:
+            while True:
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    raise LLMError("AI 回答逾時")
+                try:
+                    line = await asyncio.wait_for(process.stdout.readline(), remaining)
+                except TimeoutError as error:
+                    raise LLMError("AI 回答逾時") from error
+                if not line:
+                    break
+                parsed = parse_agy_event(line)
+                if parsed is None:
+                    continue
+                kind, value = parsed
+                if kind == "delta":
+                    yield str(value)
+                else:
+                    result = value  # type: ignore[assignment]
+            await process.wait()
+        finally:
+            if process.returncode is None:  # consumer went away or we failed: never leave a run spending quota
+                process.kill()
+                await process.wait()
+            stderr_text = (await stderr).decode(errors="replace")
+
+        if result is None or result.get("status") != "SUCCESS":
+            detail = (result or {}).get("error") or stderr_text
+            first = detail.strip().splitlines()[0] if detail.strip() else f"exit code {process.returncode}"
+            log.error("agy failed: %s", first)
+            if re.search(r"log ?in|sign ?in|auth", first, re.I):
+                raise LLMUnavailable(f"agy 尚未登入或授權失效：{first}")
+            raise LLMError(f"AI 服務錯誤：{first}")
+        text = str(result.get("response") or "").strip()
+        if not text:
+            raise LLMError("AI 沒有產生回答")
+        usage = result.get("usage") or {}
+        yield LLMResult(
+            text=text,
+            model=self.name,
+            stop_reason="end_turn",
+            request_id=result.get("conversation_id"),
+            input_tokens=usage.get("input_tokens"),
+            output_tokens=usage.get("output_tokens"),
         )
 
 

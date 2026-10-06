@@ -6,8 +6,8 @@ Task spec: `task.md`.
 ## Current milestone
 Milestone 1 DONE (PGN → board → navigation → pockets → rules → variations).
 Milestone 2 DONE (Fairy-Stockfish → White-POV eval → best move → MultiPV 3 → PV, arrows).
-Milestone 3: Analyzer + deterministic "Why this move?" DONE; LLM layer DONE but real Claude calls
-UNVERIFIED (no ANTHROPIC_API_KEY available) → PARTIAL.
+Milestone 3: Analyzer + deterministic "Why this move?" DONE; LLM layer DONE and verified with real
+answers through the local agy CLI (Gemini 3.8 Flash High). Claude path still unverified (no key).
 Milestone 4 (chat + candidate re-analysis + variation-aware Q&A) DONE with the fake LLM; the task.md
 §55 core flow passes end-to-end (e2e/core-flow.spec.ts). Real-LLM answer quality still unverified.
 Whole-game review (critical moves, task.md §30) + eval graph DONE.
@@ -74,6 +74,15 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
     `client.beta.messages.stream` + `text_stream` + `get_final_message`; refused chain → partial
     discarded). `POST /api/explain/stream` = SSE `meta`/`delta`/`done`/`error`; validation/engine
     errors are plain HTTP errors before the stream opens; cache hits send meta + done only.
+  - `AgyProvider` (provider.py): user's choice when no Anthropic key — runs `agy -p <prompt> --model
+    gemini-3.8-flash-high --output-format stream-json --mode plan --sandbox --print-timeout` with no
+    shell, cwd = private empty temp dir; prompt = system prompt + "no tools" rule + prior turns +
+    question (agy has no system role; data boundary still holds via escaped `<position_context>`).
+    Parses `step_update.text_delta` (agent_response) and the final `result` (SUCCESS/ERROR); exit 1/3,
+    timeout (print-timeout + AGY_GRACE_S) → LLMError, login/auth errors → LLMUnavailable; process
+    killed if the stream is closed early; stderr drained concurrently. Do NOT add
+    `--disable-slash-commands`: agy then ignores `--mode plan`. `LLM_PROVIDER=auto` default.
+    Recorded real output: `tests/fixtures/agy_stream_*.ndjson`.
   - `app/llm/grounding.py`: after each answer, move tokens (SAN/UCI/drops/castling; bare squares
     ignored) that are neither legal now nor present anywhere in the context JSON (PVs, candidates,
     game moves, threat line) → `ExplainResponse.unverified_moves`; the UI shows a warning under the
@@ -197,12 +206,14 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   No streaming (two fixed-length phases).
 - Analyzer reports king-zone attackers but no weighted pressure score; opened diagonals are covered
   only through discovered attacks; "tempo" is expressed only through checks/forced replies. "Why" panel is fact-only (no strategic interpretation) until the LLM.
-- LLM: real Claude output never exercised here (no key). E2E uses LLM_PROVIDER=fake.
+- LLM: Claude path never exercised (no key); agy answers take ~30–60 s (agy start-up + thinking;
+  text arrives near the end). E2E uses LLM_PROVIDER=fake.
 - (Resolved) The intermittent engine.spec failure was a wrong test expectation (ply 1 instead of 2
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 156 passed (incl. PGN export round trip, answer grounding). Rules suite (drops, pawn ranks, drop mates, promoted
+- `cd backend && uv run pytest -q` → 165 passed (incl. AgyProvider against a fake executable replaying
+  recorded agy output: streaming, error result, not-logged-in, timeout kill, kill on early close) (incl. PGN export round trip, answer grounding). Rules suite (drops, pawn ranks, drop mates, promoted
   capture → pawn, FEN round trip, castling rights); 3 real lichess games reach lichess's final FEN;
   real Fairy-Stockfish: drop mates both colors, White-POV signs, supersede race (deterministic, proven
   to fail without the fix), crash restart, root_moves, FSF `d`/`perft 1` == python-chess FEN and
@@ -211,7 +222,7 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   a real-game job not disturbing interactive analysis; LLM context == board/engine/analyzer, variation
   and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
   503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
-- `cd frontend && npx vitest run` → 42 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
+- `cd frontend && npx vitest run` → 43 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
 - `cd frontend && npx playwright test` → 31 passed. Real backend + real Fairy-Stockfish + vite, fresh
   servers on 8821/5181, LLM_PROVIDER=fake. Covers: DOM board/pockets == backend FEN square-by-square
   (all 83 plies of a real game); mouse, click-to-drop, touch (tap + CDP drags) and keyboard input;
@@ -228,6 +239,12 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   final FEN (board, pocket, side, castling). Ongoing TV games mismatch only because lichess
   delays published moves of games in progress (not a rules issue).
 
+- Real LLM (agy, 2026-10-06): `cd backend && LLM_PROVIDER=agy SHOW_ANSWERS=1 uv run python
+  scripts/llm_smoke.py` → 4/4 PASS (answered, Chinese, no unverified moves, on topic; White-POV
+  wording correct, defenses match the analyzer). Browser via serve.sh: streamed answer, model shown,
+  Qh5 re-analysed, 0 unverified. Found + fixed: answers quoted context field names; RichText now
+  renders `code` and --- rules; waiting counter.
+
 ## Last successful commands
 - `PORT=8830 ./scripts/serve.sh` (single process; browser smoke: board + engine best move, 0 console errors)
 - `cd backend && uv run pytest -q`
@@ -236,11 +253,9 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
 - `cd frontend && npx playwright test` (starts its own servers on 8821/5181)
 
 ## Next recommended task
-1. (Blocked on the user) Put ANTHROPIC_API_KEY in `.env`, then
-   `cd backend && SHOW_ANSWERS=1 uv run python scripts/llm_smoke.py` and review the real answers
-   (grounding / White-POV wording / Traditional Chinese). Tune `app/llm/system_prompt.md` if needed;
-   then measure latency/cost per answer and revisit effort (medium) and caching.
+1. Optional: if an ANTHROPIC_API_KEY becomes available, run `scripts/llm_smoke.py` with
+   `LLM_PROVIDER=anthropic` to verify the Claude path too.
 2. Optional, no current requirement in task.md: progressive (streamed) engine depth like lichess;
    sharing one engine across several browser tabs without mutual cancellation.
 
-All task.md requirements other than real-LLM verification are implemented and tested (see above).
+All task.md requirements are implemented and tested, including real LLM answers (via agy).

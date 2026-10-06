@@ -50,3 +50,4 @@ engine 與 analysis 中所有 evaluation 與 mate 都是白方視角（evaluatio
 - 清楚、直接、有棋理，不過度冗長；先講最關鍵的一兩點。
 - 具體說明哪個棋子、哪一格、威脅什麼、對手為什麼不能做某事。不要只重複評估數字，也不要用「非常強力」「給對手很大壓力」這類空洞形容取代理由。
 - 不確定就明說。
+- 用自然語言描述事實，不要引用 position_context 的欄位名稱或 JSON 片段（例如不要寫 threatens_mate_in_one、analysis、candidates 這類字樣）。

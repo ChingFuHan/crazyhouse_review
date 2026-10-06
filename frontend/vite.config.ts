@@ -11,6 +11,6 @@ export default defineConfig({
     proxy: { '/api': backend },
   },
   test: {
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
   },
 })
