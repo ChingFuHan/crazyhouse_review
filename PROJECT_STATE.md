@@ -8,9 +8,15 @@ Milestone 1 DONE (PGN → board → navigation → pockets → rules → variati
 Milestone 2 DONE (Fairy-Stockfish → White-POV eval → best move → MultiPV 3 → PV, arrows).
 Milestone 3: Analyzer + deterministic "Why this move?" DONE; LLM layer DONE and verified with real
 answers through the local agy CLI (Gemini 3.8 Flash High). Claude path still unverified (no key).
-Milestone 4 (chat + candidate re-analysis + variation-aware Q&A) DONE with the fake LLM; the task.md
-§55 core flow passes end-to-end (e2e/core-flow.spec.ts). Real-LLM answer quality still unverified.
+Milestone 4 (chat + candidate re-analysis + variation-aware Q&A) DONE; the task.md §55 core flow
+passes end-to-end with the fake LLM (e2e/core-flow.spec.ts) and real answers pass via agy.
 Whole-game review (critical moves, task.md §30) + eval graph DONE.
+
+## Current task status
+Strict verification against task.md (2026-10-06) found and fixed: stale README/PROJECT_STATE,
+LLM context missing §7/§18 fields, no attacked/defended squares (§15), no engine depth cap (§10),
+named moves beyond 3 reaching the LLM unchecked (§20/§22), grounding counting the question / PGN
+comments as evidence, SAN used as React keys (§9). No task in progress.
 
 ## Current architecture
 - `backend/` Python 3.13 (uv), FastAPI, python-chess 1.11.2.
@@ -89,10 +95,12 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
     answer. `scripts/llm_smoke.py`: 4 fixed cases against the REAL provider (answered, mostly Chinese,
     no unverified moves, on topic); exit 2 when no key, `--allow-fake` to check the harness.
   - `app/llm/candidates.py` (task.md §22): moves named in a question (SAN/UCI/drop/castling, CJK
-    neighbours ok; bare squares only if a legal pawn move; max 3) → legality (illegal → Chinese
-    reason) → MultiPV hit, or engine analysis of the position after the move (same multipv/movetime)
-    → move facts → `candidate_analysis` in the LLM context. If every named move is illegal the
-    answer comes from the rules (`model: "rules"`), no engine, no LLM. Response `checked_moves`.
+    neighbours ok; bare squares only if a legal pawn move; up to 10) → legality for all (illegal →
+    Chinese reason) → MultiPV hit (free), or a fresh engine search of the position after the move
+    (same multipv/movetime, at most 3 per question; further legal moves → `not_analyzed`) → move
+    facts → `candidate_analysis` in the LLM context. If every named move is illegal the answer comes
+    from the rules (`model: "rules"`), no engine, no LLM. Response `checked_moves`.
+    Grounding excludes `user_question`, PGN comments/headers and not-analysed moves from evidence.
   - User-facing illegal-move reasons in chess_core are Traditional Chinese.
   - `app/review.py` + `routers/review.py`: whole-game review jobs (`POST /api/review`, `GET
     /api/review/{id}`, in-memory, deduped by line) on a SECOND engine process (2 threads,
@@ -177,20 +185,29 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
     style, normalized by the backend). Engine on/off switch (localStorage preference, try/catch).
 
 ## Completed features
-- Crazyhouse canonical state, move parsing (UCI or SAN) with human-readable illegal reasons.
-- PGN import with variations/comments.
-- UI: PGN load, board + pockets, move list with variations/comments, navigation, flip.
-- Interaction: drag moves, pocket drag/drop with legal-square highlight, promotion chooser
-  (cancel restores), typed moves, user variations (delete ×), 「回到主線」.
-- Engine: Fairy-Stockfish analysis of the active position, MultiPV 3, mate scores, arrows/drop
-  markers, click-to-play PV.
-- "Why this move?" panel: deterministic explanation of the best move + candidate comparison +
-  position alerts (mate threats, hanging pieces), all traceable to engine output or rules.
+- Crazyhouse canonical state, move parsing (UCI or SAN) with Chinese illegal-move reasons.
+- PGN import (variations/comments) and direct crazyhouse FEN load; PGN export (copy/download).
+- UI: board + pockets, move list with variations/comments, navigation, flip; session restore after
+  reload.
+- Interaction: mouse drag, pocket drag/click-to-drop, touch (tap-to-drop, drags), keyboard board
+  cursor + typed moves; promotion chooser; user variations (delete ×), 「回到主線」. Undo/redo =
+  ◀/▶ navigation (nothing is lost) + × to remove a played line.
+- Engine: Fairy-Stockfish 14 + crazyhouse NNUE, MultiPV 3, White-POV scores, mate scores, optional
+  depth cap, arrows/drop markers, click-to-play PV, on/off switch; null-move threat analysis.
+- "Why this move?" panel: fact-only explanation (direct effect, king escapes, replies, PV, pocket,
+  line effects, mate threats + defenses, pieces en prise) and candidate comparison.
+- LLM: Claude or local agy; on-demand / dwell auto-explain; chat with quick questions; every named
+  move legality-checked, up to 3 fresh engine searches, the rest marked not analysed; streamed
+  answers; unbacked moves in answers flagged.
+- Whole-game review: per-move verdicts (inaccuracy … missed/allowed mate) + clickable eval graph.
 - Fresh game (no PGN): the first user line is the main line. PGN game: user moves are always
   variations; the PGN main line is never modified.
 
 ## Important decisions
 - Backend is rules authority; frontend tree stores only backend-produced states.
+- Canonical position (task.md §7) = backend `PositionState` + the tree node's `variation_id`;
+  every LLM request serializes both together (context `position` block: position_id, variation_id,
+  ply, fen, side_to_move, white/black pocket, move_history, last_move, promoted pieces).
 - position_id is per line (transpositions get different ids; history matters).
 - Pawn drop SAN displayed lichess-style `P@e4` (python-chess emits `@e4`).
 - Port 8765 is taken on this host by another service; use 8820 for backend dev.
@@ -212,7 +229,7 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 165 passed (incl. AgyProvider against a fake executable replaying
+- `cd backend && uv run pytest -q` → 170 passed (incl. AgyProvider against a fake executable replaying
   recorded agy output: streaming, error result, not-logged-in, timeout kill, kill on early close) (incl. PGN export round trip, answer grounding). Rules suite (drops, pawn ranks, drop mates, promoted
   capture → pawn, FEN round trip, castling rights); 3 real lichess games reach lichess's final FEN;
   real Fairy-Stockfish: drop mates both colors, White-POV signs, supersede race (deterministic, proven

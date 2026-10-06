@@ -1,8 +1,11 @@
 # Crazyhouse Review
 
-Interactive review board for Crazyhouse games: load a PGN, step through moves, play your own
-variations, and (planned) get Fairy-Stockfish analysis plus LLM explanations grounded in
-engine output and deterministic position facts.
+## Purpose
+An interactive review board for Crazyhouse games only: load a PGN or FEN, step through the game,
+play your own variations, and see Fairy-Stockfish analysis together with explanations — a
+fact-only panel computed from the engine and the rules, and natural-language answers from an LLM
+that is given exactly the position, pockets, variation and engine result you are looking at.
+It is not a playing site, puzzle trainer, rating system or multi-variant platform.
 
 ## Architecture
 - `backend/` — FastAPI + python-chess. `app/chess_core.py` is the single Crazyhouse rules
@@ -73,7 +76,8 @@ cd backend && SHOW_ANSWERS=1 uv run python scripts/llm_smoke.py   # a few reques
 - Crazyhouse PGN import (variations and comments kept as data), or load a crazyhouse FEN directly
 - Review board: PGN load, pockets, move list with variations, keyboard navigation, flip
 - Play your own moves: drag pieces, drag from the pocket or click a pocket piece then a square
-  (legal squares highlighted; Esc cancels),
+  (legal squares highlighted; Esc cancels); works with touch, and with the keyboard (focus the
+  board: arrows move a cursor, Enter selects/moves or drops a picked pocket piece),
   promotion chooser, typed moves (SAN/UCI); your moves form variations, the PGN main line
   is never changed; 「回到主線」 returns to where you branched off
 
@@ -84,8 +88,10 @@ cd backend && SHOW_ANSWERS=1 uv run python scripts/llm_smoke.py   # a few reques
   king escape squares before/after, forced replies, main line, pocket changes) and how the other
   candidates differ, plus alerts for mate threats and hanging pieces
 
-- 「AI 解釋」: on-demand (or, optionally, automatic after you stay on a position), streamed Claude explanation grounded on the same engine result and facts shown on
-  screen, aware of the current variation and the game move (requires `ANTHROPIC_API_KEY`)
+- 「AI 解釋」: on-demand (or, optionally, automatic after you stay on a position), streamed LLM
+  explanation grounded on the same engine result and facts shown on screen, aware of the current
+  variation and the game move — Claude with `ANTHROPIC_API_KEY`, or the local `agy` CLI with no key
+  (see LLM setup); moves an answer mentions without backing are flagged as unverified
 
 - "Ask about this position": quick questions and free questions about the current position or
   variation; moves you mention (e.g. 「為什麼不能 Qxe2？」「如果我改走 Qh5 呢？」) are checked for
@@ -99,6 +105,9 @@ cd backend && SHOW_ANSWERS=1 uv run python scripts/llm_smoke.py   # a few reques
 - 匯出 PGN: the game with your variations and comments as a crazyhouse PGN (copy or download)
 - Reloading the page restores the loaded game, your variations and the current position
   (stored in this browser only)
+
+- Undo / redo: ◀ / ▶ (or ← / →) step back and forward without losing anything; a move you played
+  is removed with the × next to its variation
 
 ## Known limitations
 - One engine process is shared; analysing in two tabs at once cancels searches.
