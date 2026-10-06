@@ -1,3 +1,4 @@
+import type { ExportNode } from './exportPgn'
 import type { LlmMeta } from './llmRequest'
 import type { ChatTurn, EngineAnalysis, ExplainResponse, GameTreeDto, Insights, PositionState, ReviewJob } from './types'
 
@@ -126,6 +127,9 @@ export const api = {
     if (!final) throw new ApiError(502, 'stream_incomplete', 'AI 回答串流中斷')
     return final
   },
+  /** PGN of the whole tree (main line, PGN and user variations, comments), validated by the backend. */
+  exportPgn: (rootFen: string, headers: Record<string, string>, nodes: ExportNode[]) =>
+    post<{ pgn: string }>('/api/export', { root_fen: rootFen, headers, nodes }),
   /** Whole-game review of a line (the main line), run on the backend's separate review engine. */
   startReview: (last: PositionState) => post<ReviewJob>('/api/review', { root_fen: last.root_fen, moves: last.moves }),
   getReview: (jobId: string, signal?: AbortSignal) => request<ReviewJob>(`/api/review/${jobId}`, { signal }),

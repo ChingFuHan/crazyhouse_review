@@ -5,8 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from ..chess_core import IllegalMoveError, LineError, apply_move, normalize_root_fen, position_id, position_state
-from ..models import GameTree, LineRequest, MoveRequest, PgnRequest, PositionState
-from ..pgn_import import PgnError, import_pgn
+from ..models import ExportRequest, ExportResponse, GameTree, LineRequest, MoveRequest, PgnRequest, PositionState
+from ..pgn_import import PgnError, export_pgn, import_pgn
 
 router = APIRouter(prefix="/api")
 
@@ -53,3 +53,11 @@ def load_pgn(request: PgnRequest) -> GameTree:
         return import_pgn(request.pgn)
     except PgnError as error:
         raise HTTPException(status_code=422, detail={"error": "invalid_pgn", "message": str(error)}) from error
+
+
+@router.post("/export", response_model=ExportResponse)
+def export(request: ExportRequest) -> ExportResponse:
+    try:
+        return ExportResponse(pgn=export_pgn(request.root_fen, request.headers, request.nodes))
+    except (PgnError, LineError) as error:
+        raise HTTPException(status_code=422, detail={"error": "invalid_export", "message": str(error)}) from error

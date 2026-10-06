@@ -810,3 +810,21 @@ button.link {
   gap: 12px;
   font-size: 0.85rem;
 }
+
+.export {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.export textarea {
+  width: 100%;
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  font-size: 0.78rem;
+}
+
+.export .row {
+  display: flex;
+  gap: 8px;
+}

@@ -11,8 +11,8 @@ import io
 import chess.pgn
 from chess.variant import CrazyhouseBoard
 
-from .chess_core import LineError, normalize_root_fen, position_state
-from .models import GameNode, GameTree
+from .chess_core import STARTING_FEN, LineError, normalize_root_fen, position_state
+from .models import ExportNode, GameNode, GameTree
 
 CRAZYHOUSE_ALIASES = {alias.lower() for alias in CrazyhouseBoard.aliases} | {"crazyhouse"}
 
@@ -84,3 +84,41 @@ def _push_checked(board: CrazyhouseBoard, move: chess.Move) -> None:
     if not board.is_legal(move):
         raise LineError(f"illegal move {move.uci()} in {board.fen()}")
     board.push(move)
+
+
+SEVEN_TAG_ROSTER = ("Event", "Site", "Date", "Round", "White", "Black", "Result")
+
+
+def export_pgn(root_fen: str | None, headers: dict[str, str], nodes: list[ExportNode]) -> str:
+    """Build a crazyhouse PGN from tree nodes (pre-order, main continuation first). Every move is
+    re-validated by replaying it; a node whose parent line is missing is rejected."""
+    root_fen = normalize_root_fen(root_fen)
+    game = chess.pgn.Game()
+    for key, value in headers.items():
+        if key not in ("Variant", "FEN", "SetUp"):
+            game.headers[key] = value
+    for key in SEVEN_TAG_ROSTER:
+        game.headers.setdefault(key, "?" if key != "Result" else "*")
+    if root_fen != STARTING_FEN:
+        game.setup(CrazyhouseBoard(root_fen))
+    game.headers["Variant"] = "Crazyhouse"  # after setup(), which rewrites the variant tags
+
+    by_line: dict[tuple[str, ...], chess.pgn.GameNode] = {(): game}
+    for node in nodes:
+        line = tuple(node.moves)
+        if not line:
+            game.comment = node.comment
+            continue
+        parent = by_line.get(line[:-1])
+        if parent is None:
+            raise PgnError(f"node {' '.join(line)} comes before its parent line")
+        if line in by_line:
+            continue
+        try:
+            move = chess.Move.from_uci(line[-1])
+        except ValueError as error:
+            raise PgnError(f"malformed move {line[-1]!r}") from error
+        if not parent.board().is_legal(move):
+            raise PgnError(f"illegal move {line[-1]} after {' '.join(line[:-1]) or 'the start'}")
+        by_line[line] = parent.add_variation(move, comment=node.comment)
+    return str(game) + "\n"

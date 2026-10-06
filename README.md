@@ -83,6 +83,7 @@ key everything else works and the AI button reports that the LLM is not configur
   blunders, missed and allowed forced mates are marked in the move list and listed as critical
   moments (best vs played, both searched from the same position), with a clickable eval graph
 
+- 匯出 PGN: the game with your variations and comments as a crazyhouse PGN (copy or download)
 - Reloading the page restores the loaded game, your variations and the current position
   (stored in this browser only)
 

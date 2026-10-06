@@ -5,6 +5,7 @@ import './App.css'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChatPanel } from './components/ChatPanel'
 import { EnginePanel } from './components/EnginePanel'
+import { ExportPanel } from './components/ExportPanel'
 import { MoveInput } from './components/MoveInput'
 import { MoveList } from './components/MoveList'
 import { NavControls } from './components/NavControls'
@@ -132,6 +133,7 @@ export default function App() {
                 onDelete={review.deleteVariation}
                 review={gameReview.byPosition}
               />
+              <ExportPanel tree={tree} />
             </section>
             <ReviewPanel tree={tree} review={gameReview} activeId={active.id} onSelect={review.select} />
             <MoveInput onPlay={playHere} disabled={position.outcome !== null} />

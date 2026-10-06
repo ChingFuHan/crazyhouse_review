@@ -326,3 +326,20 @@ class ReviewJob(BaseModel):
     total: int
     plies: list[ReviewPly]
     error: str | None = None
+
+
+class ExportNode(BaseModel):
+    moves: list[str] = Field(max_length=1000)
+    comment: str = Field(default="", max_length=2000)
+
+
+class ExportRequest(BaseModel):
+    """Tree nodes in pre-order (a parent before its children, main continuation first)."""
+
+    root_fen: str | None = None
+    headers: dict[str, str] = Field(default={}, max_length=40)
+    nodes: list[ExportNode] = Field(max_length=5000)
+
+
+class ExportResponse(BaseModel):
+    pgn: str

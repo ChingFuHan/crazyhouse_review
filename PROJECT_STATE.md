@@ -21,6 +21,9 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
     Variant tag ⇒ crazyhouse assumed + `variant_assumed=true`; other variants rejected).
   - `app/routers/game.py`: `POST /api/position`, `/api/move`, `/api/pgn`; `GET /api/health`.
     `position_id` sent by a client is verified (409 on mismatch).
+  - `pgn_import.export_pgn` + `POST /api/export`: tree nodes (pre-order, main first) → PGN via
+    python-chess; every move re-validated by replay; Variant/SetUp/FEN tags set; comment braces
+    stripped by python-chess. Frontend ExportPanel (copy / download .pgn), round-trip tested.
   - `app/models.py`: pydantic schemas. Move = {uci, san, from, to, drop, promotion, is_capture}.
   - `app/engine.py` EngineService: one Fairy-Stockfish 14 process (python-chess async UCI; python-chess
     sets `UCI_Variant crazyhouse` from CrazyhouseBoard). A newer request stops the running search
@@ -187,7 +190,7 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 145 passed. Rules suite (drops, pawn ranks, drop mates, promoted
+- `cd backend && uv run pytest -q` → 147 passed (incl. PGN export round trip). Rules suite (drops, pawn ranks, drop mates, promoted
   capture → pawn, FEN round trip, castling rights); 3 real lichess games reach lichess's final FEN;
   real Fairy-Stockfish: drop mates both colors, White-POV signs, supersede race (deterministic, proven
   to fail without the fix), crash restart, root_moves, FSF `d`/`perft 1` == python-chess FEN and
@@ -196,8 +199,8 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   a real-game job not disturbing interactive analysis; LLM context == board/engine/analyzer, variation
   and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
   503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
-- `cd frontend && npx vitest run` → 40 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 27 passed. Real backend + real Fairy-Stockfish + vite, fresh
+- `cd frontend && npx vitest run` → 41 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
+- `cd frontend && npx playwright test` → 28 passed. Real backend + real Fairy-Stockfish + vite, fresh
   servers on 8821/5181, LLM_PROVIDER=fake. Covers: DOM board/pockets == backend FEN square-by-square
   (all 83 plies of a real game); mouse, click-to-drop, touch (tap + CDP drags) and keyboard input;
   illegal drop rollback; promotion → captured → pawn in pocket; variations / main line preservation;
@@ -205,7 +208,8 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   navigation; why panel facts on the displayed analysis_id; mate-threat alerts and defenses; fake-LLM
   answers echo the exact board position/FEN/variation; late answers never shown elsewhere; the §55
   core flow; whole-game review annotations + eval graph; FEN load; engine toggle; auto-explain (15
-  fast plies → zero LLM requests, dwell → exactly one); viewer side; session restore after reload.
+  fast plies → zero LLM requests, dwell → exactly one); viewer side; session restore after reload;
+  PGN export → download → re-import gives the same move tree.
 - Real-data cross-check: 3 finished lichess crazyhouse games (fixtures) reach lichess's own
   final FEN (board, pocket, side, castling). Ongoing TV games mismatch only because lichess
   delays published moves of games in progress (not a rules issue).

@@ -1,7 +1,8 @@
 import pytest
 
 from app.chess_core import STARTING_FEN, position_state
-from app.pgn_import import PgnError, import_pgn
+from app.models import ExportNode
+from app.pgn_import import PgnError, export_pgn, import_pgn
 
 GAME = """[Event "Regression"]
 [White "Alice"]
@@ -77,3 +78,45 @@ def test_setup_fen_pgn():
     tree = import_pgn(pgn)
     assert tree.root.state.root_fen == "6k1/5ppp/8/8/8/8/5PPP/6K1[R] w - - 0 1"
     assert tree.root.children[0].state.outcome.termination == "checkmate"
+
+
+def lines_of(node, out=None):
+    """(moves, comment) for every node of an imported tree, pre-order, main first."""
+    out = [] if out is None else out
+    out.append((tuple(node.state.moves), node.comment))
+    for child in node.children:
+        lines_of(child, out)
+    return out
+
+
+def export_nodes(tree):
+    return [ExportNode(moves=list(moves), comment=comment) for moves, comment in lines_of(tree.root)]
+
+
+def test_export_round_trip_keeps_variations_and_comments():
+    tree = import_pgn(GAME)
+    nodes = export_nodes(tree)
+    # A user continuation after the last main-line move, with a comment that contains a brace.
+    last_main = mainline(tree.root)[-1].state.moves
+    nodes.append(ExportNode(moves=[*last_main, "a7a6"], comment="watch out } here"))
+    pgn = export_pgn(tree.root.state.root_fen, tree.headers, nodes)
+    assert '[Variant "Crazyhouse"]' in pgn and "N@f5" in pgn and "( 7. B@b5+ c6 )" in pgn
+    assert "watch out  here" in pgn, "a closing brace cannot end the comment early"
+    again = import_pgn(pgn)
+    assert not again.variant_assumed
+    original = {moves for moves, _ in lines_of(tree.root)} | {tuple(nodes[-1].moves)}
+    assert {moves for moves, _ in lines_of(again.root)} == original
+    assert dict(lines_of(again.root))[tuple(mainline(tree.root)[12].state.moves)].startswith("ignore previous")
+    assert again.headers["White"] == "Alice"
+    assert "watch out" in dict(lines_of(again.root))[(*last_main, "a7a6")]
+
+
+def test_export_from_setup_fen_and_invalid_nodes():
+    fen = "6k1/5ppp/8/8/8/8/5PPP/6K1[R] w - - 0 1"
+    pgn = export_pgn(fen, {}, [ExportNode(moves=[]), ExportNode(moves=["R@e8"])])
+    assert f'[FEN "{fen}"]' in pgn and '[SetUp "1"]' in pgn and '[Variant "Crazyhouse"]' in pgn
+    assert import_pgn(pgn).root.children[0].state.outcome.termination == "checkmate"
+    with pytest.raises(PgnError, match="illegal"):
+        export_pgn(None, {}, [ExportNode(moves=["e2e5"])])
+    with pytest.raises(PgnError, match="before its parent"):
+        export_pgn(None, {}, [ExportNode(moves=["e2e4", "e7e5"])])
