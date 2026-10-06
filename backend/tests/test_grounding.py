@@ -99,3 +99,38 @@ def test_advantage_claims_need_an_engine_evaluation_for_that_side():
     assert flagged("黑方稍佔優。", balanced, kind="advantage") == []
     # Without any engine evaluation there is nothing to compare with: no verdict.
     assert flagged("黑方優勢。", {"game": CONTEXT["game"]}, kind="advantage") == []
+
+
+# Regressions from the first real evaluation (scripts/llm_eval.py, agy): each was a false alarm.
+
+def test_mate_threats_listed_by_the_rules_back_mate_in_one_claims():
+    candidate = {"facts": {"san": "Q@b1", "threatens_mate_in_one_next": ["Qxd1#"]}}
+    context = {**CONTEXT, "analysis": {**CONTEXT["analysis"], "candidates": [candidate]}}
+    assert flagged("Q@b1 表面上威脅下一手 Qxd1# 一步將殺。", context, kind="mate") == []
+
+
+def test_a_negation_earlier_in_the_clause_covers_the_claim():
+    assert flagged("黑方口袋是空的，因此盤面上不存在任何空投將軍（Drop check）或一步殺威脅。", kind="mate") == []
+    assert flagged("黑方沒有退路，白方有三步殺。", kind="mate") == [("mate", "三步殺")]  # another clause
+
+
+def test_mate_values_are_not_read_as_evaluations():
+    mated = {**CONTEXT, "engine": {**CONTEXT["engine"], "multipv": [{"evaluation": None, "mate": -1, "pv": "4.Ng3 e5"}]}}
+    claim = "這步會被黑方 1 步強制將死（mate -1），也就是 #-1。"
+    assert flagged(claim, mated, kind="evaluation") == [] and flagged(claim, mated, kind="mate") == []
+
+
+def test_drop_checks_found_by_the_rules_back_the_move():
+    board = build_board("r2q1rk1/ppp1b1pp/2b1pp2/3pPn2/3P2P1/P1N2N2/1PP2P1P/R1BQR1K1[Nb] b - - 0 11", [])
+    answer = "白方手中有馬，h6 格有打將威脅（N@h6+）。"
+    facts = {"analysis": {"important_drop_squares": {"white": {"N": ["h6"]}, "black": {}}}}
+    assert check_answer(answer, facts, board) == []
+    # Without that fact it is still the opponent's legal reply: the LLM's own line, not an illegal move.
+    assert [w.kind for w in check_answer(answer, {}, board)] == ["unanalysed_move"]
+
+
+def test_continuations_the_llm_invents_are_unanalysed_not_illegal():
+    # Qe7 is Black's reply after the engine's 4.Nf3: not legal now (White to move), yet a real move.
+    warnings = check_answer("4.Nf3 之後若 Qe7，白方再 Qxf7#。", CONTEXT, BOARD)
+    assert [(w.kind, w.quote) for w in warnings] == [("unanalysed_move", "Qe7"), ("illegal_move", "Qxf7#")]
+    assert "推演" in warnings[0].detail

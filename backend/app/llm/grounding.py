@@ -16,6 +16,7 @@ from collections.abc import Iterator
 
 from chess.variant import CrazyhouseBoard
 
+from ..analyzer import null_move_view
 from ..chess_core import move_model
 from ..models import AnswerWarning
 from .candidates import BARE_SQUARE, MOVE_TOKEN
@@ -42,11 +43,44 @@ def _evidence(context: dict) -> tuple[dict, set[str]]:
     return evidence, names
 
 
+def _legal(board: CrazyhouseBoard) -> set[str]:
+    return {normalize(move_model(board, m).san) for m in board.legal_moves} | {m.uci() for m in board.legal_moves}
+
+
+def _drop_checks(evidence: dict) -> set[str]:
+    """Drop checks the rules found ("N@h6"): the analysis lists them as squares per pocket piece."""
+    drops = ((evidence.get("analysis") or {}).get("important_drop_squares")) or {}
+    return {f"{piece}@{square}" for side in ("white", "black") for piece, squares in (drops.get(side) or {}).items()
+            for square in squares}
+
+
+def _continuations(board: CrazyhouseBoard, evidence: dict) -> set[str]:
+    """Moves legal one step further: the opponent's if the side to move passed, or replies to one of the
+    engine's (or the checked candidates') first moves. Mentioning them is the LLM's own line of play."""
+    boards = [view] if (view := null_move_view(board)) is not None else []
+    firsts = [line.get("pv", "") for line in (evidence.get("engine") or {}).get("multipv", [])]
+    firsts += [entry.get("san", "") for entry in evidence.get("candidate_analysis", []) if entry.get("legal")]
+    for text in firsts:
+        tokens = MOVE_TOKEN.findall(text)
+        try:
+            move = board.parse_san(tokens[0]) if tokens else None
+        except ValueError:
+            move = None
+        if move is not None:
+            after = board.copy(stack=False)
+            after.push(move)
+            boards.append(after)
+    return set().union(*(_legal(b) for b in boards))
+
+
 def _move_warnings(answer: str, evidence: dict, not_analyzed: set[str], board: CrazyhouseBoard) -> list[AnswerWarning]:
-    """Moves the answer mentions that appear nowhere in the evidence: illegal now, or legal but never
-    analysed by the engine (named by the user and only checked for legality, or proposed by the LLM)."""
+    """Moves the answer mentions that appear nowhere in the evidence: legal now but never analysed by the
+    engine (named by the user and only checked for legality, or proposed by the LLM), the LLM's own
+    continuation of a line, or not legal at all."""
     in_context = {normalize(t) for t in MOVE_TOKEN.findall(json.dumps(evidence, ensure_ascii=False))}
-    legal = {normalize(move_model(board, m).san) for m in board.legal_moves} | {m.uci() for m in board.legal_moves}
+    in_context |= _drop_checks(evidence)
+    legal = _legal(board)
+    continuations: set[str] | None = None  # computed only when needed
     warnings: list[AnswerWarning] = []
     seen: set[str] = set()
     for token in MOVE_TOKEN.findall(answer):
@@ -62,6 +96,15 @@ def _move_warnings(answer: str, evidence: dict, not_analyzed: set[str], board: C
                 quote=token,
                 detail=f"{token} 是合法著，但沒有經過 engine 分析；回答中對這步的評價是 AI 的推測。",
             ))
+            continue
+        if continuations is None:
+            continuations = _continuations(board, evidence)
+        if move in continuations:
+            warnings.append(AnswerWarning(
+                kind="unanalysed_move",
+                quote=token,
+                detail=f"{token} 是 AI 自行推演的後續著法，engine 沒有分析這條變化。",
+            ))
         else:
             warnings.append(AnswerWarning(
                 kind="illegal_move",
@@ -74,13 +117,14 @@ def _move_warnings(answer: str, evidence: dict, not_analyzed: set[str], board: C
 # --- evaluations, mate distances, advantage ---------------------------------------------------------
 
 NEGATIONS = ("沒有", "沒", "無", "不是", "並非", "不會", "未", "不存在")
+CLAUSE_END = re.compile(r"[，。；！？,.;!?\n]")
 CN_DIGITS = {"一": 1, "二": 2, "兩": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
 
 # A signed number directly followed by digits: "+2.3", "-1.5", "−0.8" (not "1-0", not "e4-e5").
 EVAL_CLAIM = re.compile(r"(?<![A-Za-z0-9.+\-−])([+\-−])(\d{1,2}(?:\.\d{1,2})?)(?![\d.])")
 MATE_CLAIM = re.compile(
     r"(?P<cn>\d+|[一二兩三四五六七八九十]+)\s*步(?:之內|以內|內)?\s*(?:殺|將死|將殺|絕殺)"
-    r"|(?i:mate\s+in\s+)(?P<en>\d+)"
+    r"|(?i:mate\s+(?:in\s+)?)-?(?P<en>\d+)"
     r"|(?<![A-Za-z0-9])[#M]-?(?P<sym>\d+)(?![\d.])"
 )
 ADVANTAGE_CLAIM = re.compile(
@@ -93,7 +137,9 @@ ADVANTAGE_MIN = 0.3
 
 
 def _negated(text: str, start: int) -> bool:
-    return any(word in text[max(0, start - 4) : start] for word in NEGATIONS)
+    """A negation earlier in the same clause: 「不存在任何空投將軍或一步殺威脅」."""
+    clause = max((m.end() for m in CLAUSE_END.finditer(text, 0, start)), default=0)
+    return any(word in text[clause:start] for word in NEGATIONS)
 
 
 def _number(token: str) -> int | None:
@@ -125,13 +171,13 @@ def _engine_numbers(evidence: dict) -> tuple[list[float], list[int], bool]:
     mate_in_one = False
     for key, value in _walk(evidence):
         if isinstance(value, bool):
-            if value and key in ("is_mate", "threatens_mate_in_one_next"):
+            if value and key == "is_mate":
                 mate_in_one = True
         elif key == "evaluation" and isinstance(value, (int, float)):
             evaluations.append(float(value))
         elif key == "mate" and isinstance(value, int) and value != 0:
             mates.append(value)
-        elif key in ("mate_in_one_for_side_to_move", "opponent_mate_in_one_if_ignored") and value:
+        elif key in ("mate_in_one_for_side_to_move", "opponent_mate_in_one_if_ignored", "threatens_mate_in_one_next") and value:
             mate_in_one = True
     return evaluations, mates, mate_in_one
 
@@ -152,6 +198,8 @@ def _claim_warnings(answer: str, context: dict, evidence: dict) -> list[AnswerWa
 
     for match in EVAL_CLAIM.finditer(answer):
         quote = match.group(0)
+        if answer[max(0, match.start() - 6) : match.start()].rstrip().lower().endswith(("mate", "#", "m", "將死", "殺")):
+            continue  # "mate -1" is a mate distance, checked below
         value = abs(float(match.group(2)))
         tolerance = 0.15 if "." in match.group(2) else 0.5
         if any(abs(value - abs(e)) <= tolerance for e in evaluations):
