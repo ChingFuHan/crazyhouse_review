@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { formatScore } from '../evaluation'
-import type { CheckedMove } from '../types'
+import type { CheckedMove, Color } from '../types'
 import type { Turn } from '../useConversation'
+import { type GameScan, scanLabel } from '../useGameScan'
 import { AnswerView } from './AnswerView'
 
 export interface ChatPanelProps {
@@ -11,9 +12,13 @@ export interface ChatPanelProps {
   secondSan: string | null
   /** SAN of the move the game actually played from this position, if any. */
   gameMoveSan: string | null
+  /** Whole-game scans of each side's errors (not tied to the current position). */
+  scan: GameScan
 }
 
-function quickQuestions({ bestSan, secondSan, gameMoveSan }: Omit<ChatPanelProps, 'turns' | 'onAsk'>): string[] {
+const SIDES: Color[] = ['white', 'black']
+
+function quickQuestions({ bestSan, secondSan, gameMoveSan }: Pick<ChatPanelProps, 'bestSan' | 'secondSan' | 'gameMoveSan'>): string[] {
   const out: string[] = []
   if (bestSan) out.push(`為什麼是 ${bestSan}？`, `${bestSan} 威脅什麼？`)
   if (secondSan) out.push(`為什麼不是 ${secondSan}？`)
@@ -34,7 +39,7 @@ function checkedText(move: CheckedMove): string {
 
 /** "Ask about this position": quick questions and free questions share one backend pipeline. */
 export function ChatPanel(props: ChatPanelProps) {
-  const { turns, onAsk } = props
+  const { turns, onAsk, scan } = props
   const [text, setText] = useState('')
   const chat = turns.filter((t) => t.question !== null)
   // Answers take a while (agy: 30–60 s), so asking never waits for other answers (including the
@@ -58,6 +63,36 @@ export function ChatPanel(props: ChatPanelProps) {
           </button>
         ))}
       </div>
+      <div className="game-scan" data-testid="game-scan">
+        {SIDES.map((side) => (
+          <button
+            key={side}
+            className="chip scan"
+            data-side={side}
+            disabled={scan.scans[side]?.pending}
+            title="依整局分析找出這一方的錯誤與錯過的機會，再由 AI 解釋（需等整局分析完成）"
+            onClick={() => scan.start(side)}
+          >
+            {scanLabel(side)}
+          </button>
+        ))}
+      </div>
+      {SIDES.map((side) => {
+        const result = scan.scans[side]
+        if (!result) return null
+        const reviewing = result.pending && !result.partial && result.progress && result.progress.done < result.progress.total
+        return (
+          <div key={side} className="chat-turn scan-result" data-testid={`scan-${side}`}>
+            <div className="chat-question">{result.question}</div>
+            {reviewing && (
+              <div className="engine-note" data-testid="scan-progress">
+                整局分析中 {result.progress!.done}/{result.progress!.total}…
+              </div>
+            )}
+            <AnswerView turn={result} />
+          </div>
+        )
+      })}
       <ol className="chat-turns">
         {chat.map((turn) => (
           <li key={turn.id} className="chat-turn">

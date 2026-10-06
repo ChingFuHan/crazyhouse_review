@@ -21,6 +21,7 @@ import { useBooleanPreference } from './preferences'
 import { useConversation } from './useConversation'
 import { useEngine } from './useEngine'
 import { useGameReview } from './useGameReview'
+import { useGameScan } from './useGameScan'
 import { useInsights } from './useInsights'
 import { useReview } from './useReview'
 
@@ -42,6 +43,20 @@ export default function App() {
   const insights = useInsights(position ?? null, engine)
   const conversation = useConversation(tree, active?.id ?? null, orientation)
   const gameReview = useGameReview(tree)
+  const gameScan = useGameScan(tree)
+  // A scan needs the whole-game review: start the review panel too (the backend runs one shared job).
+  const startReview = gameReview.start
+  const reviewShown = gameReview.job !== null
+  const scan = useMemo(
+    () => ({
+      ...gameScan,
+      start: (side: Color) => {
+        if (!reviewShown) startReview()
+        gameScan.start(side)
+      },
+    }),
+    [gameScan, reviewShown, startReview],
+  )
   const aiTurn = [...conversation.turns].reverse().find((turn) => turn.question === null)
 
   // Questions explain exactly the engine result on screen.
@@ -156,6 +171,7 @@ export default function App() {
               bestSan={lines[0]?.pv[0].san ?? null}
               secondSan={lines[1]?.pv[0].san ?? null}
               gameMoveSan={gameChild ? (tree.nodes[gameChild].state.last_move?.san ?? null) : null}
+              scan={scan}
             />
           </aside>
         </main>

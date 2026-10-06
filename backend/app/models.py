@@ -304,6 +304,13 @@ class ExplainRequest(AnalyzeRequest):
     )
 
 
+class GameScanRequest(LineRequest):
+    """Explain one side's errors over a whole line (the game's main line), from the whole-game review."""
+
+    side: Color
+    headers: dict[str, str] = Field(default={}, max_length=30)
+
+
 class CheckedMove(BaseModel):
     """A move named in the question and what the rules / engine said about it."""
 

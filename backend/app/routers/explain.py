@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -16,10 +17,11 @@ from ..chess_core import LineError, build_board, position_state
 from ..chess_core import position_id as position_id_of
 from ..llm.candidates import CandidateCheck, analyse_candidates, extract_candidates, illegal_only_answer
 from ..llm.context import CONTEXT_VERSION, build_context
+from ..llm.game_scan import build_game_context, no_mistakes_answer, scan_question
 from ..llm.grounding import check_answer
 from ..llm.provider import LLMError, LLMResult, LLMUnavailable
 from ..llm.service import DEFAULT_QUESTION, SYSTEM_PROMPT, ExplainService, build_messages, new_request_id
-from ..models import ExplainRequest, ExplainResponse, PromptRecord
+from ..models import ExplainRequest, ExplainResponse, GameScanRequest, PromptRecord
 from .engine import background_engine, engine_service, has_lines, resolve_analysis, run_threat
 from .game import check_line
 
@@ -158,6 +160,77 @@ async def explain_stream(body: ExplainRequest, request: Request) -> StreamingRes
                 if isinstance(item, tuple):
                     result, cached = item
                     yield _sse("done", _final(prepared, request_id, result, cached).model_dump(mode="json"))
+                else:
+                    yield _sse("delta", {"text": item})
+        except (LLMUnavailable, LLMError) as error:
+            kind = "llm_unavailable" if isinstance(error, LLMUnavailable) else "llm_error"
+            yield _sse("error", {"error": kind, "message": str(error)})
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+
+REVIEW_POLL_S = 1.0
+
+
+@router.post("/explain/game/stream")
+async def explain_game_stream(body: GameScanRequest, request: Request) -> StreamingResponse:
+    """Whole-game scan of one side's errors. Server-sent events: `progress` while the whole-game review
+    runs (it is started if needed, shared with the review panel), then `delta` text chunks and `done`
+    (an ExplainResponse; answered by the rules when the review flagged nothing), or `error`."""
+    root_fen = check_line(body)
+    try:
+        build_board(root_fen, body.moves)
+    except LineError as error:
+        raise HTTPException(status_code=422, detail={"error": "invalid_line", "message": str(error)}) from error
+    review = request.app.state.review
+    service = explain_service(request)
+    question = scan_question(body.side)
+    request_id = new_request_id()
+    job = review.start(root_fen, body.moves)
+
+    def response(text: str, model: str, context: dict | None, refused=False, cached=False) -> ExplainResponse:
+        return ExplainResponse(
+            position_id=position_id_of(root_fen, body.moves),
+            variation_id="main",
+            analysis_id=job.job_id,
+            request_id=request_id,
+            context_version=CONTEXT_VERSION,
+            question=question,
+            text=text,
+            model=model,
+            refused=refused,
+            cached=cached,
+            warnings=check_answer(text, context, None) if context is not None and text else [],
+            prompt=PromptRecord(system=SYSTEM_PROMPT, messages=build_messages(context, question, []))
+            if context is not None
+            else None,
+        )
+
+    async def events() -> AsyncIterator[str]:
+        while job.status == "running":
+            if review.get(job.job_id) is not job:
+                yield _sse("error", {"error": "review_lost", "message": "整局分析已被新的分析取代，請重試"})
+                return
+            yield _sse("progress", {"done": job.done, "total": job.total})
+            await asyncio.sleep(REVIEW_POLL_S)
+        if job.status == "error":
+            yield _sse("error", {"error": "engine_unavailable", "message": job.error or "整局分析失敗"})
+            return
+        yield _sse("progress", {"done": job.total, "total": job.total})
+        context, moments = await build_game_context(
+            job, body.side, body.headers, review.engine, review.movetime_ms, question
+        )
+        if moments == 0:
+            text = no_mistakes_answer(body.side, review.movetime_ms)
+            yield _sse("done", response(text, "rules", None).model_dump(mode="json"))
+            return
+        try:
+            async for item in service.ask_stream(context, question, []):
+                if isinstance(item, tuple):
+                    result, cached = item
+                    text = "" if result.refused else result.text
+                    final = response(text, result.model, context, result.refused, cached)
+                    yield _sse("done", final.model_dump(mode="json"))
                 else:
                     yield _sse("delta", {"text": item})
         except (LLMUnavailable, LLMError) as error:

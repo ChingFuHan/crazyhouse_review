@@ -2,6 +2,7 @@ import type { ExportNode } from './exportPgn'
 import type { LlmMeta } from './llmRequest'
 import type {
   ChatTurn,
+  Color,
   EngineAnalysis,
   ExplainResponse,
   GameTreeDto,
@@ -86,6 +87,35 @@ export function lineOf(state: PositionState): LineRef {
   return { root_fen: state.root_fen, moves: state.moves, position_id: state.position_id }
 }
 
+/** An answer stream: `progress` (whole-game review), `delta` text chunks, then `done` or `error`. */
+async function readAnswer(
+  response: Response,
+  onDelta: (textSoFar: string) => void,
+  onProgress?: (done: number, total: number) => void,
+): Promise<ExplainResponse> {
+  await throwIfFailed(response)
+  let text = ''
+  let final: ExplainResponse | null = null
+  let failure: ApiError | null = null
+  await readSse(response.body!, (event, data) => {
+    if (event === 'delta') {
+      text += (data as { text: string }).text
+      onDelta(text)
+    } else if (event === 'progress') {
+      const { done, total } = data as { done: number; total: number }
+      onProgress?.(done, total)
+    } else if (event === 'done') {
+      final = data as ExplainResponse
+    } else if (event === 'error') {
+      const { error, message } = data as { error: string; message: string }
+      failure = new ApiError(502, error, message)
+    }
+  })
+  if (failure) throw failure
+  if (!final) throw new ApiError(502, 'stream_incomplete', 'AI 回答串流中斷')
+  return final
+}
+
 export const api = {
   startPosition: (rootFen?: string) => post<PositionState>('/api/position', { root_fen: rootFen ?? null, moves: [] }),
   move: (from: PositionState, move: string) => post<PositionState>('/api/move', { ...lineOf(from), move }),
@@ -147,24 +177,25 @@ export const api = {
       body: JSON.stringify({ ...lineOf(position), ...meta, question, history, analysis_id: analysisId }),
       signal,
     })
-    await throwIfFailed(response)
-    let text = ''
-    let final: ExplainResponse | null = null
-    let failure: ApiError | null = null
-    await readSse(response.body!, (event, data) => {
-      if (event === 'delta') {
-        text += (data as { text: string }).text
-        onDelta(text)
-      } else if (event === 'done') {
-        final = data as ExplainResponse
-      } else if (event === 'error') {
-        const { error, message } = data as { error: string; message: string }
-        failure = new ApiError(502, error, message)
-      }
+    return readAnswer(response, onDelta)
+  },
+  /** Whole-game scan of one side's errors over the main line ending at `last`: `onProgress` follows
+   * the whole-game review the scan needs, `onDelta` the answer text so far. */
+  gameScanStream: async (
+    last: PositionState,
+    side: Color,
+    headers: Record<string, string>,
+    onProgress: (done: number, total: number) => void,
+    onDelta: (textSoFar: string) => void,
+    signal?: AbortSignal,
+  ): Promise<ExplainResponse> => {
+    const response = await fetch('/api/explain/game/stream', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ root_fen: last.root_fen, moves: last.moves, side, headers }),
+      signal,
     })
-    if (failure) throw failure
-    if (!final) throw new ApiError(502, 'stream_incomplete', 'AI 回答串流中斷')
-    return final
+    return readAnswer(response, onDelta, onProgress)
   },
   /** PGN of the whole tree (main line, PGN and user variations, comments), validated by the backend. */
   exportPgn: (rootFen: string, headers: Record<string, string>, nodes: ExportNode[]) =>

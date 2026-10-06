@@ -73,13 +73,16 @@ def _continuations(board: CrazyhouseBoard, evidence: dict) -> set[str]:
     return set().union(*(_legal(b) for b in boards))
 
 
-def _move_warnings(answer: str, evidence: dict, not_analyzed: set[str], board: CrazyhouseBoard) -> list[AnswerWarning]:
+def _move_warnings(
+    answer: str, evidence: dict, not_analyzed: set[str], board: CrazyhouseBoard | None
+) -> list[AnswerWarning]:
     """Moves the answer mentions that appear nowhere in the evidence: legal now but never analysed by the
     engine (named by the user and only checked for legality, or proposed by the LLM), the LLM's own
-    continuation of a line, or not legal at all."""
+    continuation of a line, or not legal at all. Without a board (a whole-game answer spans many
+    positions) legality is not judged: an unbacked move is simply not in the review data."""
     in_context = {normalize(t) for t in MOVE_TOKEN.findall(json.dumps(evidence, ensure_ascii=False))}
     in_context |= _drop_checks(evidence)
-    legal = _legal(board)
+    legal = _legal(board) if board is not None else set()
     continuations: set[str] | None = None  # computed only when needed
     warnings: list[AnswerWarning] = []
     seen: set[str] = set()
@@ -89,6 +92,11 @@ def _move_warnings(answer: str, evidence: dict, not_analyzed: set[str], board: C
         seen.add(token)
         move = normalize(token)
         if move in in_context:
+            continue
+        if board is None:
+            warnings.append(AnswerWarning(
+                kind="unanalysed_move", quote=token, detail=f"{token} 不在整局分析的資料中，engine 沒有分析這步。"
+            ))
             continue
         if move in legal or move in not_analyzed:
             warnings.append(AnswerWarning(
@@ -239,7 +247,8 @@ def _claim_warnings(answer: str, context: dict, evidence: dict) -> list[AnswerWa
     return list(unique.values())
 
 
-def check_answer(answer: str, context: dict, board: CrazyhouseBoard) -> list[AnswerWarning]:
-    """All warnings for an answer about the position `board`, given the context the LLM received."""
+def check_answer(answer: str, context: dict, board: CrazyhouseBoard | None) -> list[AnswerWarning]:
+    """All warnings for an answer about the position `board` (None: a whole-game answer), given the
+    context the LLM received."""
     evidence, not_analyzed = _evidence(context)
     return _move_warnings(answer, evidence, not_analyzed, board) + _claim_warnings(answer, context, evidence)

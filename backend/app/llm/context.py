@@ -33,7 +33,7 @@ def numbered(sans: list[str], first_ply: int) -> str:
     return " ".join(out)
 
 
-def _sans(root_fen: str, moves: list[str]) -> list[str]:
+def line_sans(root_fen: str, moves: list[str]) -> list[str]:
     board = CrazyhouseBoard(root_fen)
     out = []
     for uci in moves:
@@ -114,7 +114,7 @@ def build_context(
     """task.md §18 context. `position` is the full §7 canonical record of the active position:
     the backend PositionState plus the variation it belongs to in the UI tree."""
     root_fen, moves = state.root_fen, state.moves
-    sans = _sans(root_fen, moves)
+    sans = line_sans(root_fen, moves)
     start_ply = state.ply - len(moves)
     recent_from = max(0, len(sans) - RECENT_PLIES)
     game_move = _game_move(root_fen, moves, start_ply, request)
