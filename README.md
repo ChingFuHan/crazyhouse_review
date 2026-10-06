@@ -77,7 +77,8 @@ sudo ufw allow from 192.168.0.0/24 to any port 8820 proto tcp comment 'crazyhous
 之後開啟 `http://<本機的區網 IP>:8820`（腳本會印出網址；IP 由 DHCP 分配，可能會變）。
 Service 監聽所有網路介面，但 app 只回應 `ALLOWED_CLIENT_NETWORKS` 內的連線（loopback 與區網）；
 其他來源（例如 Tailscale 或 Docker）一律回 403。區網內每個人都能使用 AI 功能，消耗的是這台
-機器的 agy 額度。管理指令：`systemctl --user status|restart|stop crazyhouse-review`，
+機器的 agy 額度（或觀看者所選 CLI 的額度）。服務的 PATH 會加入安裝時找到的 agy／codex／claude（與 node）所在目錄，
+安裝或更新這些 CLI 的位置後請重新執行安裝腳本。管理指令：`systemctl --user status|restart|stop crazyhouse-review`，
 日誌：`journalctl --user -u crazyhouse-review`。
 
 ## 測試

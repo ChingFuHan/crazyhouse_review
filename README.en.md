@@ -83,7 +83,9 @@ sudo ufw allow from 192.168.0.0/24 to any port 8820 proto tcp comment 'crazyhous
 Then open `http://<this machine's LAN IP>:8820` (printed by the script; the IP comes from DHCP and may
 change). The service listens on all interfaces but the app itself only answers clients in
 `ALLOWED_CLIENT_NETWORKS` (loopback + the LAN); anything else, e.g. Tailscale or Docker, gets 403.
-Everyone on the LAN can use the AI features, which spend this machine's agy quota.
+Everyone on the LAN can use the AI features, which spend this machine's agy quota (or the chosen CLI's).
+The service's PATH gets the directories where the installer found agy / codex / claude (and node);
+re-run the installer after installing or moving one of them.
 Manage it with `systemctl --user status|restart|stop crazyhouse-review`, logs via
 `journalctl --user -u crazyhouse-review`.
 

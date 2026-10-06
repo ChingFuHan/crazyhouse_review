@@ -14,6 +14,16 @@ UNIT_DIR="$HOME/.config/systemd/user"
 (cd "$ROOT/frontend" && npm install --silent && npm run build)
 (cd "$ROOT/backend" && uv sync --quiet)
 
+# The AI CLIs a viewer may choose (and node, which codex runs on), as this shell finds them: a
+# systemd service does not load nvm or shell profiles. Re-run after installing or moving a CLI.
+CLI_DIRS=""
+for cli in agy codex claude node; do
+  if found="$(command -v "$cli" 2>/dev/null)"; then
+    dir="$(dirname "$found")"
+    case ":$CLI_DIRS:" in *":$dir:"*) ;; *) CLI_DIRS="$CLI_DIRS:$dir" ;; esac
+  fi
+done
+
 mkdir -p "$UNIT_DIR"
 cat > "$UNIT_DIR/$UNIT" <<UNIT
 [Unit]
@@ -26,7 +36,7 @@ ExecStart=$ROOT/scripts/run_server.sh
 Environment=HOST=0.0.0.0
 Environment=PORT=$PORT
 Environment=ALLOWED_CLIENT_NETWORKS=127.0.0.0/8,::1/128,$LAN_NETWORK
-Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=%h/.local/bin$CLI_DIRS:/usr/local/bin:/usr/bin:/bin
 Restart=on-failure
 RestartSec=5
 
