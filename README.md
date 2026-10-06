@@ -26,10 +26,33 @@ cd .. && ./scripts/fetch_engine.sh   # Fairy-Stockfish 14 + crazyhouse NNUE into
 Crazyhouse analysis uses [Fairy-Stockfish](https://github.com/fairy-stockfish/Fairy-Stockfish)
 (regular Stockfish cannot play crazyhouse) with the crazyhouse NNUE network from
 https://fairy-stockfish.github.io/nnue/ (checksum-verified by the fetch script; set
-`ENGINE_EVAL_FILE=` empty to use the classical evaluation). Settings via environment variables:
-`ENGINE_PATH` (default `engines/fairy-stockfish`), `ENGINE_THREADS` (4), `ENGINE_HASH_MB` (256),
-`ENGINE_MOVETIME_MS` (1500), `ENGINE_MULTIPV` (3). All evaluations are reported from White's
-point of view (`evaluation` in pawns, `mate` positive when White mates).
+`ENGINE_EVAL_FILE=` empty to use the classical evaluation). Server defaults via environment
+variables: `ENGINE_PATH` (default `engines/fairy-stockfish`), `ENGINE_THREADS` (4),
+`ENGINE_HASH_MB` (256), `ENGINE_MOVETIME_MS` (1500), `ENGINE_MULTIPV` (3); they apply to the
+plain `/api/analyze` endpoint, explanations without a displayed result and the game review. All
+evaluations are reported from White's point of view (`evaluation` in pawns, `mate` positive when
+White mates).
+
+The board's own analysis uses the viewer's settings (⚙ in the Engine panel, kept in the browser):
+
+| Setting | Options | Default |
+|---|---|---|
+| Lines (MultiPV) | 1–5 | 3 |
+| Depth limit | none, 15, 20, 25, 30, 40 | none |
+| Time per position | 1, 3, 5, 10, 30, 60 s, infinite | 3 s |
+| CPU threads | 1 – (CPU count − 1) | 4 |
+| Memory (Hash) | 64 MB – 4 GB | 256 MB |
+
+The search stops at whichever limit comes first; "infinite" runs until the depth limit, the
+stop button, a position change or the server's 10-minute guard. Results stream in as the
+search deepens (`POST /api/analyze/stream`, server-sent `snapshot` events then `done`;
+`POST /api/analyze/stop` ends it early and keeps the result). Finished time-limited searches are
+cached per position and settings; an infinite analysis is not, so coming back to a position
+resumes searching. Threads and Hash are applied to
+the engine before each search, so every search runs with its requester's settings. The fact
+panel and the LLM receive the `analysis_id` of the result on screen and use exactly that result
+(no new search); their extra searches (candidate moves, null-move threats) run on the second
+engine process, so asking never interrupts a long analysis.
 
 ## Run
 One process (builds the UI, serves UI + API, fetches the engine if missing):
@@ -94,12 +117,15 @@ cd backend && SHOW_ANSWERS=1 uv run python scripts/llm_smoke.py   # a few reques
   promotion chooser, typed moves (SAN/UCI); your moves form variations, the PGN main line
   is never changed; 「回到主線」 returns to where you branched off
 
-- Fairy-Stockfish analysis of the current position (switchable on/off): White-POV eval bar, best move, top 3 lines,
-  arrows (drops shown as a ghost piece on the target square); click a line move to play it
+- Fairy-Stockfish analysis of the current position (switchable on/off): White-POV eval bar, best move, top lines,
+  arrows (drops shown as a ghost piece on the target square); click a line move to play it.
+  Lichess-style settings (lines, depth limit, time incl. infinite, CPU threads, memory), live
+  depth / speed / elapsed time while it deepens, stop and restart buttons
 
 - "Why this move?": a fact-only explanation of the engine's best move (drop checks, mates,
   king escape squares before/after, forced replies, main line, pocket changes) and how the other
-  candidates differ, plus alerts for mate threats and hanging pieces
+  candidates differ, plus alerts for mate threats and hanging pieces; it names the depth it is
+  based on and, during long or infinite searches, refreshes every 5 plies of depth from 10 on
 
 - 「AI 解釋」: on-demand (or, optionally, automatic after you stay on a position), streamed LLM
   explanation grounded on the same engine result and facts shown on screen, aware of the current
@@ -123,5 +149,7 @@ cd backend && SHOW_ANSWERS=1 uv run python scripts/llm_smoke.py   # a few reques
   is removed with the × next to its variation
 
 ## Known limitations
-- One engine process is shared; analysing in two tabs at once cancels searches.
+- One interactive engine process is shared by everyone on the LAN: analysing different positions
+  in two tabs at once makes them replace each other's searches (the panel shows 「已中斷」 with a
+  「重新分析」 button), and a large Hash/Threads choice affects the machine for everyone.
 - Automated tests use a fake LLM; real answers are checked with `scripts/llm_smoke.py` (agy verified).

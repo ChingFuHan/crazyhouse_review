@@ -11,12 +11,16 @@ answers through the local agy CLI (Gemini 3.8 Flash High). Claude path still unv
 Milestone 4 (chat + candidate re-analysis + variation-aware Q&A) DONE; the task.md §55 core flow
 passes end-to-end with the fake LLM (e2e/core-flow.spec.ts) and real answers pass via agy.
 Whole-game review (critical moves, task.md §30) + eval graph DONE.
+Lichess-style engine settings + streamed analysis DONE (user request after task.md, 2026-10-06).
 
 ## Current task status
 Strict verification against task.md (2026-10-06) found and fixed: stale README/PROJECT_STATE,
 LLM context missing §7/§18 fields, no attacked/defended squares (§15), no engine depth cap (§10),
 named moves beyond 3 reaching the LLM unchecked (§20/§22), grounding counting the question / PGN
-comments as evidence, SAN used as React keys (§9). No task in progress.
+comments as evidence, SAN used as React keys (§9). Then: LAN access (systemd user service,
+192.168.0.0/24 allowlist) and lichess-like engine settings (lines, depth limit, time incl.
+infinite, threads, hash; streamed snapshots; stop; facts/LLM bound to the displayed analysis_id).
+No task in progress.
 
 ## Current architecture
 - `backend/` Python 3.13 (uv), FastAPI, python-chess 1.11.2.
@@ -40,8 +44,20 @@ comments as evidence, SAN used as React keys (§9). No task in progress.
   - `app/routers/engine.py`: `POST /api/analyze` (409 position_id mismatch, `game_over` status,
     503 `engine_unavailable`). `app/config.py`: ENGINE_PATH/THREADS(4)/HASH_MB(256)/MOVETIME_MS(1500).
   - Identical concurrent engine requests share one search (`_inflight`, shielded); only a
-    different request supersedes. `/api/insights` reuses the cached default-settings result, so its
-    `analysis_id` equals the one the UI displays.
+    different request supersedes.
+  - Streamed analysis with per-request `SearchSettings` (multipv 1–5, depth cap|None, movetime
+    100 ms–10 min|None = infinite, threads 1–(cpus−1), hash 16–4096 MB): `EngineService.stream()`
+    configures Threads/Hash before each search, yields `running` snapshots (every 0.25 s or on a
+    depth increase; nodes/nps/elapsed/settings), ends `ok` (limit reached or `stop(position_id)`)
+    or `cancelled` (superseded, not cached); infinite searches capped at 10 min and never cached
+    (a revisit resumes searching). Every result and
+    snapshot is remembered by `analysis_id` (LRU 512, `find()`). `POST /api/analyze/stream` (SSE
+    `snapshot`/`done`/`error`), `POST /api/analyze/stop`.
+  - `/api/insights` and `/api/explain(/stream)` take the displayed `analysis_id` and reuse exactly
+    that result (`resolve_analysis`: interactive engine, then review engine); without one they search
+    on the review engine (protected). Candidate/threat searches always run on the review engine, so
+    facts and questions never interrupt the viewer's analysis. Insights carry `engine_status`
+    (incl. `running`) and `depth`.
   - `app/analyzer.py`: deterministic facts. Position: check/checkers, per side king escape squares
     (legal king steps via null-move view), king-zone attacks, pocket, hanging pieces (legally
     capturable + undefended), attacked Q/R, drop-check squares per pocket piece, mate-in-one,
@@ -133,8 +149,13 @@ comments as evidence, SAN used as React keys (§9). No task in progress.
     shifts above the board otherwise map drops to the wrong square — real bug found by E2E).
   - MoveList: a node's continuation is the child with the SAME variationId; other children are
     rendered as (variations).
-  - `src/useEngine.ts`: debounce 120 ms, quick 300 ms then 1500 ms search; AbortController on
-    position change; a result is exposed only if its position_id == active position_id.
+  - `src/useEngine.ts`: debounce 120 ms, one streamed search with the viewer's settings
+    (`src/engineSettings.ts`, localStorage, sanitized to the offered options); key = position_id +
+    settings + restart nonce; abort on change closes the stream (server stops the search); status
+    analyzing/done/stopped/error; long searches (≥10 s or infinite) publish depth milestones
+    (10, 15, 20, …) for the fact panel. A result is exposed only for its own key/position.
+  - EnginePanel ⚙ → `EngineSettings` form; progress line "depth d / cap · nps · elapsed / limit";
+    stop (keeps result) and 重新分析 (after an interruption/error).
   - EnginePanel (eval White POV + bar, best move, MultiPV lines; clicking a PV move plays the line
     via `playLine`), `engineShapes.ts` (arrows; drops = circle, best drop also a ghost piece).
   - `src/llmRequest.ts`: tree → LLM metadata (variation_id, on_main_line, the game's move here or
@@ -163,8 +184,9 @@ comments as evidence, SAN used as React keys (§9). No task in progress.
     (same curve/scale as backend), white wash above / dark below the midline, status-colored dots
     on flagged moves (status tokens in index.css, always with glyph + label), crosshair tooltip,
     click to jump, active-ply line.
-  - `src/useInsights.ts` fetches insights once the engine result is final (keyed by
-    position_id + analysis_id); `src/explain.ts` turns facts into fact-only Traditional Chinese
+  - `src/useInsights.ts` fetches insights for the final result, or the latest milestone of a long
+    search, passing its analysis_id (keyed by position_id + analysis_id; the previous facts of the
+    same position stay visible while newer ones load); WhyPanel names the depth. `src/explain.ts` turns facts into fact-only Traditional Chinese
     sentences (direct effect, king safety, replies, PV, pocket, candidate comparison in mover POV,
     alerts); `WhyPanel` renders them (or the last move when the game is over).
   - Vite dev server :5180 proxies `/api` → backend :8820.
@@ -199,8 +221,9 @@ comments as evidence, SAN used as React keys (§9). No task in progress.
 - Interaction: mouse drag, pocket drag/click-to-drop, touch (tap-to-drop, drags), keyboard board
   cursor + typed moves; promotion chooser; user variations (delete ×), 「回到主線」. Undo/redo =
   ◀/▶ navigation (nothing is lost) + × to remove a played line.
-- Engine: Fairy-Stockfish 14 + crazyhouse NNUE, MultiPV 3, White-POV scores, mate scores, optional
-  depth cap, arrows/drop markers, click-to-play PV, on/off switch; null-move threat analysis.
+- Engine: Fairy-Stockfish 14 + crazyhouse NNUE, White-POV scores, mate scores, arrows/drop markers,
+  click-to-play PV, on/off switch; null-move threat analysis; viewer settings (lines 1–5, depth
+  limit, time incl. infinite, threads, hash) with live streamed depth, stop/restart.
 - "Why this move?" panel: fact-only explanation (direct effect, king escapes, replies, PV, pocket,
   line effects, mate threats + defenses, pieces en prise) and candidate comparison.
 - LLM: Claude or local agy; on-demand / dwell auto-explain; chat with quick questions; every named
@@ -226,8 +249,9 @@ comments as evidence, SAN used as React keys (§9). No task in progress.
 
 ## Known limitations
 - Review verdicts come from 300 ms searches: bullet-game classifications vary a little between runs.
-- Engine: single shared process; two browser tabs analysing at once cancel each other's searches.
-  No streaming (two fixed-length phases).
+- Engine: single shared interactive process; two tabs analysing different positions replace each
+  other's searches (shown as 已中斷 + 重新分析). Threads/Hash choices affect the whole machine.
+- At 390 px width chessground's file coordinates overflow by 2 px (pre-existing).
 - Analyzer reports king-zone attackers but no weighted pressure score; opened diagonals are covered
   only through discovered attacks; "tempo" is expressed only through checks/forced replies. "Why" panel is fact-only (no strategic interpretation) until the LLM.
 - LLM: Claude path never exercised (no key); agy answers take ~30–60 s (agy start-up + thinking;
@@ -236,7 +260,12 @@ comments as evidence, SAN used as React keys (§9). No task in progress.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 172 passed (incl. AgyProvider against a fake executable replaying
+- `cd backend && uv run pytest -q` → 179 passed (incl. `tests/test_engine_stream.py`: settings
+  validation, deepening snapshots then done + cached repeat, insights by snapshot id (running and
+  final), depth cap ends early, Threads/Hash applied per search, infinite + stop → ok/find and a
+  revisit searches again (not cached),
+  another position cancels a stream (not cached), explanations without an id leave the
+  interactive engine untouched) (incl. AgyProvider against a fake executable replaying
   recorded agy output: streaming, error result, not-logged-in, timeout kill, kill on early close) (incl. PGN export round trip, answer grounding). Rules suite (drops, pawn ranks, drop mates, promoted
   capture → pawn, FEN round trip, castling rights); 3 real lichess games reach lichess's final FEN;
   real Fairy-Stockfish: drop mates both colors, White-POV signs, supersede race (deterministic, proven
@@ -246,8 +275,10 @@ comments as evidence, SAN used as React keys (§9). No task in progress.
   a real-game job not disturbing interactive analysis; LLM context == board/engine/analyzer, variation
   and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
   503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
-- `cd frontend && npx vitest run` → 43 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 31 passed. Real backend + real Fairy-Stockfish + vite, fresh
+- `cd frontend && npx vitest run` → 46 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
+- `cd frontend && npx playwright test` → 33 passed (storageState presets 1 s searches;
+  `e2e/engine-settings.spec.ts`: lines 1→5, depth limit 15 ends early, settings persist + reset,
+  infinite analysis deepens with facts from a running milestone, stop → final facts). Real backend + real Fairy-Stockfish + vite, fresh
   servers on 8821/5181, LLM_PROVIDER=fake. Covers: DOM board/pockets == backend FEN square-by-square
   (all 83 plies of a real game); mouse, click-to-drop, touch (tap + CDP drags) and keyboard input;
   illegal drop rollback; promotion → captured → pawn in pocket; variations / main line preservation;
@@ -257,8 +288,8 @@ comments as evidence, SAN used as React keys (§9). No task in progress.
   core flow; whole-game review annotations + eval graph; FEN load; engine toggle; auto-explain (15
   fast plies → zero LLM requests, dwell → exactly one); viewer side; session restore after reload;
   PGN export → download → re-import gives the same move tree; an unbacked move echoed into an answer
-  is flagged as unverified; asking then browsing away still yields an answer grounded on the complete
-  (cached) analysis (this E2E fails intermittently with protection disabled).
+  is flagged as unverified; asking before any engine line is shown, then browsing away, still yields
+  an answer from a complete background search.
 - Real-data cross-check: 3 finished lichess crazyhouse games (fixtures) reach lichess's own
   final FEN (board, pocket, side, castling). Ongoing TV games mismatch only because lichess
   delays published moves of games in progress (not a rules issue).
@@ -279,7 +310,7 @@ comments as evidence, SAN used as React keys (§9). No task in progress.
 ## Next recommended task
 1. Optional: if an ANTHROPIC_API_KEY becomes available, run `scripts/llm_smoke.py` with
    `LLM_PROVIDER=anthropic` to verify the Claude path too.
-2. Optional, no current requirement in task.md: progressive (streamed) engine depth like lichess;
-   sharing one engine across several browser tabs without mutual cancellation.
+2. Optional: sharing the interactive engine across several viewers without mutual cancellation
+   (e.g. one engine process per active viewer, bounded by CPU count).
 
 All task.md requirements are implemented and tested, including real LLM answers (via agy).
