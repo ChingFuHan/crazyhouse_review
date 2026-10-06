@@ -83,7 +83,7 @@ def test_mate_claims_must_be_backed_by_an_engine_mate():
     with_mate = {**CONTEXT, "engine": {**CONTEXT["engine"], "mate": 3, "evaluation": None,
                                        "multipv": [{"evaluation": None, "mate": 3, "pv": "4.N@d6+ Bxd6"}]}}
     assert flagged("這是 mate in 3，走完 N@d6+ 後剩兩步殺。", with_mate, kind="mate") == []
-    assert flagged("其實是五步殺，或 #7。", with_mate, kind="mate") == [("mate", "五步殺"), ("mate", "#7")]
+    assert flagged("白方其實是五步殺，或 #7。", with_mate, kind="mate") == [("mate", "五步殺"), ("mate", "#7")]
     # A mate in one known from the rules backs "一步殺" even without an engine mate score.
     threat = {**CONTEXT, "analysis": {"mate_threats": {"opponent_mate_in_one_if_ignored": ["Q@e1#"]}}}
     assert flagged("黑方威脅一步殺。", threat, kind="mate") == []
@@ -134,3 +134,19 @@ def test_continuations_the_llm_invents_are_unanalysed_not_illegal():
     warnings = check_answer("4.Nf3 之後若 Qe7，白方再 Qxf7#。", CONTEXT, BOARD)
     assert [(w.kind, w.quote) for w in warnings] == [("unanalysed_move", "Qe7"), ("illegal_move", "Qxf7#")]
     assert "推演" in warnings[0].detail
+
+
+# Regressions from the second real evaluation: both false alarms.
+
+def test_a_slight_edge_may_be_called_an_advantage():
+    slight = {**CONTEXT, "engine": {"evaluation": 0.25, "multipv": [{"evaluation": 0.25, "pv": "4.Nf3 d5"}]},
+              "analysis": {}}
+    assert flagged("最佳著 Nf3 評估 +0.25，白方微幅佔優。", slight, kind="advantage") == []
+    assert flagged("黑方佔優。", slight, kind="advantage") == [("advantage", "黑方佔優")]
+
+
+def test_general_advice_about_mates_is_not_a_claim_about_the_game():
+    advice = "一旦開始吃子，滯留在中路的王將極易遭受致命的 Drop Check（空降將軍）甚至一步殺。"
+    assert flagged(advice, kind="mate") == []
+    assert flagged("這裡黑方有一步殺。", kind="mate") == [("mate", "一步殺")]
+    assert flagged("走 Qh5 之後有兩步殺。", kind="mate") == [("mate", "兩步殺")]

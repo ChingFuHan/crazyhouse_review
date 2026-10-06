@@ -140,14 +140,24 @@ ADVANTAGE_CLAIM = re.compile(
     r"(?:優勢|佔優|占優|勝勢|大優|有利)"
     r"|對(?P<side2>[白黑])方?(?:較為|較|更|明顯|非常|十分)?有利"
 )
-# Evaluations (pawns, White POV) at least this far from 0 back a "this side is better" statement.
-ADVANTAGE_MIN = 0.3
+# Evaluations (pawns, White POV) at least this far from 0 back a "this side is better" statement
+# (a slight edge such as +0.25 may fairly be called 「白方微幅佔優」).
+ADVANTAGE_MIN = 0.2
+
+
+def _clause_start(text: str, start: int) -> int:
+    return max((m.end() for m in CLAUSE_END.finditer(text, 0, start)), default=0)
 
 
 def _negated(text: str, start: int) -> bool:
     """A negation earlier in the same clause: 「不存在任何空投將軍或一步殺威脅」."""
-    clause = max((m.end() for m in CLAUSE_END.finditer(text, 0, start)), default=0)
-    return any(word in text[clause:start] for word in NEGATIONS)
+    return any(word in text[_clause_start(text, start) : start] for word in NEGATIONS)
+
+
+def _about_this_game(text: str, match: re.Match) -> bool:
+    """The claim names a side or a move in its clause; 「王極易遭受一步殺」 is general advice."""
+    clause = text[_clause_start(text, match.start()) : match.end()]
+    return bool(re.search(r"[白黑]", clause) or MOVE_TOKEN.search(clause))
 
 
 def _number(token: str) -> int | None:
@@ -220,6 +230,8 @@ def _claim_warnings(answer: str, context: dict, evidence: dict) -> list[AnswerWa
     for match in MATE_CLAIM.finditer(answer):
         n = _number(match.group("cn") or match.group("en") or match.group("sym") or "")
         if not n or _negated(answer, match.start()):
+            continue
+        if match.group("cn") and not _about_this_game(answer, match):
             continue
         if n <= longest:  # a shorter mate is what remains of a longer one further down the line
             continue
