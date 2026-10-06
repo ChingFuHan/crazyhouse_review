@@ -23,3 +23,24 @@ def test_moves_from_context_or_legal_now_are_grounded():
 def test_invented_moves_are_flagged_once():
     answer = "白方應走 Qxf7#，接著 Bxh7 與 R@h8；Qxf7# 是殺棋。e5 這格很重要。"
     assert unverified_moves(answer, CONTEXT, BOARD) == ["Qxf7#", "Bxh7", "R@h8"]
+
+
+def test_named_but_unanalysed_moves_are_not_evidence():
+    context = {**CONTEXT, "candidate_analysis": [
+        {"input": "Qh5", "legal": True, "san": "Qh5", "uci": "d1h5", "source": "engine_after_move", "line_after_move": "4...g6"},
+        {"input": "Rb1", "legal": True, "san": "Rb1", "uci": "a1b1", "source": "not_analyzed"},
+    ]}
+    assert unverified_moves("Qh5 不如 Nf3；Rb1 太慢。", context, BOARD) == ["Rb1"]
+    # A not-analysed move that also appears in an engine line is backed by that line.
+    in_pv = {**context, "engine": {"multipv": [{"pv": "4.Rb1 d5"}]}}
+    assert unverified_moves("Rb1 是第一名。", in_pv, BOARD) == []
+
+
+def test_question_comments_and_headers_are_not_evidence():
+    context = {
+        **CONTEXT,
+        "user_question": "Bxh7 呢？",
+        "pgn_comments": [{"ply": 3, "text": "Qxf7# wins"}],
+        "game": {**CONTEXT["game"], "headers": {"White": "Bxh7 fan"}},
+    }
+    assert unverified_moves("Bxh7 與 Qxf7# 都不行。", context, BOARD) == ["Bxh7", "Qxf7#"]

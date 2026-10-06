@@ -26,6 +26,7 @@ function checkedText(move: CheckedMove): string {
   const name = move.san ?? move.input
   if (!move.legal) return `${name}：不合法（${move.reason}）`
   if (move.source === 'unavailable') return `${name}：Engine 無法分析`
+  if (move.source === 'not_analyzed') return `${name}：合法，但未做 Engine 分析（每題最多分析 3 步）`
   const score = move.mate !== null || move.evaluation !== null ? formatScore(move) : ''
   const source = move.source === 'multipv' ? `Engine 第 ${move.multipv_rank} 候選` : move.source === 'rules' ? '規則判定' : 'Engine 重新分析'
   return `${name}：${score}（${source}，白方視角）`
@@ -60,8 +61,8 @@ export function ChatPanel(props: ChatPanelProps) {
             <div className="chat-question">{turn.question}</div>
             {turn.answer && turn.answer.checked_moves.length > 0 && (
               <ul className="checked-moves" data-testid="checked-moves">
-                {turn.answer.checked_moves.map((m) => (
-                  <li key={m.input} className={m.legal ? 'legal' : 'illegal'}>
+                {turn.answer.checked_moves.map((m, index) => (
+                  <li key={index} className={m.legal ? 'legal' : 'illegal'}>
                     {checkedText(m)}
                   </li>
                 ))}

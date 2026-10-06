@@ -155,7 +155,7 @@ export interface Explanation {
   score: string
   owner: string
   items: ExplanationItem[]
-  comparisons: { san: string; score: string; text: string }[]
+  comparisons: { uci: string; san: string; score: string; text: string }[]
   alerts: string[]
   tags: string[]
 }
@@ -208,6 +208,7 @@ export function explain(insights: Insights, moveNumber: number): Explanation | n
     owner: scoreOwner(best),
     items,
     comparisons: others.map((other) => ({
+      uci: other.facts.move.uci,
       san: other.facts.move.san,
       score: formatScore(other),
       text: comparison(best, other, mover),

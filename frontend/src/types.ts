@@ -192,7 +192,7 @@ export interface CheckedMove {
   reason: string | null
   san: string | null
   uci: string | null
-  source: 'multipv' | 'engine_after_move' | 'rules' | 'unavailable' | null
+  source: 'multipv' | 'engine_after_move' | 'rules' | 'not_analyzed' | 'unavailable' | null
   multipv_rank: number | null
   evaluation: number | null
   mate: number | null
@@ -211,7 +211,7 @@ export interface ExplainResponse {
   refused: boolean
   cached: boolean
   checked_moves: CheckedMove[]
-  /** Moves the answer mentions that are neither legal now nor in the engine/game data it was given. */
+  /** Moves the answer mentions that nothing backs (illegal now, or never analysed by the engine). */
   unverified_moves: string[]
 }
 

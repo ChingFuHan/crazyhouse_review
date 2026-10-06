@@ -19,7 +19,9 @@ from ..engine import EngineService, EngineUnavailable
 from ..models import CheckedMove, EngineAnalysis
 from .context import PV_PLIES, move_facts_dict, numbered
 
-MAX_CANDIDATES = 3
+# Legality is checked for every named move (cheap); fresh engine searches are capped per question.
+MAX_NAMED_MOVES = 10
+MAX_ENGINE_SEARCHES = 3
 # SAN / UCI / drop / castling tokens. Neighbouring CJK text is fine; ASCII letters/digits are not.
 MOVE_TOKEN = re.compile(
     r"(?<![A-Za-z0-9@])("
@@ -41,7 +43,7 @@ class CandidateCheck:
     reason: str | None = None
     uci: str | None = None
     san: str | None = None
-    source: str | None = None  # "multipv" | "engine_after_move" | "unavailable"
+    source: str | None = None  # "multipv" | "engine_after_move" | "rules" | "not_analyzed" | "unavailable"
     multipv_rank: int | None = None
     evaluation: float | None = None
     mate: int | None = None
@@ -65,6 +67,15 @@ class CandidateCheck:
     def context(self) -> dict:
         if not self.legal:
             return {"input": self.input, "legal": False, "illegal_reason": self.reason}
+        if self.source == "not_analyzed":
+            return {
+                "input": self.input,
+                "legal": True,
+                "san": self.san,
+                "uci": self.uci,
+                "source": "not_analyzed",
+                "note": "only checked for legality; no engine analysis",
+            }
         return {
             "input": self.input,
             "legal": True,
@@ -87,7 +98,7 @@ def extract_candidates(board: CrazyhouseBoard, question: str) -> list[CandidateC
     checks: list[CandidateCheck] = []
     seen: set[str] = set()
     for token in MOVE_TOKEN.findall(question):
-        if token in seen or len(checks) >= MAX_CANDIDATES:
+        if token in seen or len(checks) >= MAX_NAMED_MOVES:
             continue
         seen.add(token)
         try:
@@ -111,8 +122,10 @@ async def analyse_candidates(
     analysis: EngineAnalysis,
     engine: EngineService,
 ) -> None:
-    """Fill in engine evidence for each legal candidate (same search settings as the position)."""
+    """Fill in engine evidence for each legal candidate (same search settings as the position).
+    Moves beyond MAX_ENGINE_SEARCHES fresh searches are marked "not_analyzed", never guessed."""
     ranks = {line.pv[0].uci: line for line in analysis.lines}
+    searches = 0
     for check in checks:
         if not check.legal:
             continue
@@ -134,6 +147,10 @@ async def analyse_candidates(
             else:
                 check.evaluation = 0.0
             continue
+        if searches >= MAX_ENGINE_SEARCHES:
+            check.source = "not_analyzed"
+            continue
+        searches += 1
         line_moves = [*moves, check.uci]
         try:
             result = await engine.analyse(

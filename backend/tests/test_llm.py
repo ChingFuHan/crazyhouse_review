@@ -279,7 +279,8 @@ def test_extract_candidates_from_chinese_text():
     board = build_board(STARTING_FEN, KNIGHT_TRADE_E6)
     checks = extract_candidates(board, "為什麼不能 Qxf7？如果我改走Qh5呢？或是 N@d6+ 跟 e2e4？e5 這格呢？")
     by_input = {c.input: c for c in checks}
-    assert list(by_input) == ["Qxf7", "Qh5", "N@d6+"], "max three, in order"
+    assert list(by_input) == ["Qxf7", "Qh5", "N@d6+", "e2e4"], "every named move, in order"
+    assert not by_input["e2e4"].legal, "e2e4 is not legal here (the pawn already stands on e4)"
     assert not by_input["Qxf7"].legal and by_input["Qxf7"].reason == "沒有后能走到 f7"
     assert by_input["Qh5"].legal and by_input["Qh5"].uci == "d1h5"
     assert by_input["N@d6+"].san == "N@d6+"
@@ -393,3 +394,17 @@ def test_answers_mentioning_unbacked_moves_are_flagged():
         with c.stream("POST", "/api/explain/stream", json={"moves": KNIGHT_TRADE_E6, "question": "再說一次"}) as response:
             done = parse_sse(response.read().decode())[-1][1]
         assert done["unverified_moves"] == ["Qxf7#"]
+
+
+@needs_engine
+def test_named_moves_beyond_the_search_cap_are_marked_not_analysed_and_flagged(client, fake):
+    analysis = client.post("/api/analyze", json={"moves": KNIGHT_TRADE_E6}).json()
+    top = {l["pv"][0]["uci"] for l in analysis["lines"]}
+    assert not top & {"a2a3", "h2h3", "b2b3", "a1b1"}
+    answer = client.post("/api/explain", json={"moves": KNIGHT_TRADE_E6, "question": "a3、h3、b3 還是 Rb1？"}).json()
+    sources = {c["input"]: c["source"] for c in answer["checked_moves"]}
+    assert sources == {"a3": "engine_after_move", "h3": "engine_after_move", "b3": "engine_after_move", "Rb1": "not_analyzed"}
+    entry = context_of(fake.calls[-1])["candidate_analysis"][3]
+    assert entry["source"] == "not_analyzed" and "evaluation" not in entry
+    # The fake echoes the question, so the answer "mentions" Rb1: unbacked by any analysis.
+    assert answer["unverified_moves"] == ["Rb1"]

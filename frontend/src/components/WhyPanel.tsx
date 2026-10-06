@@ -58,7 +58,7 @@ export function WhyPanel({ position, view, engineOn, aiTurn, onExplain, autoExpl
               <h3>其他候選著</h3>
               <ul>
                 {explanation.comparisons.map((c) => (
-                  <li key={c.san}>
+                  <li key={c.uci}>
                     <strong>{c.san}</strong> <span className="why-score">{c.score}</span> {c.text}
                   </li>
                 ))}

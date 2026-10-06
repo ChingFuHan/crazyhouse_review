@@ -281,7 +281,9 @@ class CheckedMove(BaseModel):
     reason: str | None = None
     san: str | None = None
     uci: str | None = None
-    source: str | None = Field(default=None, description="multipv | engine_after_move | rules | unavailable")
+    source: str | None = Field(
+        default=None, description="multipv | engine_after_move | rules | not_analyzed | unavailable"
+    )
     multipv_rank: int | None = None
     evaluation: float | None = None
     mate: int | None = None

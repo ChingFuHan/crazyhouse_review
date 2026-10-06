@@ -40,7 +40,7 @@ export function AnswerView({ turn }: { turn: Turn }) {
       <RichText text={answer.text} />
       {answer.unverified_moves.length > 0 && (
         <div className="unverified" role="note" data-testid="unverified">
-          注意：回答提到的 {answer.unverified_moves.join('、')} 不是目前的合法著，也不在 Engine 分析或棋譜中，可能不正確。
+          注意：回答提到的 {answer.unverified_moves.join('、')} 沒有 Engine 分析或規則依據支持（不合法，或未經分析），相關說法可能不正確。
         </div>
       )}
       <div className="answer-meta">

@@ -106,10 +106,11 @@ test('moves in an answer that nothing backs are flagged as unverified', async ({
   await page.locator('.move.main', { hasText: /e6$/ }).click()
   await activePly(page, 6)
   const chat = page.getByTestId('chat')
-  // Only three named moves are checked; the fake LLM echoes the fourth (an impossible Bxh7).
-  await chat.getByLabel('提問').fill('Nf3、Ng3、d4 還是 Bxh7？')
+  // Every named move is legality-checked, but only three get a fresh engine search: the fourth (Rb1)
+  // is marked as not analysed, and the fake LLM's echo of it is flagged as unverified.
+  await chat.getByLabel('提問').fill('a3、h3、b3 還是 Rb1？')
   await chat.getByLabel('提問').press('Enter')
   const turn = chat.locator('.chat-turn').last()
-  await expect(turn.getByTestId('unverified')).toContainText('Bxh7')
-  await expect(turn.getByTestId('unverified')).not.toContainText('Nf3')
+  await expect(turn.getByTestId('checked-moves')).toContainText('Rb1：合法，但未做 Engine 分析', { timeout: 20_000 })
+  await expect(turn.getByTestId('unverified')).toContainText('Rb1')
 })
