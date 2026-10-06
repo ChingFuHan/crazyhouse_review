@@ -13,6 +13,7 @@ import { PgnLoader } from './components/PgnLoader'
 import { ReviewBoard } from './components/ReviewBoard'
 import { ReviewPanel } from './components/ReviewPanel'
 import { WhyPanel } from './components/WhyPanel'
+import { useEngineSettings } from './engineSettings'
 import { engineShapes } from './engineShapes'
 import { MAIN, mainlineAncestor } from './tree'
 import type { Color } from './types'
@@ -25,6 +26,8 @@ import { useReview } from './useReview'
 
 /** Auto-explain waits until the user has stayed on a position this long after its analysis is done. */
 const AUTO_EXPLAIN_DWELL_MS = 1500
+/** A long or infinite search is deep enough to explain once a milestone reaches this depth. */
+const AUTO_EXPLAIN_MIN_DEPTH = 15
 
 export default function App() {
   const review = useReview()
@@ -34,18 +37,26 @@ export default function App() {
   const position = active?.state
   const [engineOn, toggleEngine] = useBooleanPreference('engine-on', true)
   const [autoExplain, toggleAutoExplain] = useBooleanPreference('auto-explain', false)
-  const engine = useEngine(position ?? null, engineOn)
+  const [settings, changeSettings] = useEngineSettings()
+  const engine = useEngine(position ?? null, engineOn, settings)
   const insights = useInsights(position ?? null, engine)
   const conversation = useConversation(tree, active?.id ?? null, orientation)
   const gameReview = useGameReview(tree)
   const aiTurn = [...conversation.turns].reverse().find((turn) => turn.question === null)
 
+  // Questions explain exactly the engine result on screen.
+  const shownId = engine.analysis?.lines.length ? engine.analysis.analysis_id : null
+  const askQuestion = conversation.ask
+  const askAbout = useCallback((question: string | null) => askQuestion(question, shownId), [askQuestion, shownId])
+
   // Auto-explain only after the user dwells on an analysed position; quick browsing never asks.
-  const ask = useRef(conversation.ask)
+  const ask = useRef(askAbout)
   useEffect(() => {
-    ask.current = conversation.ask
-  }, [conversation.ask])
-  const analysed = engine.status === 'done' && engine.analysis !== null && engine.analysis.position_id === position?.position_id
+    ask.current = askAbout
+  }, [askAbout])
+  const analysed =
+    engine.analysis?.position_id === position?.position_id &&
+    (engine.status === 'done' || (engine.milestone?.depth ?? 0) >= AUTO_EXPLAIN_MIN_DEPTH)
   const hasExplanation = aiTurn !== undefined
   useEffect(() => {
     if (!autoExplain || !analysed || hasExplanation) return
@@ -97,6 +108,8 @@ export default function App() {
               engine={engine}
               enabled={engineOn}
               onToggle={toggleEngine}
+              settings={settings}
+              onSettingsChange={changeSettings}
               onPlayLine={(moves) => void playLine(position, moves.map((m) => m.uci))}
             />
             <WhyPanel
@@ -104,7 +117,7 @@ export default function App() {
               view={insights}
               engineOn={engineOn}
               aiTurn={aiTurn}
-              onExplain={() => void conversation.ask(null)}
+              onExplain={() => void askAbout(null)}
               autoExplain={autoExplain}
               onToggleAutoExplain={toggleAutoExplain}
             />
@@ -139,7 +152,7 @@ export default function App() {
             <MoveInput onPlay={playHere} disabled={position.outcome !== null} />
             <ChatPanel
               turns={conversation.turns}
-              onAsk={(question) => void conversation.ask(question)}
+              onAsk={(question) => void askAbout(question)}
               bestSan={lines[0]?.pv[0].san ?? null}
               secondSan={lines[1]?.pv[0].san ?? null}
               gameMoveSan={gameChild ? (tree.nodes[gameChild].state.last_move?.san ?? null) : null}

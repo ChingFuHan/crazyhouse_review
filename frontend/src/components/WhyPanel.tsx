@@ -89,7 +89,16 @@ export function WhyPanel({ position, view, engineOn, aiTurn, onExplain, autoExpl
           </div>
         </div>
       )}
-      <p className="why-source">以上皆由 Fairy-Stockfish 輸出與規則計算得出（評估為白方視角）。</p>
+      <p className="why-source" data-testid="why-source">
+        以上皆由 Fairy-Stockfish 輸出與規則計算得出（評估為白方視角）
+        {insights && insights.engine_status !== 'game_over' && (
+          <>
+            ，根據 depth {insights.depth}
+            {insights.engine_status === 'running' && '（分析進行中）'}
+          </>
+        )}
+        {loading && insights && '，更新中…'}。
+      </p>
 
       <div className="ai-explain" data-testid="ai-explain">
         <div className="ai-controls">

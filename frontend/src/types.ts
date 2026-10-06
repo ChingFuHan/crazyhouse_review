@@ -63,17 +63,31 @@ export interface EngineLine {
   pv: MoveModel[]
 }
 
+/** User-chosen engine search settings (lichess-like). movetime_ms null = infinite analysis. */
+export interface SearchSettings {
+  multipv: number
+  depth: number | null
+  movetime_ms: number | null
+  threads: number
+  hash_mb: number
+}
+
 export interface EngineAnalysis {
   position_id: string
-  status: 'ok' | 'cancelled' | 'game_over'
+  /** running = a streamed snapshot of a search still in progress */
+  status: 'ok' | 'running' | 'cancelled' | 'game_over'
   engine: string
   multipv: number
-  movetime_ms: number
+  movetime_ms: number | null
   depth: number
   lines: EngineLine[]
   best_move: MoveModel | null
   analysis_id: string
   cached: boolean
+  nodes: number | null
+  nps: number | null
+  elapsed_ms: number | null
+  settings: SearchSettings | null
 }
 
 export interface PieceOnSquare {
@@ -174,7 +188,9 @@ export interface CandidateFacts {
 export interface Insights {
   position_id: string
   analysis_id: string
-  engine_status: 'ok' | 'cancelled' | 'game_over'
+  engine_status: 'ok' | 'running' | 'cancelled' | 'game_over'
+  /** Search depth of the engine result the facts are based on. */
+  depth: number
   position: PositionFacts
   last_move: MoveFacts | null
   candidates: CandidateFacts[]

@@ -366,6 +366,58 @@ cg-board square.drop-dest {
   gap: 6px;
 }
 
+.engine-action {
+  padding: 1px 8px;
+  font-size: 0.8rem;
+}
+
+.engine-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 6px 10px;
+  margin: 6px 0 8px;
+  padding: 8px;
+  background: var(--panel-2);
+  border-radius: 4px;
+}
+
+.setting {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.setting select {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text-strong);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 4px;
+}
+
+.engine-settings-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.engine-settings-reset {
+  grid-column: 1 / -1;
+  justify-self: start;
+  font-size: 0.8rem;
+}
+
+.engine-progress {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .spinner {
   width: 10px;
   height: 10px;

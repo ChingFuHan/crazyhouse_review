@@ -44,8 +44,10 @@ export function useConversation(tree: GameTree | null, activeId: string | null, 
   const node = tree && activeId ? tree.nodes[activeId] : null
   const key = node ? conversationKey(node.state, node.variationId) : null
 
+  /** `analysisId`: the engine result on screen, so the answer explains exactly what the viewer sees
+   * (null: the server analyses the position itself). */
   const ask = useCallback(
-    async (question: string | null) => {
+    async (question: string | null, analysisId: string | null) => {
       if (!tree || !activeId) return
       const position = tree.nodes[activeId].state
       const meta = llmMeta(tree, activeId, viewerSide)
@@ -76,6 +78,7 @@ export function useConversation(tree: GameTree | null, activeId: string | null, 
           meta,
           question,
           history,
+          analysisId,
           (partial) => update({ partial }),
           controller.signal,
         )

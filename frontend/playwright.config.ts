@@ -12,6 +12,21 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:5181',
     trace: 'retain-on-failure',
+    // Shortest offered search time (UI default is 3 s) keeps the suite fast; settings tests change it.
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: 'http://127.0.0.1:5181',
+          localStorage: [
+            {
+              name: 'crazyhouse-review:engine-settings',
+              value: JSON.stringify({ multipv: 3, depth: null, movetime_ms: 1000, threads: 4, hash_mb: 256 }),
+            },
+          ],
+        },
+      ],
+    },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1400, height: 900 } } }],
   webServer: [

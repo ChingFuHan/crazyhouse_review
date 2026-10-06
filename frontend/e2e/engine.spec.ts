@@ -52,7 +52,7 @@ test('engine output always belongs to the active position, even while navigating
   // Settle on a position: analysis arrives for exactly that position and its best move is legal there.
   const boardId = await page.locator('.board').getAttribute('data-position-id')
   await expect(page.getByTestId('engine')).toHaveAttribute('data-position-id', boardId!)
-  await expect(page.locator('.engine-meta')).toContainText('depth')
+  await expect(page.getByTestId('engine-progress')).toContainText('depth')
   const best = await page.locator('.engine-line[data-rank="1"] .pv-move').first().getAttribute('data-uci')
   const legal = await page.evaluate(async (id) => {
     const fen = document.querySelector('.board')!.getAttribute('data-fen')!

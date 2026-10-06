@@ -1,6 +1,15 @@
 import type { ExportNode } from './exportPgn'
 import type { LlmMeta } from './llmRequest'
-import type { ChatTurn, EngineAnalysis, ExplainResponse, GameTreeDto, Insights, PositionState, ReviewJob } from './types'
+import type {
+  ChatTurn,
+  EngineAnalysis,
+  ExplainResponse,
+  GameTreeDto,
+  Insights,
+  PositionState,
+  ReviewJob,
+  SearchSettings,
+} from './types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -81,31 +90,61 @@ export const api = {
   startPosition: (rootFen?: string) => post<PositionState>('/api/position', { root_fen: rootFen ?? null, moves: [] }),
   move: (from: PositionState, move: string) => post<PositionState>('/api/move', { ...lineOf(from), move }),
   loadPgn: (pgn: string) => post<GameTreeDto>('/api/pgn', { pgn }),
-  analyze: (position: PositionState, options: { movetimeMs?: number; multipv?: number }, signal?: AbortSignal) =>
-    post<EngineAnalysis>(
-      '/api/analyze',
-      { ...lineOf(position), movetime_ms: options.movetimeMs ?? null, multipv: options.multipv ?? null },
+  /** Streamed analysis with the viewer's settings: `onSnapshot` gets each deeper result; resolves with
+   * the final one (ok when the depth/time limit was reached or the search was stopped). */
+  analyzeStream: async (
+    position: PositionState,
+    settings: SearchSettings,
+    onSnapshot: (analysis: EngineAnalysis) => void,
+    signal?: AbortSignal,
+  ): Promise<EngineAnalysis> => {
+    const response = await fetch('/api/analyze/stream', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...lineOf(position), settings }),
       signal,
-    ),
-  /** Engine result (same cache as `analyze` with default settings) + deterministic facts. */
-  insights: (position: PositionState, signal?: AbortSignal) =>
-    post<Insights>('/api/insights', { ...lineOf(position), movetime_ms: null, multipv: null }, signal),
+    })
+    await throwIfFailed(response)
+    let final: EngineAnalysis | null = null
+    let failure: ApiError | null = null
+    await readSse(response.body!, (event, data) => {
+      if (event === 'snapshot') onSnapshot(data as EngineAnalysis)
+      else if (event === 'done') final = data as EngineAnalysis
+      else if (event === 'error') failure = new ApiError(503, 'engine_unavailable', (data as { message: string }).message)
+    })
+    if (failure) throw failure
+    if (!final) throw new ApiError(502, 'stream_incomplete', 'Engine 分析串流中斷')
+    return final
+  },
+  /** Finish the running analysis of this position now (it counts as complete). */
+  stopAnalysis: (positionId: string) => post<{ stopped: boolean }>('/api/analyze/stop', { position_id: positionId }),
+  /** Deterministic facts for exactly the displayed engine result (`analysisId`). */
+  insights: (position: PositionState, analysisId: string, signal?: AbortSignal) =>
+    post<Insights>('/api/insights', { ...lineOf(position), analysis_id: analysisId }, signal),
   /** Ask the LLM about this position; null question = explain the best move. */
-  explain: (position: PositionState, meta: LlmMeta, question: string | null, history: ChatTurn[], signal?: AbortSignal) =>
-    post<ExplainResponse>('/api/explain', { ...lineOf(position), ...meta, question, history }, signal),
+  explain: (
+    position: PositionState,
+    meta: LlmMeta,
+    question: string | null,
+    history: ChatTurn[],
+    analysisId: string | null,
+    signal?: AbortSignal,
+  ) => post<ExplainResponse>('/api/explain', { ...lineOf(position), ...meta, question, history, analysis_id: analysisId }, signal),
   /** Same as `explain`, streamed: `onDelta` receives the answer text so far. */
   explainStream: async (
     position: PositionState,
     meta: LlmMeta,
     question: string | null,
     history: ChatTurn[],
+    analysisId: string | null,
     onDelta: (textSoFar: string) => void,
     signal?: AbortSignal,
   ): Promise<ExplainResponse> => {
     const response = await fetch('/api/explain/stream', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...lineOf(position), ...meta, question, history }),
+      // analysis_id: explain exactly the engine result on screen
+      body: JSON.stringify({ ...lineOf(position), ...meta, question, history, analysis_id: analysisId }),
       signal,
     })
     await throwIfFailed(response)

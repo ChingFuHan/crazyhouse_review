@@ -1,72 +1,109 @@
-// Engine analysis bound to the active position.
-// A result is only ever exposed for the position_id it was computed for.
+// Engine analysis of the active position with the viewer's settings, streamed as the search deepens.
+// A result is only ever exposed for the position_id (and settings) it was computed for.
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
-import type { EngineAnalysis, PositionState } from './types'
+import { settingsKey } from './engineSettings'
+import type { EngineAnalysis, PositionState, SearchSettings } from './types'
 
 const DEBOUNCE_MS = 120
-/** Quick look first, then the server's default full-length search (both cached by the backend).
- * The full phase must use the server default so /api/insights reuses the very same result. */
-const PHASES_MS: (number | undefined)[] = [300, undefined]
+/** Searches at least this long (or infinite) publish depth milestones before they finish, so the
+ * fact panel need not wait for the end; shorter ones are only described once done. */
+const LONG_SEARCH_MS = 10_000
+/** Depth steps at which a running analysis is "good enough" to refresh the fact panel. */
+const MILESTONE_STEP = 5
+const FIRST_MILESTONE = 10
 
-export type EngineStatus = 'idle' | 'analyzing' | 'done' | 'error'
+/** analyzing: snapshots arriving · done: depth/time limit reached or stopped · stopped: interrupted
+ * by another request (e.g. another tab) before finishing. */
+export type EngineStatus = 'idle' | 'analyzing' | 'done' | 'stopped' | 'error'
 
 interface EngineState {
-  positionId: string
+  key: string
   status: EngineStatus
   analysis: EngineAnalysis | null
+  /** Long searches only: the first snapshot that reached the latest depth milestone (10, 15, 20, …). */
+  milestone: EngineAnalysis | null
   error: string | null
 }
 
 export interface EngineView {
   status: EngineStatus
   analysis: EngineAnalysis | null
+  milestone: EngineAnalysis | null
   error: string | null
+  /** Finish the running search now (it counts as complete). */
+  stop: () => void
+  /** Search again (after an interruption or an error). */
+  restart: () => void
 }
 
-export function useEngine(position: PositionState | null, enabled = true): EngineView {
+const milestoneOf = (depth: number) => Math.floor(depth / MILESTONE_STEP) * MILESTONE_STEP
+
+export function nextMilestone(previous: EngineAnalysis | null, snapshot: EngineAnalysis): EngineAnalysis | null {
+  const step = milestoneOf(snapshot.depth)
+  if (step < FIRST_MILESTONE) return previous
+  return previous && milestoneOf(previous.depth) >= step ? previous : snapshot
+}
+
+export function useEngine(position: PositionState | null, enabled: boolean, settings: SearchSettings): EngineView {
   const [state, setState] = useState<EngineState | null>(null)
+  const [nonce, setNonce] = useState(0)
   const positionId = position?.position_id
+  const key = positionId && enabled ? `${positionId}|${settingsKey(settings)}|${nonce}` : null
 
   useEffect(() => {
-    if (!position || !enabled) return
+    if (!position || !key) return
     const controller = new AbortController()
     const id = position.position_id
-    const update = (patch: Partial<EngineState>) =>
-      setState((prev) => ({
-        ...(prev?.positionId === id ? prev : { positionId: id, status: 'idle', analysis: null, error: null }),
-        ...patch,
-      }))
+    const long = settings.movetime_ms === null || settings.movetime_ms >= LONG_SEARCH_MS
+    const fresh = (): EngineState => ({ key, status: 'analyzing', analysis: null, milestone: null, error: null })
+    const update = (patch: (base: EngineState) => Partial<EngineState>) =>
+      setState((prev) => {
+        const base = prev?.key === key ? prev : fresh()
+        return { ...base, ...patch(base) }
+      })
 
     const timer = setTimeout(async () => {
-      update({ status: 'analyzing' })
+      update(() => ({ status: 'analyzing' }))
       try {
-        for (const movetimeMs of PHASES_MS) {
-          const result = await api.analyze(position, { movetimeMs }, controller.signal)
-          if (controller.signal.aborted) return
-          if (result.position_id !== id) throw new Error(`engine answered for ${result.position_id}, expected ${id}`)
-          if (result.status === 'cancelled') continue // superseded on the server; try the next phase
-          update({ analysis: result })
-          if (result.status === 'game_over') break
+        const final = await api.analyzeStream(
+          position,
+          settings,
+          (snapshot) => {
+            if (controller.signal.aborted || snapshot.position_id !== id) return
+            update((base) => ({ analysis: snapshot, milestone: long ? nextMilestone(base.milestone, snapshot) : null }))
+          },
+          controller.signal,
+        )
+        if (controller.signal.aborted) return
+        if (final.position_id !== id) throw new Error(`engine answered for ${final.position_id}, expected ${id}`)
+        if (final.status === 'cancelled') {
+          update((base) => ({ status: 'stopped', analysis: final.lines.length ? final : base.analysis }))
+        } else {
+          update(() => ({ status: 'done', analysis: final }))
         }
-        update({ status: 'done' })
       } catch (error) {
         if (controller.signal.aborted) return
-        update({ status: 'error', error: error instanceof Error ? error.message : String(error) })
+        update(() => ({ status: 'error', error: error instanceof Error ? error.message : String(error) }))
       }
     }, DEBOUNCE_MS)
 
     return () => {
       clearTimeout(timer)
-      controller.abort()
+      controller.abort() // closes the stream: the server stops this search
     }
-    // position object identity changes only together with position_id
+    // `key` captures position_id, settings and restarts
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [positionId, enabled])
+  }, [key])
 
-  if (!positionId || !enabled || state?.positionId !== positionId) {
-    return { status: enabled && positionId ? 'analyzing' : 'idle', analysis: null, error: null }
+  const stop = useCallback(() => {
+    if (positionId) void api.stopAnalysis(positionId)
+  }, [positionId])
+  const restart = useCallback(() => setNonce((n) => n + 1), [])
+
+  if (!key || state?.key !== key) {
+    return { status: key ? 'analyzing' : 'idle', analysis: null, milestone: null, error: null, stop, restart }
   }
-  return { status: state.status, analysis: state.analysis, error: state.error }
+  return { ...state, stop, restart }
 }

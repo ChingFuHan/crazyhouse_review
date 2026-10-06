@@ -114,6 +114,7 @@ describe('explain', () => {
       position_id: 'p',
       analysis_id: 'a',
       engine_status: 'ok',
+      depth: 20,
       position: {
         side_to_move: 'white',
         in_check: false,

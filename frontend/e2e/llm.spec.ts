@@ -112,8 +112,8 @@ test('asking and immediately browsing away still produces the answer (user searc
   const ai = page.getByTestId('ai-explain')
   await expect(ai.locator('.answer')).toContainText(`position_id=${asked.id}`)
   await expect(ai.locator('.engine-error')).toHaveCount(0)
-  // The answer was grounded on a complete search: the same (cached) result the panel now shows.
-  const engine = page.getByTestId('engine')
-  await expect(engine).not.toHaveAttribute('data-analysis-id', '')
-  await expect(ai.locator('.answer')).toHaveAttribute('data-analysis-id', (await engine.getAttribute('data-analysis-id'))!)
+  // Asked before any engine line was on screen: the server searched on its background engine, so the
+  // answer stands on its own complete result with a best move.
+  await expect(ai.locator('.answer')).toContainText(/best=\S/)
+  await expect(ai.locator('.answer')).not.toHaveAttribute('data-analysis-id', '')
 })

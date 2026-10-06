@@ -1,6 +1,9 @@
+import { useState } from 'react'
+import { describe } from '../engineSettings'
 import { formatScore, scoreOwner, whiteShare } from '../evaluation'
-import type { EngineLine, MoveModel, PositionState } from '../types'
-import type { EngineView } from '../useEngine'
+import type { EngineAnalysis, EngineLine, MoveModel, PositionState, SearchSettings } from '../types'
+import type { EngineStatus, EngineView } from '../useEngine'
+import { EngineSettings } from './EngineSettings'
 
 export interface EnginePanelProps {
   position: PositionState
@@ -9,6 +12,16 @@ export interface EnginePanelProps {
   onPlayLine: (moves: MoveModel[]) => void
   enabled: boolean
   onToggle: () => void
+  settings: SearchSettings
+  onSettingsChange: (settings: SearchSettings) => void
+}
+
+const STATUS_LABELS: Record<EngineStatus, string> = {
+  idle: '',
+  analyzing: '分析中',
+  done: '完成',
+  stopped: '已中斷（被其他分析取代）',
+  error: '錯誤',
 }
 
 function pvTokens(position: PositionState, line: EngineLine, onPlayLine: (moves: MoveModel[]) => void) {
@@ -33,28 +46,62 @@ function pvTokens(position: PositionState, line: EngineLine, onPlayLine: (moves:
   })
 }
 
-export function EnginePanel({ position, engine, onPlayLine, enabled, onToggle }: EnginePanelProps) {
+/** "depth 23 / 30 · 1.2 M/s · 4.5 秒 / 10 秒", against the settings that search actually used. */
+function progress(analysis: EngineAnalysis, fallback: SearchSettings): string {
+  const used = analysis.settings ?? fallback
+  const parts = [`depth ${analysis.depth}${used.depth !== null ? ` / ${used.depth}` : ''}`]
+  if (analysis.nps) parts.push(describe.nps(analysis.nps))
+  if (analysis.elapsed_ms !== null) {
+    const limit = used.movetime_ms !== null ? ` / ${describe.time(used.movetime_ms)}` : ' / 無限'
+    parts.push(`${(analysis.elapsed_ms / 1000).toFixed(1)} 秒${limit}`)
+  }
+  return parts.join(' · ')
+}
+
+export function EnginePanel({ position, engine, onPlayLine, enabled, onToggle, settings, onSettingsChange }: EnginePanelProps) {
   const { analysis, status, error } = engine
+  const [showSettings, setShowSettings] = useState(false)
   const best = analysis?.lines[0]
 
   return (
     <section
       className="panel engine"
       data-testid="engine"
+      data-status={status}
       data-position-id={analysis?.position_id ?? ''}
       data-analysis-id={status === 'done' ? (analysis?.analysis_id ?? '') : ''}
     >
       <header className="engine-header">
         <h2>Engine</h2>
         <span className="engine-meta">
-          {analysis ? `${analysis.engine} · depth ${analysis.depth}` : 'Fairy-Stockfish'}
+          <span title={analysis?.engine}>{STATUS_LABELS[status]}</span>
           {status === 'analyzing' && <span className="spinner" aria-label="analyzing" />}
+          {enabled && status === 'analyzing' && (
+            <button className="engine-action" data-testid="engine-stop" onClick={engine.stop} title="停止並保留目前結果">
+              停止
+            </button>
+          )}
+          {enabled && (status === 'stopped' || status === 'error') && (
+            <button className="engine-action" data-testid="engine-restart" onClick={engine.restart}>
+              重新分析
+            </button>
+          )}
+          <button
+            className="engine-action"
+            aria-label="Engine 設定"
+            aria-expanded={showSettings}
+            title="Engine 設定"
+            onClick={() => setShowSettings((open) => !open)}
+          >
+            ⚙
+          </button>
           <label className="toggle">
             <input type="checkbox" checked={enabled} onChange={onToggle} aria-label="Engine 開關" />
             {enabled ? '開' : '關'}
           </label>
         </span>
       </header>
+      {showSettings && <EngineSettings settings={settings} onChange={onSettingsChange} />}
       {!enabled && <div className="engine-note">Engine 已關閉。</div>}
 
       {error && <div className="engine-error">Engine 錯誤：{error}</div>}
@@ -62,8 +109,12 @@ export function EnginePanel({ position, engine, onPlayLine, enabled, onToggle }:
         <div className="engine-note">對局已結束（{position.outcome?.termination}），無需分析。</div>
       )}
 
-      {best && (
+      {best && analysis && (
         <>
+          <div className="engine-progress" data-testid="engine-progress">
+            {progress(analysis, settings)}
+            {analysis.cached && <span className="engine-cached">（快取）</span>}
+          </div>
           <div className="eval-row">
             <span className="eval-score" data-testid="eval-score">
               {formatScore(best)}
