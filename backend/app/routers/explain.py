@@ -20,7 +20,7 @@ from ..llm.grounding import unverified_moves
 from ..llm.provider import LLMError, LLMResult, LLMUnavailable
 from ..llm.service import DEFAULT_QUESTION, ExplainService, new_request_id
 from ..models import ExplainRequest, ExplainResponse
-from .engine import background_engine, has_lines, resolve_analysis, run_threat
+from .engine import background_engine, engine_service, has_lines, resolve_analysis, run_threat
 from .game import check_line
 
 router = APIRouter(prefix="/api")
@@ -93,7 +93,11 @@ async def prepare(body: ExplainRequest, request: Request) -> Prepared:
     # Explain exactly the analysis on screen; anything else runs on the background engine (protected),
     # so asking never interrupts the interactive analysis.
     root_fen, board, analysis = await resolve_analysis(body, request)
-    await analyse_candidates(prepared.checks, board, root_fen, body.moves, analysis, background)
+    # Same time as the displayed search, but bounded: a long or infinite analysis must not make a
+    # question wait minutes (up to MAX_ENGINE_SEARCHES searches) before the LLM even starts.
+    defaults = engine_service(request).settings
+    candidate_ms = min(analysis.movetime_ms or defaults.movetime_ms, defaults.max_movetime_ms)
+    await analyse_candidates(prepared.checks, board, root_fen, body.moves, analysis, background, candidate_ms)
     threat = await run_threat(board, background, protected=True) if has_lines(analysis) else None
     state = position_state(root_fen, body.moves, board)
     facts = compute_insights(root_fen, body.moves, board, analysis, threat)

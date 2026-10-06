@@ -50,6 +50,11 @@ async def resolve_analysis(
             found = engine.find(body.analysis_id)
             if found is not None and found.position_id == pid:
                 return root_fen, board, found
+    # The interactive defaults (lines, time), run on the background process.
+    defaults = engine_service(request).settings
+    body = body.model_copy(
+        update={"multipv": body.multipv or defaults.multipv, "movetime_ms": body.movetime_ms or defaults.movetime_ms}
+    )
     return await run_engine(body, background_engine(request), protected=True)
 
 

@@ -11,6 +11,8 @@ from fastapi.testclient import TestClient
 from app.chess_core import STARTING_FEN, position_id
 from app.config import engine_settings
 from app.engine import EngineService
+from app.llm.provider import FakeProvider
+from app.llm.service import ExplainService
 from app.main import create_app
 from app.models import MAX_THREADS, SearchSettings
 
@@ -155,3 +157,28 @@ def test_explanations_without_a_displayed_result_use_the_background_engine():
         app = client.app
         assert app.state.engine._cache == {}, "the interactive engine was not touched"
         assert app.state.review.engine.find(insights["analysis_id"]) is not None
+        # ...with the interactive defaults (lines, time), not the review engine's quick 1-line setting.
+        searched = [key for key in app.state.review.engine._cache if key[0] == PID]
+        assert searched == [(PID, SETTINGS.multipv, SETTINGS.movetime_ms, (), None)]
+
+
+@needs_engine
+def test_questions_about_a_long_analysis_search_candidates_within_the_time_cap():
+    settings = replace(SETTINGS, max_movetime_ms=400)
+    long_search = {"multipv": 2, "depth": 8, "movetime_ms": 60_000, "threads": 2, "hash_mb": 32}
+    with TestClient(create_app(settings, ExplainService(FakeProvider()))) as client:
+        with client.stream("POST", "/api/analyze/stream", json={"moves": LINE, "settings": long_search}) as response:
+            done = events(response.read().decode())[-1][1]
+        assert done["status"] == "ok" and done["movetime_ms"] == 60_000
+        played = {line["pv"][0]["uci"] for line in done["lines"]}
+        candidate = next(uci for uci in ("a2a3", "h2h3", "a2a4", "h2h4") if uci not in played)
+        start = time.monotonic()
+        answer = client.post(
+            "/api/explain",
+            json={"moves": LINE, "question": f"如果我改走 {candidate} 呢？", "analysis_id": done["analysis_id"]},
+        ).json()
+        assert time.monotonic() - start < 15
+        assert answer["analysis_id"] == done["analysis_id"]
+        assert [c["source"] for c in answer["checked_moves"]] == ["engine_after_move"]
+        after = position_id(STARTING_FEN, [*LINE, candidate])
+        assert (after, 2, 400, (), None) in client.app.state.review.engine._cache

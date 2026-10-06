@@ -121,9 +121,11 @@ async def analyse_candidates(
     moves: list[str],
     analysis: EngineAnalysis,
     engine: EngineService,
+    movetime_ms: int,
 ) -> None:
-    """Fill in engine evidence for each legal candidate (same search settings as the position).
-    Moves beyond MAX_ENGINE_SEARCHES fresh searches are marked "not_analyzed", never guessed."""
+    """Fill in engine evidence for each legal candidate (same number of lines as the position, each
+    fresh search taking ``movetime_ms``). Moves beyond MAX_ENGINE_SEARCHES fresh searches are marked
+    "not_analyzed", never guessed."""
     ranks = {line.pv[0].uci: line for line in analysis.lines}
     searches = 0
     for check in checks:
@@ -158,7 +160,7 @@ async def analyse_candidates(
                 line_moves,
                 position_id(root_fen, line_moves),
                 analysis.multipv,
-                analysis.movetime_ms or engine.settings.movetime_ms,  # an infinite analysis has no time limit
+                movetime_ms,
                 protected=True,
             )
         except EngineUnavailable:

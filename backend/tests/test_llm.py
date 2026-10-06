@@ -353,7 +353,7 @@ def test_mating_candidate_is_decided_by_rules():
     empty = EngineAnalysis(
         position_id="x", status="ok", engine="e", multipv=3, movetime_ms=100, depth=0, lines=[], best_move=None, analysis_id="a"
     )
-    asyncio.run(analyse_candidates(checks, board, fen, [], empty, engine=None))
+    asyncio.run(analyse_candidates(checks, board, fen, [], empty, engine=None, movetime_ms=100))
     assert checks[0].source == "rules" and checks[0].mate == -1  # Black mates: negative in White POV
 
 
@@ -412,11 +412,12 @@ def test_answers_mentioning_unbacked_moves_are_flagged():
 def test_named_moves_beyond_the_search_cap_are_marked_not_analysed_and_flagged(client, fake):
     analysis = client.post("/api/analyze", json={"moves": KNIGHT_TRADE_E6}).json()
     top = {l["pv"][0]["uci"] for l in analysis["lines"]}
-    assert not top & {"a2a3", "h2h3", "b2b3", "a1b1"}
-    answer = client.post("/api/explain", json={"moves": KNIGHT_TRADE_E6, "question": "a3、h3、b3 還是 Rb1？"}).json()
+    assert not top & {"a2a3", "h2h3", "b2b3", "N@a6"}
+    # N@a6 drops a knight where the b7 pawn takes it: it never shows up in an engine line by chance.
+    answer = client.post("/api/explain", json={"moves": KNIGHT_TRADE_E6, "question": "a3、h3、b3 還是 N@a6？"}).json()
     sources = {c["input"]: c["source"] for c in answer["checked_moves"]}
-    assert sources == {"a3": "engine_after_move", "h3": "engine_after_move", "b3": "engine_after_move", "Rb1": "not_analyzed"}
+    assert sources == {"a3": "engine_after_move", "h3": "engine_after_move", "b3": "engine_after_move", "N@a6": "not_analyzed"}
     entry = context_of(fake.calls[-1])["candidate_analysis"][3]
     assert entry["source"] == "not_analyzed" and "evaluation" not in entry
-    # The fake echoes the question, so the answer "mentions" Rb1: unbacked by any analysis.
-    assert answer["unverified_moves"] == ["Rb1"]
+    # The fake echoes the question, so the answer "mentions" N@a6: unbacked by any analysis.
+    assert answer["unverified_moves"] == ["N@a6"]
