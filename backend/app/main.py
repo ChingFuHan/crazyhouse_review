@@ -52,6 +52,7 @@ def create_app(
         yield
         await app.state.engine.close()
         await app.state.review.close()
+        app.state.explain.close()
 
     app = FastAPI(title="Crazyhouse Review", lifespan=lifespan)
     app.include_router(game.router)

@@ -40,6 +40,11 @@ class ExplainService:
         self.unavailable_reason = unavailable_reason
         self._cache: OrderedDict[str, LLMResult] = OrderedDict()
 
+    def close(self) -> None:
+        close = getattr(self.provider, "close", None)
+        if close is not None:
+            close()
+
     @property
     def model(self) -> str:
         if self.provider is None:

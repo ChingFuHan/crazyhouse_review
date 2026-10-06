@@ -161,6 +161,12 @@ class AgyProvider:
             self._workdir = tempfile.mkdtemp(prefix="crazyhouse-agy-")
         return self._workdir
 
+    def close(self) -> None:
+        """Remove the private working directory (whatever agy may have left in it)."""
+        if self._workdir is not None:
+            shutil.rmtree(self._workdir, ignore_errors=True)
+            self._workdir = None
+
     async def stream(self, system: str, messages: list[dict]) -> AsyncIterator[str | LLMResult]:
         args = [
             "-p", agy_prompt(system, messages),

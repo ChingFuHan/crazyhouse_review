@@ -44,12 +44,17 @@ def fake_agy(tmp_path, monkeypatch):
     args = tmp_path / "args.json"
     monkeypatch.setenv("FAKE_AGY_ARGS", str(args))
 
+    providers: list[AgyProvider] = []
+
     def run(mode, fixture="agy_stream_ok.ndjson", timeout_s=30):
         monkeypatch.setenv("FAKE_AGY_MODE", mode)
         monkeypatch.setenv("FAKE_AGY_FIXTURE", str(FIXTURES / fixture))
-        return AgyProvider("gemini-3.8-flash-high", str(exe), timeout_s), args
+        providers.append(AgyProvider("gemini-3.8-flash-high", str(exe), timeout_s))
+        return providers[-1], args
 
-    return run
+    yield run
+    for provider in providers:
+        provider.close()
 
 
 MESSAGES = [
@@ -90,6 +95,8 @@ def test_streams_deltas_then_result_with_safe_flags(fake_agy):
     assert argv[argv.index("--mode") + 1] == "plan" and "--sandbox" in argv
     assert argv[argv.index("-p") + 1].startswith("SYSTEM")
     assert os.listdir(recorded["cwd"]) == [], "runs in a private empty directory"
+    provider.close()
+    assert not os.path.exists(recorded["cwd"]), "the directory is removed on close"
 
 
 def test_error_result_becomes_llm_error(fake_agy):
