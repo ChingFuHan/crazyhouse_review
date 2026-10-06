@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parents[2]
 DOCS = ["README", "PROJECT_STATE", "task"]
 # Runtime LLM input, not documentation: never split or decorated.
 NOT_DOCS = {"backend/app/llm/system_prompt.md"}
-SKIP_DIRS = {".git", ".venv", "node_modules", "dist", ".pytest_cache", "test-results", "playwright-report"}
+# Generated or installed content (reports: scripts/llm_eval.py output, git-ignored).
+SKIP_DIRS = {".git", ".venv", "node_modules", "dist", ".pytest_cache", "test-results", "playwright-report", "reports"}
 
 BADGE = "https://img.shields.io/badge/{label}-{color}?style=for-the-badge"
 CURRENT, OTHER = "0969da", "6e7781"

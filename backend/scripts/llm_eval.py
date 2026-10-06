@@ -5,13 +5,16 @@ Spends LLM quota: two questions per position (14 positions by default), answered
     cd backend && uv run python scripts/llm_eval.py                 # all positions
     cd backend && uv run python scripts/llm_eval.py --limit 3       # first 3 positions only
     cd backend && LLM_PROVIDER=fake uv run python scripts/llm_eval.py --allow-fake --limit 2   # harness check
+    cd backend && uv run python scripts/llm_eval.py --recheck reports/llm-eval-<time>.json      # no LLM calls
 
 Positions: 4 points (20/40/60/80 %) of each finished lichess game in tests/fixtures plus two tactical
 positions. Each position is analysed like the UI does (default engine settings), then asked the
 default "explain the best move" question and one quick question, with the displayed analysis_id.
 Every answer goes through the same automatic checks as in the app (unbacked moves, evaluations,
 mate distances, advantage claims). The full report — position, engine result, question, answer and
-warnings — is written to backend/reports/ for human review; the summary is printed.
+warnings — is written to backend/reports/ for human review, with a JSON file that also keeps the exact
+context each answer was given; `--recheck` applies the current answer checks to such a file again
+(for tuning the checks without asking the model again). The summary is printed.
 """
 
 from __future__ import annotations
@@ -30,7 +33,8 @@ sys.path.insert(0, str(ROOT))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.chess_core import STARTING_FEN  # noqa: E402
+from app.chess_core import STARTING_FEN, build_board  # noqa: E402
+from app.llm.grounding import check_answer  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.pgn_import import import_pgn  # noqa: E402
 
@@ -77,24 +81,24 @@ def describe_engine(analysis: dict) -> str:
     return f"depth {analysis['depth']}, White POV: {lines}"
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--limit", type=int, default=None, help="only the first N positions")
-    parser.add_argument("--allow-fake", action="store_true", help="allow LLM_PROVIDER=fake (harness check)")
-    parser.add_argument("--out", type=Path, default=None, help="report path (default backend/reports/llm-eval-<time>.md)")
-    args = parser.parse_args()
+def sent_context(answer: dict) -> dict | None:
+    """The <position_context> JSON of the message the model received (its escapes are valid JSON)."""
+    if not answer.get("prompt"):
+        return None
+    content = answer["prompt"]["messages"][-1]["content"]
+    return json.loads(content.split("<position_context>\n", 1)[1].split("\n</position_context>", 1)[0])
 
-    out = args.out or ROOT / "reports" / f"llm-eval-{datetime.now():%Y%m%d-%H%M}.md"
-    cases = positions()[: args.limit]
+
+def ask_all(cases: list[dict], allow_fake: bool) -> list[dict] | None:
     results = []
     with TestClient(create_app()) as client:
         service = client.app.state.explain
         if service.provider is None:
             print(f"LLM not available: {service.unavailable_reason}")
-            return 2
-        if service.provider.name == "fake" and not args.allow_fake:
+            return None
+        if service.provider.name == "fake" and not allow_fake:
             print("LLM_PROVIDER=fake: pass --allow-fake to check the harness only")
-            return 2
+            return None
         for index, case in enumerate(cases):
             line = {"root_fen": case["root_fen"] if case["root_fen"] != STARTING_FEN else None, "moves": case["moves"]}
             fen = client.post("/api/position", json=line).json()["fen"]
@@ -109,17 +113,28 @@ def main() -> int:
                           "question": question or "（AI 解釋：預設問題）", "elapsed": elapsed, "status": response.status_code}
                 if response.status_code == 200:
                     answer = response.json()
-                    text = answer["text"]
-                    result |= {"text": text, "model": answer["model"], "refused": answer["refused"],
-                               "warnings": answer["warnings"],
-                               "chinese": len(CJK.findall(text)) >= 0.3 * max(1, len(re.sub(r"\s", "", text)))}
+                    result |= {"text": answer["text"], "model": answer["model"], "refused": answer["refused"],
+                               "warnings": answer["warnings"], "context": sent_context(answer)}
                 else:
-                    result |= {"text": response.text[:500], "warnings": [], "refused": False, "chinese": False}
+                    result |= {"text": response.text[:500], "warnings": [], "refused": False, "context": None}
                 results.append(result)
                 kinds = ",".join(w["kind"] for w in result["warnings"]) or "none"
                 print(f"[{len(results)}/{2 * len(cases)}] {case['name']} | {result['question']} | "
                       f"{elapsed:.0f}s | HTTP {response.status_code} | warnings: {kinds}", flush=True)
+    return results
 
+
+def recheck(results: list[dict]) -> None:
+    """Apply the current answer checks to saved answers and the exact contexts they were given."""
+    for r in results:
+        if r["status"] == 200 and r["context"] is not None:
+            board = build_board(r["case"]["root_fen"], r["case"]["moves"])
+            r["warnings"] = [w.model_dump() for w in check_answer(r["text"], r["context"], board)]
+
+
+def write_report(results: list[dict], out: Path, title: str) -> None:
+    for r in results:
+        r["chinese"] = len(CJK.findall(r["text"])) >= 0.3 * max(1, len(re.sub(r"\s", "", r["text"])))
     answered = [r for r in results if r["status"] == 200 and r["text"] and not r["refused"]]
     flagged = [r for r in answered if r["warnings"]]
     kinds = Counter(w["kind"] for r in answered for w in r["warnings"])
@@ -131,7 +146,7 @@ def main() -> int:
         f"- warnings by kind: {dict(kinds) or 'none'}",
         f"- mean time per answer: {sum(r['elapsed'] for r in results) / max(1, len(results)):.0f}s",
     ]
-    report = [f"# LLM eval {datetime.now():%Y-%m-%d %H:%M}", "", *summary, ""]
+    report = [f"# {title}", "", *summary, ""]
     for number, r in enumerate(results, start=1):
         report += [f"## {number}. {r['case']['name']} — {r['question']}", "",
                    f"- FEN: `{r['fen']}` (moves from the start: {len(r['case']['moves'])})",
@@ -141,8 +156,30 @@ def main() -> int:
         report += ["", *(f"> {row}" for row in r["text"].splitlines()), ""]
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(report), encoding="utf-8")
+    out.with_suffix(".json").write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
     print("\n".join(summary))
-    print(f"report: {out}")
+    print(f"report: {out} (+ .json)")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--limit", type=int, default=None, help="only the first N positions")
+    parser.add_argument("--allow-fake", action="store_true", help="allow LLM_PROVIDER=fake (harness check)")
+    parser.add_argument("--out", type=Path, default=None, help="report path (default backend/reports/llm-eval-<time>.md)")
+    parser.add_argument("--recheck", type=Path, default=None, help="re-apply the checks to a saved .json report")
+    args = parser.parse_args()
+
+    if args.recheck:
+        results = json.loads(args.recheck.read_text(encoding="utf-8"))
+        recheck(results)
+        out = args.out or args.recheck.with_name(args.recheck.stem + "-recheck.md")
+        write_report(results, out, f"LLM eval recheck of {args.recheck.name}")
+        return 0
+    results = ask_all(positions()[: args.limit], args.allow_fake)
+    if results is None:
+        return 2
+    out = args.out or ROOT / "reports" / f"llm-eval-{datetime.now():%Y%m%d-%H%M}.md"
+    write_report(results, out, f"LLM eval {datetime.now():%Y-%m-%d %H:%M}")
     return 0
 
 
