@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -91,6 +92,31 @@ class AnalyzeRequest(LineRequest):
     multipv: int | None = Field(default=None, ge=1, le=5)
     movetime_ms: int | None = Field(default=None, ge=50)
     depth: int | None = Field(default=None, ge=1, le=99, description="Optional depth cap (time still applies).")
+    analysis_id: str | None = Field(
+        default=None, max_length=32, description="Reuse exactly this (displayed) engine result instead of searching."
+    )
+
+
+MAX_THREADS = max(1, (os.cpu_count() or 2) - 1)
+
+
+class SearchSettings(BaseModel):
+    """User-chosen search settings (task: lichess-like engine settings). The search stops at the depth
+    cap or the time limit, whichever comes first; movetime_ms None = infinite (server-capped)."""
+
+    multipv: int = Field(default=3, ge=1, le=5)
+    depth: int | None = Field(default=None, ge=1, le=99)
+    movetime_ms: int | None = Field(default=3000, ge=100, le=600_000)
+    threads: int = Field(default=4, ge=1, le=MAX_THREADS)
+    hash_mb: int = Field(default=256, ge=16, le=4096)
+
+
+class StreamAnalyzeRequest(LineRequest):
+    settings: SearchSettings = SearchSettings()
+
+
+class StopRequest(BaseModel):
+    position_id: str = Field(max_length=32)
 
 
 class EngineLine(BaseModel):
@@ -106,15 +132,19 @@ class EngineLine(BaseModel):
 
 class EngineAnalysis(BaseModel):
     position_id: str
-    status: Literal["ok", "cancelled", "game_over"]
+    status: Literal["ok", "running", "cancelled", "game_over"]
     engine: str
     multipv: int
-    movetime_ms: int
+    movetime_ms: int | None = Field(description="Time limit of the search; null = infinite.")
     depth: int
     lines: list[EngineLine]
     best_move: MoveModel | None
     analysis_id: str
     cached: bool = False
+    nodes: int | None = None
+    nps: int | None = None
+    elapsed_ms: int | None = None
+    settings: SearchSettings | None = None
 
 
 class PieceOnSquare(BaseModel):
@@ -236,7 +266,8 @@ class ThreatFacts(BaseModel):
 class Insights(BaseModel):
     position_id: str
     analysis_id: str
-    engine_status: Literal["ok", "cancelled", "game_over"]
+    engine_status: Literal["ok", "running", "cancelled", "game_over"]
+    depth: int = Field(description="Search depth of the engine result the facts are based on.")
     position: PositionFacts
     last_move: MoveFacts | None
     candidates: list[CandidateFacts]

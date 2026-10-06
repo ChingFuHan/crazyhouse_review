@@ -442,8 +442,9 @@ def insights(
         position_id=analysis.position_id,
         analysis_id=analysis.analysis_id,
         engine_status=analysis.status,
+        depth=analysis.depth,
         position=position_facts(board),
         last_move=last_move,
-        candidates=candidate_facts(board, analysis) if analysis.status == "ok" else [],
+        candidates=candidate_facts(board, analysis) if analysis.status in ("ok", "running") else [],
         threat=threat,
     )

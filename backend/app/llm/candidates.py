@@ -158,7 +158,7 @@ async def analyse_candidates(
                 line_moves,
                 position_id(root_fen, line_moves),
                 analysis.multipv,
-                analysis.movetime_ms,
+                analysis.movetime_ms or engine.settings.movetime_ms,  # an infinite analysis has no time limit
                 protected=True,
             )
         except EngineUnavailable:

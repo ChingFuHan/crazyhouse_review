@@ -47,7 +47,13 @@ def client(fake):
 @needs_engine
 def test_context_matches_board_engine_and_analyzer(client, fake):
     analysis = client.post("/api/analyze", json={"moves": KNIGHT_TRADE_E6}).json()
-    body = {"moves": KNIGHT_TRADE_E6, "variation_id": "main", "game_move": "N@d6", "question": "為什麼是這步？"}
+    body = {
+        "moves": KNIGHT_TRADE_E6,
+        "variation_id": "main",
+        "game_move": "N@d6",
+        "question": "為什麼是這步？",
+        "analysis_id": analysis["analysis_id"],  # the result the UI displays
+    }
     answer = client.post("/api/explain", json=body).json()
 
     state = position_state(STARTING_FEN, KNIGHT_TRADE_E6)
@@ -294,7 +300,10 @@ def test_extract_candidates_from_chinese_text():
 def test_question_about_multipv_move_uses_engine_line(client, fake):
     analysis = client.post("/api/analyze", json={"moves": KNIGHT_TRADE_E6}).json()
     second = analysis["lines"][1]["pv"][0]["san"]
-    answer = client.post("/api/explain", json={"moves": KNIGHT_TRADE_E6, "question": f"為什麼不是 {second}？"}).json()
+    answer = client.post(
+        "/api/explain",
+        json={"moves": KNIGHT_TRADE_E6, "question": f"為什麼不是 {second}？", "analysis_id": analysis["analysis_id"]},
+    ).json()
     checked = answer["checked_moves"]
     assert len(checked) == 1 and checked[0]["source"] == "multipv" and checked[0]["multipv_rank"] == 2
     entry = context_of(fake.calls[-1])["candidate_analysis"][0]
@@ -306,7 +315,10 @@ def test_question_about_multipv_move_uses_engine_line(client, fake):
 def test_question_about_other_move_gets_fresh_engine_analysis(client, fake):
     analysis = client.post("/api/analyze", json={"moves": KNIGHT_TRADE_E6}).json()
     assert "a2a3" not in [l["pv"][0]["uci"] for l in analysis["lines"]]
-    answer = client.post("/api/explain", json={"moves": KNIGHT_TRADE_E6, "question": "如果我改走 a3 呢？"}).json()
+    answer = client.post(
+        "/api/explain",
+        json={"moves": KNIGHT_TRADE_E6, "question": "如果我改走 a3 呢？", "analysis_id": analysis["analysis_id"]},
+    ).json()
     checked = answer["checked_moves"][0]
     assert checked["source"] == "engine_after_move" and checked["uci"] == "a2a3"
     assert checked["evaluation"] is not None or checked["mate"] is not None

@@ -2,21 +2,55 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncIterator
+
 import chess.variant
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
 from ..analyzer import insights as compute_insights
 from ..analyzer import null_move_view, threat_from_line
 from ..chess_core import LineError, build_board, position_id
 from ..engine import EngineService, EngineUnavailable, analysis_id
-from ..models import AnalyzeRequest, EngineAnalysis, Insights, ThreatFacts
+from ..models import AnalyzeRequest, EngineAnalysis, Insights, StopRequest, StreamAnalyzeRequest, ThreatFacts
 from .game import check_line
 
 router = APIRouter(prefix="/api")
 
 
 def engine_service(request: Request) -> EngineService:
+    """The interactive engine: what the user watches in the engine panel."""
     return request.app.state.engine
+
+
+def background_engine(request: Request) -> EngineService:
+    """The second engine process (review jobs, threats, candidate checks, explanation fallbacks), so
+    work the user did not watch never interrupts the interactive analysis."""
+    return request.app.state.review.engine
+
+
+def validated_line(body) -> tuple[str, str, chess.variant.CrazyhouseBoard]:
+    root_fen = check_line(body)
+    try:
+        board = build_board(root_fen, body.moves)
+    except LineError as error:
+        raise HTTPException(status_code=422, detail={"error": "invalid_line", "message": str(error)}) from error
+    return root_fen, position_id(root_fen, body.moves), board
+
+
+async def resolve_analysis(
+    body: AnalyzeRequest, request: Request
+) -> tuple[str, chess.variant.CrazyhouseBoard, EngineAnalysis]:
+    """The engine result an explanation is about: exactly the displayed one when `analysis_id` names a
+    result for this position, otherwise a protected search on the background engine."""
+    if body.analysis_id:
+        root_fen, pid, board = validated_line(body)
+        for engine in (engine_service(request), background_engine(request)):
+            found = engine.find(body.analysis_id)
+            if found is not None and found.position_id == pid:
+                return root_fen, board, found
+    return await run_engine(body, background_engine(request), protected=True)
 
 
 async def run_engine(
@@ -71,6 +105,10 @@ async def run_threat(
     return threat_from_line(view, analysis.lines[0])
 
 
+def has_lines(analysis: EngineAnalysis) -> bool:
+    return analysis.status in ("ok", "running") and bool(analysis.lines)
+
+
 @router.post("/analyze", response_model=EngineAnalysis)
 async def analyze(body: AnalyzeRequest, request: Request) -> EngineAnalysis:
     _, _, analysis = await run_engine(body, engine_service(request))
@@ -79,8 +117,44 @@ async def analyze(body: AnalyzeRequest, request: Request) -> EngineAnalysis:
 
 @router.post("/insights", response_model=Insights)
 async def insights(body: AnalyzeRequest, request: Request) -> Insights:
-    """Engine result + deterministic facts for the position, its last move and each candidate."""
-    engine = engine_service(request)
-    root_fen, board, analysis = await run_engine(body, engine)
-    threat = await run_threat(board, engine) if analysis.status == "ok" else None
+    """Engine result (the displayed one when `analysis_id` is given) + deterministic facts for the
+    position, its last move and each candidate."""
+    root_fen, board, analysis = await resolve_analysis(body, request)
+    threat = await run_threat(board, background_engine(request), protected=True) if has_lines(analysis) else None
     return compute_insights(root_fen, body.moves, board, analysis, threat)
+
+
+def _sse(event: str, analysis: EngineAnalysis) -> str:
+    return f"event: {event}\ndata: {json.dumps(analysis.model_dump(mode='json', by_alias=True), ensure_ascii=False)}\n\n"
+
+
+@router.post("/analyze/stream")
+async def analyze_stream(body: StreamAnalyzeRequest, request: Request) -> StreamingResponse:
+    """Server-sent events with the user's settings: `snapshot` while the search deepens, then `done`
+    (status ok / cancelled / game_over) or `error`. Line errors are plain HTTP errors."""
+    engine = engine_service(request)
+    root_fen, pid, board = validated_line(body)
+    settings = body.settings
+
+    async def events() -> AsyncIterator[str]:
+        if board.is_game_over():
+            over = EngineAnalysis(
+                position_id=pid, status="game_over", engine=engine.name, multipv=settings.multipv,
+                movetime_ms=settings.movetime_ms, depth=0, lines=[], best_move=None,
+                analysis_id=analysis_id(pid, engine.name, []), settings=settings,
+            )  # fmt: skip
+            yield _sse("done", over)
+            return
+        try:
+            async for result in engine.stream(root_fen, body.moves, pid, settings):
+                yield _sse("snapshot" if result.status == "running" else "done", result)
+        except EngineUnavailable as error:
+            yield f"event: error\ndata: {json.dumps({'error': 'engine_unavailable', 'message': str(error)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+
+@router.post("/analyze/stop")
+async def analyze_stop(body: StopRequest, request: Request) -> dict[str, bool]:
+    """Finish the running analysis of this position now (its result counts as complete)."""
+    return {"stopped": engine_service(request).stop(body.position_id)}

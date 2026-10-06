@@ -292,7 +292,9 @@ def test_insights_use_the_same_engine_result_as_analyze():
     moves = ["e2e4", "g8f6", "b1c3", "f6e4", "c3e4", "e7e6"]
     with TestClient(create_app(SETTINGS)) as client:
         analysis = client.post("/api/analyze", json={"moves": moves, "movetime_ms": 300}).json()
-        insights = client.post("/api/insights", json={"moves": moves, "movetime_ms": 300}).json()
+        insights = client.post(
+            "/api/insights", json={"moves": moves, "movetime_ms": 300, "analysis_id": analysis["analysis_id"]}
+        ).json()
         assert insights["analysis_id"] == analysis["analysis_id"]
         assert insights["position_id"] == analysis["position_id"] == position_id(STARTING_FEN, moves)
         assert [c["facts"]["move"]["uci"] for c in insights["candidates"]] == [l["pv"][0]["uci"] for l in analysis["lines"]]

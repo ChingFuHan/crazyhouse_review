@@ -20,7 +20,7 @@ from ..llm.grounding import unverified_moves
 from ..llm.provider import LLMError, LLMResult, LLMUnavailable
 from ..llm.service import DEFAULT_QUESTION, ExplainService, new_request_id
 from ..models import ExplainRequest, ExplainResponse
-from .engine import engine_service, run_engine, run_threat
+from .engine import background_engine, has_lines, resolve_analysis, run_threat
 from .game import check_line
 
 router = APIRouter(prefix="/api")
@@ -69,7 +69,7 @@ def _llm_unavailable(error: LLMUnavailable) -> HTTPException:
 async def prepare(body: ExplainRequest, request: Request) -> Prepared:
     """Validate, check named moves, run engine + analyzer, build the LLM context."""
     service = explain_service(request)
-    engine = engine_service(request)
+    background = background_engine(request)
     root_fen = check_line(body)
     try:
         board = build_board(root_fen, body.moves)
@@ -90,10 +90,11 @@ async def prepare(body: ExplainRequest, request: Request) -> Prepared:
     except LLMUnavailable as error:
         raise _llm_unavailable(error) from error
 
-    # The user asked explicitly: navigation elsewhere must not cancel these searches.
-    root_fen, board, analysis = await run_engine(body, engine, protected=True)
-    await analyse_candidates(prepared.checks, board, root_fen, body.moves, analysis, engine)
-    threat = await run_threat(board, engine, protected=True) if analysis.status == "ok" else None
+    # Explain exactly the analysis on screen; anything else runs on the background engine (protected),
+    # so asking never interrupts the interactive analysis.
+    root_fen, board, analysis = await resolve_analysis(body, request)
+    await analyse_candidates(prepared.checks, board, root_fen, body.moves, analysis, background)
+    threat = await run_threat(board, background, protected=True) if has_lines(analysis) else None
     state = position_state(root_fen, body.moves, board)
     facts = compute_insights(root_fen, body.moves, board, analysis, threat)
     prepared.analysis_id = analysis.analysis_id
