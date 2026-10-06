@@ -4,6 +4,8 @@ import type { DrawShape } from 'chessground/draw'
 import { cancelDropMode, setDropMode } from 'chessground/drop'
 import type { Key, MouchEvent, Role } from 'chessground/types'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { PIECE_NAMES } from '../explain'
+import { ARROW_DIRECTIONS, initialCursor, moveCursor } from '../keyboardBoard'
 import { boardDests, dropSquares, promotionChoices } from '../moves'
 import { letterOf, roleOf } from '../pieces'
 import type { Color, PositionState } from '../types'
@@ -49,6 +51,9 @@ export function ReviewBoard({ position, orientation, onPlay, shapes }: ReviewBoa
   const dropped = useRef(false)
   const promotion = pendingPromotion?.positionId === position.position_id ? pendingPromotion : null
   const selection = dropSelection?.positionId === position.position_id ? dropSelection : null
+  // Keyboard cursor (only while the board has keyboard focus) and what it announces.
+  const [cursor, setCursor] = useState<Key | null>(null)
+  const [announcement, setAnnouncement] = useState('')
   const interactive = position.outcome === null && position.legal_moves.length > 0
 
   const resync = useCallback(() => setSyncKey((k) => k + 1), [])
@@ -90,8 +95,48 @@ export function ReviewBoard({ position, orientation, onPlay, shapes }: ReviewBoa
         : selection
           ? dropSquares(position.legal_moves, letterOf(selection.role))
           : []
-    return new Map(keys.map((key) => [key, 'drop-dest']))
-  }, [dropTargets, selection, position])
+    const map = new Map(keys.map((key): [Key, string] => [key, 'drop-dest']))
+    if (cursor) map.set(cursor, `${map.get(cursor) ?? ''} kb-cursor`.trim())
+    return map
+  }, [dropTargets, selection, position, cursor])
+
+  const describe = (key: Key): string => {
+    const piece = ground.current?.state.pieces.get(key)
+    const what = piece ? `${piece.color === 'white' ? '白' : '黑'}${PIECE_NAMES[letterOf(piece.role)]}` : '空格'
+    const selected = ground.current?.state.selected === key ? '，已選取' : ''
+    return `${key}：${what}${selected}`
+  }
+
+  const onBoardKey = (event: React.KeyboardEvent) => {
+    const here = cursor ?? initialCursor(orientation)
+    const direction = ARROW_DIRECTIONS[event.key]
+    if (!cursor && (direction || event.key === 'Enter' || event.key === ' ')) {
+      // First key press only reveals the cursor (mouse users never see it).
+      setCursor(here)
+      setAnnouncement(describe(here))
+    } else if (direction) {
+      const next = moveCursor(here, direction, orientation)
+      setCursor(next)
+      setAnnouncement(describe(next))
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      if (selection) {
+        setDropSelection(null)
+        void submit(`${letterOf(selection.role)}@${here}`) // the backend decides legality
+      } else {
+        ground.current?.selectSquare(here)
+        setAnnouncement(describe(here))
+      }
+    } else if (event.key === 'Escape') {
+      ground.current?.selectSquare(null)
+      setAnnouncement('已取消選取')
+      return // let the pocket selection's own Escape handler run too
+    } else {
+      return
+    }
+    // The board owns these keys while focused (arrows do not navigate the move list here).
+    event.preventDefault()
+    event.stopPropagation()
+  }
 
   // Mirror the click-to-drop selection into chessground's drop mode (it lives in its own state).
   useEffect(() => {
@@ -167,7 +212,19 @@ export function ReviewBoard({ position, orientation, onPlay, shapes }: ReviewBoa
   return (
     <>
       {pocket(top)}
-      <div className="board-wrap" onMouseDownCapture={onBoardPointerDown} onTouchStartCapture={onBoardPointerDown}>
+      <div
+        className="board-wrap"
+        tabIndex={0}
+        role="application"
+        aria-label="棋盤：方向鍵移動游標，Enter 選子或落子（已選 pocket 棋子時打入），Esc 取消"
+        onMouseDownCapture={onBoardPointerDown}
+        onTouchStartCapture={onBoardPointerDown}
+        onKeyDown={onBoardKey}
+        onBlur={() => setCursor(null)}
+      >
+        <div className="sr-only" aria-live="polite" data-testid="board-announcer">
+          {announcement}
+        </div>
         <Board
           position={position}
           orientation={orientation}

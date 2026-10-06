@@ -159,6 +159,11 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
     taps itself (touchstart→touchend < 10px) and ignores a compatibility click within 600 ms.
     Pocket slots are role=button (tabindex only when usable), Enter/Space picks; typed drops
     (MoveInput "N@d6") complete it from the keyboard.
+  - Keyboard board (`src/keyboardBoard.ts` + ReviewBoard): the board wrap is focusable
+    (role=application); the first key reveals a cursor (mouse users never see it), arrows move it
+    orientation-aware and do NOT navigate the move list while the board has focus, Enter/Space =
+    chessground selectSquare (select / move, promotion dialog as usual) or drops a picked pocket
+    piece, Esc cancels; an aria-live region announces square + piece.
   - Loader accepts PGN or a one-line crazyhouse FEN (`looksLikeFen`; bracket or lichess "/pocket"
     style, normalized by the backend). Engine on/off switch (localStorage preference, try/catch).
 
@@ -188,8 +193,6 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
 
 ## Known limitations
 - Review verdicts come from 300 ms searches: bullet-game classifications vary a little between runs.
-- Board squares themselves are not keyboard-navigable (moves/drops by keyboard go through the
-  move input).
 - Engine: single shared process; two browser tabs analysing at once cancel each other's searches.
   No streaming (two fixed-length phases).
 - Analyzer reports king-zone attackers but no weighted pressure score; opened diagonals are covered
@@ -208,8 +211,8 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   a real-game job not disturbing interactive analysis; LLM context == board/engine/analyzer, variation
   and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
   503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
-- `cd frontend && npx vitest run` → 41 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 30 passed. Real backend + real Fairy-Stockfish + vite, fresh
+- `cd frontend && npx vitest run` → 42 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
+- `cd frontend && npx playwright test` → 31 passed. Real backend + real Fairy-Stockfish + vite, fresh
   servers on 8821/5181, LLM_PROVIDER=fake. Covers: DOM board/pockets == backend FEN square-by-square
   (all 83 plies of a real game); mouse, click-to-drop, touch (tap + CDP drags) and keyboard input;
   illegal drop rollback; promotion → captured → pawn in pocket; variations / main line preservation;

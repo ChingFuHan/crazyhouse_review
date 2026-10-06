@@ -201,3 +201,41 @@ test('keyboard: pocket pieces are focusable buttons; Enter picks, typed drop com
   await activePly(page, 7)
   await expect(page.locator('.move.active')).toHaveText(/N@d6\+$/)
 })
+
+test('keyboard: move a cursor on the board, select and move, drop a picked pocket piece', async ({ page }) => {
+  await page.goto('/')
+  const board = page.getByRole('application', { name: /^棋盤/ })
+  const announcer = page.getByTestId('board-announcer')
+  await board.focus()
+  await page.keyboard.press('ArrowUp') // first key reveals the cursor on e2
+  await expect(announcer).toHaveText('e2：白兵')
+  await expect(page.locator('cg-board square.kb-cursor')).toHaveCount(1)
+  await page.keyboard.press('Enter')
+  await expect(announcer).toHaveText('e2：白兵，已選取')
+  await page.keyboard.press('ArrowUp')
+  await page.keyboard.press('ArrowUp')
+  await expect(announcer).toHaveText('e4：空格')
+  await page.keyboard.press('Enter')
+  await activePly(page, 1) // arrows moved the cursor, they did not navigate the move list
+  await expect(page.locator('.move.active')).toHaveText(/e4/)
+
+  // Pick the pocket knight with the keyboard, then drop it with the board cursor.
+  await loadPgn(page, KNIGHT_IN_POCKET)
+  await page.keyboard.press('End')
+  await activePly(page, 6)
+  await page.getByRole('button', { name: '白方 pocket：馬 × 1' }).focus()
+  await page.keyboard.press('Enter')
+  await board.focus()
+  await page.keyboard.press('ArrowUp') // reveal at e2
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowUp') // e6
+  await page.keyboard.press('ArrowLeft') // d6
+  await expect(announcer).toHaveText('d6：空格')
+  await page.keyboard.press('Enter')
+  await activePly(page, 7)
+  await expect(page.locator('.move.active')).toHaveText(/N@d6\+$/)
+  await expectBoardConsistent(page)
+
+  // Blur hides the cursor.
+  await page.getByLabel('輸入棋步').focus()
+  await expect(page.locator('cg-board square.kb-cursor')).toHaveCount(0)
+})
