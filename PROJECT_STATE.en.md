@@ -27,6 +27,13 @@ comments as evidence, SAN used as React keys (§9). Then: LAN access (systemd us
 192.168.0.0/24 allowlist) and lichess-like engine settings (lines, depth limit, time incl.
 infinite, threads, hash; streamed snapshots; stop; facts/LLM bound to the displayed analysis_id).
 Then: bilingual documentation (Traditional Chinese + English, switch buttons at the top).
+Then (user report "free questions cannot be sent"): Send and quick questions were disabled while
+any answer of the position was pending, including the AI explanation (agy: 30–60 s, often started
+by dwell auto-explain) — now only an identical waiting question is blocked. Also fixed: candidate
+searches used the displayed search time unbounded (60 s setting → up to 3 min before the LLM),
+explanations without a displayed result used the review engine's 1 line / 300 ms, and a stream
+cancelled while its search was starting left an orphaned search occupying the engine (python-chess
+still sends `go`; infinite → up to 10 min).
 No task in progress.
 
 ## Current architecture
@@ -59,10 +66,15 @@ No task in progress.
     or `cancelled` (superseded, not cached); infinite searches capped at 10 min and never cached
     (a revisit resumes searching). Every result and
     snapshot is remembered by `analysis_id` (LRU 512, `find()`). `POST /api/analyze/stream` (SSE
-    `snapshot`/`done`/`error`), `POST /api/analyze/stop`.
+    `snapshot`/`done`/`error`), `POST /api/analyze/stop`. A stream cancelled while its search is
+    starting lets the start finish (shielded), stops it at once, and the next command waits for
+    that start (`_abandoned`, in `_ensure_started`): python-chess would otherwise begin the search
+    after the cancellation with nobody to stop it.
   - `/api/insights` and `/api/explain(/stream)` take the displayed `analysis_id` and reuse exactly
     that result (`resolve_analysis`: interactive engine, then review engine); without one they search
-    on the review engine (protected). Candidate/threat searches always run on the review engine, so
+    on the review engine (protected) with the interactive defaults (3 lines, ENGINE_MOVETIME_MS).
+    Candidate searches take the displayed search time capped at ENGINE_MAX_MOVETIME_MS (infinite →
+    ENGINE_MOVETIME_MS). Candidate/threat searches always run on the review engine, so
     facts and questions never interrupt the viewer's analysis. Insights carry `engine_status`
     (incl. `running`) and `depth`.
   - `app/analyzer.py`: deterministic facts. Position: check/checkers, per side king escape squares
@@ -184,7 +196,9 @@ No task in progress.
     (safe minimal markdown). WhyPanel has an on-demand 「AI 解釋」 (AI explanation) button.
   - ChatPanel ("Ask about this position"): quick questions (task.md §23, built with the actual best /
     second / game-move SAN) and free questions on the same `/api/explain` pipeline; shows
-    checked moves (illegal reason / engine score + source) above each answer.
+    checked moves (illegal reason / engine score + source) above each answer. Asking never waits
+    for other pending answers (several can be in flight; follow-up history only carries answered
+    turns); only an identical question that is still waiting cannot be sent again.
   - `useGameReview` (start + poll; shown only for the exact main line analysed), move-list glyphs
     (?! ? ?? ?# ??#) with best-vs-played tooltip, ReviewPanel (critical moments, clickable).
   - EvalGraph (`src/evalGraph.ts` geometry + component): White winning chances per main-line ply
@@ -273,7 +287,10 @@ No task in progress.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 186 passed (incl. `tests/test_docs.py`: every document has
+- `cd backend && uv run pytest -q` → 188 passed (incl. candidate searches of a 60 s analysis capped
+  by ENGINE_MAX_MOVETIME_MS, fallback explanations with 3 lines / default time, and a stream
+  cancelled while its search starts leaving no orphaned search — that test timed out before the
+  fix) (incl. `tests/test_docs.py`: every document has
   both languages, switch buttons, equal headings, identical command blocks — each check seen
   failing on a deliberately broken copy) (incl. `tests/test_engine_stream.py`: settings
   validation, deepening snapshots then done + cached repeat, insights by snapshot id (running and
@@ -291,7 +308,9 @@ No task in progress.
   and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
   503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
 - `cd frontend && npx vitest run` → 46 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 33 passed (storageState presets 1 s searches;
+- `cd frontend && npx playwright test` → 34 passed (incl. asking a free and a quick question while
+  the AI explanation is held back 4 s; a double click sends once; no server tracebacks in the run)
+  (storageState presets 1 s searches;
   `e2e/engine-settings.spec.ts`: lines 1→5, depth limit 15 ends early, settings persist + reset,
   infinite analysis deepens with facts from a running milestone, stop → final facts). Real backend + real Fairy-Stockfish + vite, fresh
   servers on 8821/5181, LLM_PROVIDER=fake. Covers: DOM board/pockets == backend FEN square-by-square

@@ -26,6 +26,11 @@ Milestone 4（對話 + 候選著重新分析 + 能感知變化的問答）完成
 key（§9）。之後：區網存取（systemd user service，192.168.0.0/24 允許清單）以及類 lichess 的
 engine 設定（線數、深度上限、含無限的時間、threads、hash；串流快照；停止；事實面板／LLM 綁定
 畫面上的 analysis_id）。再之後：文件雙語化（繁體中文 + 英文，頂端切換按鈕）。
+再之後（使用者回報「自由提問送不出去」）：只要該局面有任何回答在等待中（包括 AI 解釋；agy 要 30–60 秒，
+常由停留自動解釋觸發），Send 與快捷問題就被停用——現在只擋「同一個問題已在等待中」。另修正：候選著
+搜尋沿用畫面上的搜尋時間且沒有上限（設 60 秒 → LLM 開始前最多等 3 分鐘）；沒有畫面上結果時的解釋
+用了 review engine 的 1 條線／300 ms；串流在搜尋啟動中被取消時會留下孤兒搜尋佔住 engine（python-chess
+仍會送出 `go`；無限分析時最多 10 分鐘）。
 目前沒有進行中的任務。
 
 ## 目前架構
@@ -56,10 +61,14 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
     nodes/nps/elapsed/settings），結束時為 `ok`（達上限或 `stop(position_id)`）或 `cancelled`
     （被取代，不快取）；無限搜尋上限 10 分鐘且永不快取（再次造訪會繼續搜尋）。每個結果與快照都依
     `analysis_id` 記住（LRU 512，`find()`）。`POST /api/analyze/stream`（SSE
-    `snapshot`/`done`/`error`）、`POST /api/analyze/stop`。
+    `snapshot`/`done`/`error`）、`POST /api/analyze/stop`。串流在搜尋啟動中被取消時，讓啟動完成
+    （shielded）後立刻停止，且下一個指令會等這次啟動結束（`_abandoned`，在 `_ensure_started` 中）：否則
+    python-chess 會在取消之後仍開始搜尋，而且沒有人去停止它。
   - `/api/insights` 與 `/api/explain(/stream)` 接收畫面上的 `analysis_id` 並重用完全相同的結果
     （`resolve_analysis`：先找互動 engine，再找 review engine）；沒有 id 時在 review engine 上搜尋
-    （protected）。候選著／威脅搜尋一律在 review engine 執行，所以事實面板與提問永遠不會打斷觀看者
+    （protected），使用互動 engine 的預設值（3 條線、ENGINE_MOVETIME_MS）。候選著搜尋使用畫面上的搜尋
+    時間，但上限為 ENGINE_MAX_MOVETIME_MS（無限 → ENGINE_MOVETIME_MS）。候選著／威脅搜尋一律在
+    review engine 執行，所以事實面板與提問永遠不會打斷觀看者
     的分析。Insights 帶有 `engine_status`（含 `running`）與 `depth`。
   - `app/analyzer.py`：確定性事實。局面：將軍／將軍子、雙方國王逃生格（以空著視角計算國王的合法
     步）、王區攻擊、pocket、懸子（可合法吃掉且無保護）、受攻擊的后／車、各 pocket 棋子的打入將軍格、
@@ -166,7 +175,8 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
     （安全的極簡 markdown）。WhyPanel 有按需的「AI 解釋」按鈕。
   - ChatPanel（"Ask about this position"）：快速問題（task.md §23，用實際的最佳／次佳／實戰著 SAN 組成）
     與自由提問，走同一條 `/api/explain` 流程；在每個回答上方顯示檢查過的著法（不合法原因／engine 分數
-    + 來源）。
+    + 來源）。提問永遠不必等其他回答完成（可同時有多個在進行；追問歷史只帶已完成的問答）；只有
+    「同一個問題仍在等待中」時不能重複送出。
   - `useGameReview`（啟動 + 輪詢；只在分析過的那條主線上顯示）、著法列表符號（?! ? ?? ?# ??#）與最佳著
     對實戰著的提示、ReviewPanel（關鍵時刻，可點擊）。
   - EvalGraph（`src/evalGraph.ts` 幾何 + 元件）：主線每 ply 的白方勝率（與 backend 相同的曲線／尺度），
@@ -243,7 +253,9 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
   於著法落地前執行時才通過。
 
 ## 驗證狀態
-- `cd backend && uv run pytest -q` → 186 passed（含 `tests/test_docs.py`：每份文件都有兩種語言、
+- `cd backend && uv run pytest -q` → 188 passed（含：60 秒分析下候選著搜尋受 ENGINE_MAX_MOVETIME_MS
+  限制、退回搜尋的解釋使用 3 條線／預設時間、串流在搜尋啟動中被取消後不留下孤兒搜尋——此測試在修正前
+  會逾時）（含 `tests/test_docs.py`：每份文件都有兩種語言、
   切換按鈕、標題數相同、指令區塊一字不差——每項檢查都曾在故意改壞的副本上確認會失敗）（含
   `tests/test_engine_stream.py`：設定驗證、快照逐步
   加深後 done + 重複請求命中快取、依快照 id 取得 insights（running 與最終）、深度上限提早結束、
@@ -259,7 +271,8 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
   候選著流程、SSE 事件、缺 key 時 503、key 永不出現在錯誤中、以模擬 SDK 串流測試拒答／fallback。
   沒有真實的 Claude 呼叫。
 - `cd frontend && npx vitest run` → 46 passed；`npx tsc -b`、`npm run lint`、`npx vite build` 無誤。
-- `cd frontend && npx playwright test` → 33 passed（storageState 預設 1 秒搜尋；
+- `cd frontend && npx playwright test` → 34 passed（含：AI 解釋被延遲 4 秒期間仍可送出自由問題與快捷
+  問題、連點只送出一次、整次執行 server 沒有 traceback）（storageState 預設 1 秒搜尋；
   `e2e/engine-settings.spec.ts`：線數 1→5、深度上限 15 提早結束、設定持久化 + 恢復預設、無限分析逐步
   加深且事實來自進行中的里程碑、停止 → 最終事實）。真實 backend + 真實 Fairy-Stockfish + vite，
   在 8821/5181 啟動全新 server，LLM_PROVIDER=fake。涵蓋：DOM 棋盤／pocket 與 backend FEN 逐格相同
