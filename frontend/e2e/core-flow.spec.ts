@@ -99,3 +99,17 @@ test('illegal candidate is rejected by the rules without engine or LLM; quick qu
   await expect(chat.locator('.chat-turn').last().locator('.answer')).toContainText('[FAKE LLM]')
   await expect(chat.locator('.chat-turn').last().getByTestId('checked-moves')).toContainText('N@d6+')
 })
+
+test('moves in an answer that nothing backs are flagged as unverified', async ({ page }) => {
+  await page.goto('/')
+  await loadPgn(page, GAME)
+  await page.locator('.move.main', { hasText: /e6$/ }).click()
+  await activePly(page, 6)
+  const chat = page.getByTestId('chat')
+  // Only three named moves are checked; the fake LLM echoes the fourth (an impossible Bxh7).
+  await chat.getByLabel('提問').fill('Nf3、Ng3、d4 還是 Bxh7？')
+  await chat.getByLabel('提問').press('Enter')
+  const turn = chat.locator('.chat-turn').last()
+  await expect(turn.getByTestId('unverified')).toContainText('Bxh7')
+  await expect(turn.getByTestId('unverified')).not.toContainText('Nf3')
+})

@@ -54,6 +54,12 @@ to `.env` (git-ignored) and set `ANTHROPIC_API_KEY`. Defaults: `LLM_MODEL=claude
 key everything else works and the AI button reports that the LLM is not configured.
 `LLM_PROVIDER=fake` is a deterministic stand-in used only by automated tests.
 
+Every answer is post-checked: moves it mentions that are neither legal now nor part of the engine /
+game data it was given are shown as unverified. To check real answers once a key is set:
+```bash
+cd backend && SHOW_ANSWERS=1 uv run python scripts/llm_smoke.py   # a few requests, uses credits
+```
+
 ## Current features
 - Crazyhouse position state (FEN with pockets and promoted markers), legal moves incl. drops
 - Move input as UCI or SAN with readable illegal-move reasons

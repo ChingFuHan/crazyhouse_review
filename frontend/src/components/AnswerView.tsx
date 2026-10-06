@@ -20,6 +20,11 @@ export function AnswerView({ turn }: { turn: Turn }) {
   return (
     <div className="answer" data-position-id={answer.position_id} data-analysis-id={answer.analysis_id}>
       <RichText text={answer.text} />
+      {answer.unverified_moves.length > 0 && (
+        <div className="unverified" role="note" data-testid="unverified">
+          注意：回答提到的 {answer.unverified_moves.join('、')} 不是目前的合法著，也不在 Engine 分析或棋譜中，可能不正確。
+        </div>
+      )}
       <div className="answer-meta">
         {answer.model === 'fake' ? (
           <span className="badge fake">測試用假 LLM</span>

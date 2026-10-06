@@ -297,6 +297,9 @@ class ExplainResponse(BaseModel):
     refused: bool
     cached: bool
     checked_moves: list[CheckedMove] = []
+    unverified_moves: list[str] = Field(
+        default=[], description="Moves the answer mentions that are neither legal now nor in the context data."
+    )
 
 
 class ReviewPly(BaseModel):

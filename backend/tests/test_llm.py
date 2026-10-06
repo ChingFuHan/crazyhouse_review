@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from app.chess_core import STARTING_FEN, build_board, position_id, position_state
 from app.config import LLMSettings, engine_settings
 from app.llm.candidates import analyse_candidates, extract_candidates
-from app.llm.provider import AnthropicProvider, FakeProvider, LLMError, LLMUnavailable, complete
+from app.llm.provider import AnthropicProvider, FakeProvider, LLMError, LLMResult, LLMUnavailable, complete
 from app.llm.service import SYSTEM_PROMPT, ExplainService
 from app.main import create_app, make_explain_service
 from app.models import EngineAnalysis
@@ -358,3 +358,27 @@ def test_viewer_side_reaches_the_context_and_changes_the_cache_key(client, fake)
     again = client.post("/api/explain", json={**base, "viewer_side": "white"}).json()
     assert not again["cached"] and context_of(fake.calls[-1])["game"]["viewer_side"] == "white"
     assert "viewer_side" in fake.calls[-1]["system"]
+
+
+class ScriptedProvider:
+    """Answers with a fixed text, to test what happens to a hallucinated move."""
+
+    name = "scripted"
+
+    def __init__(self, text):
+        self.text = text
+
+    async def stream(self, system, messages):
+        yield self.text
+        yield LLMResult(text=self.text, model=self.name, stop_reason="end_turn")
+
+
+@needs_engine
+def test_answers_mentioning_unbacked_moves_are_flagged():
+    service = ExplainService(ScriptedProvider("白方應該走 Qxf7#，不然 Nf3 也可以。"))
+    with TestClient(create_app(SETTINGS, service)) as c:
+        answer = c.post("/api/explain", json={"moves": KNIGHT_TRADE_E6}).json()
+        assert answer["unverified_moves"] == ["Qxf7#"]
+        with c.stream("POST", "/api/explain/stream", json={"moves": KNIGHT_TRADE_E6, "question": "再說一次"}) as response:
+            done = parse_sse(response.read().decode())[-1][1]
+        assert done["unverified_moves"] == ["Qxf7#"]

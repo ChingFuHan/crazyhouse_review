@@ -211,6 +211,8 @@ export interface ExplainResponse {
   refused: boolean
   cached: boolean
   checked_moves: CheckedMove[]
+  /** Moves the answer mentions that are neither legal now nor in the engine/game data it was given. */
+  unverified_moves: string[]
 }
 
 export type MoveClassification = 'inaccuracy' | 'mistake' | 'blunder' | 'mate_missed' | 'mate_allowed'

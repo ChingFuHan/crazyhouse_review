@@ -828,3 +828,13 @@ button.link {
   display: flex;
   gap: 8px;
 }
+
+.unverified {
+  margin: 4px 0;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  color: #ecd9a8;
+  background: #3d3420;
+  border-left: 3px solid var(--warn);
+  border-radius: 3px;
+}

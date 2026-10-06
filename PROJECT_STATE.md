@@ -72,6 +72,11 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
     `client.beta.messages.stream` + `text_stream` + `get_final_message`; refused chain → partial
     discarded). `POST /api/explain/stream` = SSE `meta`/`delta`/`done`/`error`; validation/engine
     errors are plain HTTP errors before the stream opens; cache hits send meta + done only.
+  - `app/llm/grounding.py`: after each answer, move tokens (SAN/UCI/drops/castling; bare squares
+    ignored) that are neither legal now nor present anywhere in the context JSON (PVs, candidates,
+    game moves, threat line) → `ExplainResponse.unverified_moves`; the UI shows a warning under the
+    answer. `scripts/llm_smoke.py`: 4 fixed cases against the REAL provider (answered, mostly Chinese,
+    no unverified moves, on topic); exit 2 when no key, `--allow-fake` to check the harness.
   - `app/llm/candidates.py` (task.md §22): moves named in a question (SAN/UCI/drop/castling, CJK
     neighbours ok; bare squares only if a legal pawn move; max 3) → legality (illegal → Chinese
     reason) → MultiPV hit, or engine analysis of the position after the move (same multipv/movetime)
@@ -190,7 +195,7 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 147 passed (incl. PGN export round trip). Rules suite (drops, pawn ranks, drop mates, promoted
+- `cd backend && uv run pytest -q` → 151 passed (incl. PGN export round trip, answer grounding). Rules suite (drops, pawn ranks, drop mates, promoted
   capture → pawn, FEN round trip, castling rights); 3 real lichess games reach lichess's final FEN;
   real Fairy-Stockfish: drop mates both colors, White-POV signs, supersede race (deterministic, proven
   to fail without the fix), crash restart, root_moves, FSF `d`/`perft 1` == python-chess FEN and
@@ -200,7 +205,7 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
   503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
 - `cd frontend && npx vitest run` → 41 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 28 passed. Real backend + real Fairy-Stockfish + vite, fresh
+- `cd frontend && npx playwright test` → 29 passed. Real backend + real Fairy-Stockfish + vite, fresh
   servers on 8821/5181, LLM_PROVIDER=fake. Covers: DOM board/pockets == backend FEN square-by-square
   (all 83 plies of a real game); mouse, click-to-drop, touch (tap + CDP drags) and keyboard input;
   illegal drop rollback; promotion → captured → pawn in pocket; variations / main line preservation;
@@ -209,7 +214,8 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   answers echo the exact board position/FEN/variation; late answers never shown elsewhere; the §55
   core flow; whole-game review annotations + eval graph; FEN load; engine toggle; auto-explain (15
   fast plies → zero LLM requests, dwell → exactly one); viewer side; session restore after reload;
-  PGN export → download → re-import gives the same move tree.
+  PGN export → download → re-import gives the same move tree; an unbacked move echoed into an answer
+  is flagged as unverified.
 - Real-data cross-check: 3 finished lichess crazyhouse games (fixtures) reach lichess's own
   final FEN (board, pocket, side, castling). Ongoing TV games mismatch only because lichess
   delays published moves of games in progress (not a rules issue).
@@ -222,6 +228,6 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
 - `cd frontend && npx playwright test` (starts its own servers on 8821/5181)
 
 ## Next recommended task
-1. (Needs the user) Verify real Claude answers with an ANTHROPIC_API_KEY in `.env`: run
-   `scripts/llm_smoke.py`-style check on a known position and review grounding/POV/language.
+1. (Needs the user) Put ANTHROPIC_API_KEY in `.env`, then `cd backend && SHOW_ANSWERS=1 uv run python
+   scripts/llm_smoke.py` and review the answers (grounding/POV/language); tune the prompt if needed.
 2. With a key: measure real latency/cost per answer and tune effort (medium default) / caching.
