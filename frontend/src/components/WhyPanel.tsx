@@ -13,9 +13,11 @@ export interface WhyPanelProps {
   onExplain: () => void
   autoExplain: boolean
   onToggleAutoExplain: () => void
+  /** Which AI answers (chosen in the Ask panel). */
+  aiLabel: string
 }
 
-export function WhyPanel({ position, view, engineOn, aiTurn, onExplain, autoExplain, onToggleAutoExplain }: WhyPanelProps) {
+export function WhyPanel({ position, view, engineOn, aiTurn, onExplain, autoExplain, onToggleAutoExplain, aiLabel }: WhyPanelProps) {
   const { insights, loading, error, engineMismatch } = view
   const explanation = insights ? explain(insights, position.move_number) : null
   const last = insights?.last_move
@@ -109,6 +111,9 @@ export function WhyPanel({ position, view, engineOn, aiTurn, onExplain, autoExpl
             <input type="checkbox" checked={autoExplain} onChange={onToggleAutoExplain} aria-label="停留時自動解釋" />
             停留時自動解釋
           </label>
+        </div>
+        <div className="ai-source" title="在下方「Ask about this position」的 ⚙ 更改">
+          AI：{aiLabel}
         </div>
         {aiTurn && <AnswerView turn={aiTurn} />}
       </div>

@@ -21,6 +21,7 @@ from .config import (
     review_engine_settings,
 )
 from .engine import EngineService
+from .llm.catalog import ProviderPool
 from .llm.provider import AgyProvider, AnthropicProvider, FakeProvider, LLMProvider, LLMUnavailable
 from .llm.service import ExplainService
 from .review import ReviewService
@@ -35,7 +36,7 @@ def make_explain_service(settings: LLMSettings) -> ExplainService:
         elif settings.provider == "anthropic":
             provider = AnthropicProvider(settings.model, settings.effort, settings.max_tokens)
         elif settings.provider == "agy":
-            provider = AgyProvider(settings.model, settings.agy_path, settings.agy_timeout_s)
+            provider = AgyProvider(settings.agy_path, settings.model, None, settings.agy_timeout_s)
         else:
             return ExplainService(None, "LLM 未設定：請在 .env 設定 ANTHROPIC_API_KEY，或安裝並登入 agy CLI")
     except LLMUnavailable as error:
@@ -56,13 +57,16 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.engine = EngineService(settings or engine_settings())
-        app.state.explain = explain_service or make_explain_service(llm_settings())
+        llm = llm_settings()
+        app.state.explain = explain_service or make_explain_service(llm)
+        app.state.llm_pool = ProviderPool(llm.cli_paths or {}, llm.agy_timeout_s)
         review_engine = review_settings or review_engine_settings()
         app.state.review = ReviewService(EngineService(review_engine), review_engine.movetime_ms)
         yield
         await app.state.engine.close()
         await app.state.review.close()
         app.state.explain.close()
+        app.state.llm_pool.close()
 
     app = FastAPI(title="Crazyhouse Review", lifespan=lifespan)
     if networks:

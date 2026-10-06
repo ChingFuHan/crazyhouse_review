@@ -109,14 +109,17 @@ class AnthropicProvider:
         )
 
 
-# agy enforces --print-timeout itself; this extra margin only catches a hung process.
-AGY_GRACE_S = 15
-AGY_TOOL_RULE = "只用文字直接回答使用者的最後一個問題；不要使用任何工具、不要讀寫檔案、不要瀏覽網頁。"
+# The CLIs' own time limits (agy --print-timeout) or ours; this margin only catches a hung process.
+CLI_GRACE_S = 15
+CLI_TOOL_RULE = "只用文字直接回答使用者的最後一個問題；不要使用任何工具、不要執行指令、不要讀寫檔案、不要瀏覽網頁。"
+AUTH_ERROR = re.compile(r"log ?in|sign ?in|auth|unauthori[sz]ed|\b401\b", re.I)
 
 
-def agy_prompt(system: str, messages: list[dict]) -> str:
-    """agy has no system role: the rules lead the single prompt, then earlier turns, then the question."""
-    parts = [system.strip(), "", "# 輸出規則", AGY_TOOL_RULE]
+def cli_prompt(system: str | None, messages: list[dict]) -> str:
+    """One prompt for CLIs that take a single message: the rules (unless the CLI accepts a system
+    prompt of its own), the no-tools rule, earlier turns, then the question with its context block."""
+    parts = [system.strip(), ""] if system else []
+    parts += ["# 輸出規則", CLI_TOOL_RULE]
     if len(messages) > 1:
         parts += ["", "# 先前的對話（僅供參考）"]
         parts += [f"[{'使用者' if m['role'] == 'user' else '助手'}] {m['content']}" for m in messages[:-1]]
@@ -139,78 +142,94 @@ def parse_agy_event(line: str | bytes) -> tuple[str, object] | None:
     return None
 
 
-class AgyProvider:
-    """The local `agy` CLI (its own login and subscription quota), run headless per request.
+class CliProvider:
+    """A local AI CLI (its own login and subscription quota), run headless once per request.
 
-    Each run happens in a private empty directory in plan mode with the terminal sandbox on, so the
-    agent sees no project files and cannot edit anything; the prompt also forbids tool use.
+    Each run happens in a private empty directory with tools disabled or sandboxed (per CLI), so it
+    sees no project files and cannot change anything; the prompt also forbids tool use. Subclasses
+    say how to call their CLI and how to read its JSON-lines output.
     """
 
-    def __init__(self, model: str, command: str = "agy", timeout_s: float = 180) -> None:
+    label = "cli"
+
+    def __init__(self, command: str, model: str | None = None, effort: str | None = None, timeout_s: float = 180) -> None:
         executable = shutil.which(command)
         if executable is None:
-            raise LLMUnavailable(f"找不到 agy CLI（AGY_PATH={command}）")
+            raise LLMUnavailable(f"找不到 {self.label} CLI（{command}）")
         self.executable = executable
         self.model = model
-        self.name = f"agy:{model}"
+        self.effort = effort
+        self.name = f"{self.label}:{model or 'default'}" + (f" ({effort})" if effort else "")
         self.timeout_s = timeout_s
         self._workdir: str | None = None
 
     def _cwd(self) -> str:
         if self._workdir is None:
-            self._workdir = tempfile.mkdtemp(prefix="crazyhouse-agy-")
+            self._workdir = tempfile.mkdtemp(prefix=f"crazyhouse-{self.label}-")
         return self._workdir
 
     def close(self) -> None:
-        """Remove the private working directory (whatever agy may have left in it)."""
+        """Remove the private working directory (whatever the CLI may have left in it)."""
         if self._workdir is not None:
             shutil.rmtree(self._workdir, ignore_errors=True)
             self._workdir = None
 
+    def command(self, system: str, messages: list[dict]) -> tuple[list[str], str | None]:
+        """Arguments, and the text to send on stdin (None: nothing)."""
+        raise NotImplementedError
+
+    def parse(self, line: bytes) -> tuple[str, object] | None:
+        """One output line -> ("delta", text) | ("done", {"text"?, "request_id"?, "usage"?}) |
+        ("error", message) | None."""
+        raise NotImplementedError
+
     async def stream(self, system: str, messages: list[dict]) -> AsyncIterator[str | LLMResult]:
-        args = [
-            "-p", agy_prompt(system, messages),
-            "--model", self.model,
-            "--output-format", "stream-json",
-            "--mode", "plan",
-            "--sandbox",
-            "--print-timeout", f"{int(self.timeout_s)}s",
-        ]  # fmt: skip
+        args, stdin_text = self.command(system, messages)
         try:
             process = await asyncio.create_subprocess_exec(
                 self.executable,
                 *args,
                 cwd=self._cwd(),
-                stdin=asyncio.subprocess.DEVNULL,
+                stdin=asyncio.subprocess.PIPE if stdin_text is not None else asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
         except OSError as error:
-            raise LLMUnavailable(f"無法啟動 agy CLI：{error}") from error
+            raise LLMUnavailable(f"無法啟動 {self.label} CLI：{error}") from error
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + self.timeout_s + AGY_GRACE_S
-        result: dict | None = None
+        deadline = loop.time() + self.timeout_s + CLI_GRACE_S
         assert process.stdout is not None and process.stderr is not None
-        stderr = asyncio.ensure_future(process.stderr.read())  # drained concurrently: a full pipe would block agy
+        stderr = asyncio.ensure_future(process.stderr.read())  # drained concurrently: a full pipe would block the CLI
+        text_parts: list[str] = []
+        done: dict | None = None
+        error: str | None = None
         try:
+            if stdin_text is not None:
+                assert process.stdin is not None
+                process.stdin.write(stdin_text.encode())
+                await process.stdin.drain()
+                process.stdin.close()
             while True:
                 remaining = deadline - loop.time()
                 if remaining <= 0:
                     raise LLMError("AI 回答逾時")
                 try:
                     line = await asyncio.wait_for(process.stdout.readline(), remaining)
-                except TimeoutError as error:
-                    raise LLMError("AI 回答逾時") from error
+                except TimeoutError as timeout:
+                    raise LLMError("AI 回答逾時") from timeout
                 if not line:
                     break
-                parsed = parse_agy_event(line)
+                parsed = self.parse(line)
                 if parsed is None:
                     continue
                 kind, value = parsed
                 if kind == "delta":
+                    text_parts.append(str(value))
                     yield str(value)
+                elif kind == "done":
+                    done = value  # type: ignore[assignment]
                 else:
-                    result = value  # type: ignore[assignment]
+                    error = str(value)
             await process.wait()
         finally:
             if process.returncode is None:  # consumer went away or we failed: never leave a run spending quota
@@ -218,25 +237,126 @@ class AgyProvider:
                 await process.wait()
             stderr_text = (await stderr).decode(errors="replace")
 
-        if result is None or result.get("status") != "SUCCESS":
-            detail = (result or {}).get("error") or stderr_text
+        if done is None or error is not None:
+            detail = error or stderr_text
             first = detail.strip().splitlines()[0] if detail.strip() else f"exit code {process.returncode}"
-            log.error("agy failed: %s", first)
-            if re.search(r"log ?in|sign ?in|auth", first, re.I):
-                raise LLMUnavailable(f"agy 尚未登入或授權失效：{first}")
+            log.error("%s failed: %s", self.label, first)
+            if AUTH_ERROR.search(first):
+                raise LLMUnavailable(f"{self.label} 尚未登入或授權失效：{first}")
             raise LLMError(f"AI 服務錯誤：{first}")
-        text = str(result.get("response") or "").strip()
+        text = str(done.get("text") or "".join(text_parts)).strip()
         if not text:
             raise LLMError("AI 沒有產生回答")
-        usage = result.get("usage") or {}
+        usage = done.get("usage") or {}
         yield LLMResult(
             text=text,
             model=self.name,
             stop_reason="end_turn",
-            request_id=result.get("conversation_id"),
+            request_id=done.get("request_id"),
             input_tokens=usage.get("input_tokens"),
             output_tokens=usage.get("output_tokens"),
         )
+
+
+def _json(line: bytes) -> dict | None:
+    try:
+        data = json.loads(line)
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+class AgyProvider(CliProvider):
+    """`agy -p` (Antigravity): plan mode, terminal sandbox, its own time limit."""
+
+    label = "agy"
+
+    def command(self, system: str, messages: list[dict]) -> tuple[list[str], str | None]:
+        args = ["-p", cli_prompt(system, messages)]
+        if self.model:
+            args += ["--model", self.model]
+        if self.effort:
+            args += ["--effort", self.effort]
+        args += ["--output-format", "stream-json", "--mode", "plan", "--sandbox", "--print-timeout", f"{int(self.timeout_s)}s"]
+        return args, None
+
+    def parse(self, line: bytes) -> tuple[str, object] | None:
+        parsed = parse_agy_event(line)
+        if parsed is None or parsed[0] == "delta":
+            return parsed
+        result = parsed[1]
+        assert isinstance(result, dict)
+        if result.get("status") != "SUCCESS":
+            return "error", result.get("error") or f"status {result.get('status')}"
+        return "done", {"text": result.get("response"), "request_id": result.get("conversation_id"),
+                        "usage": result.get("usage")}
+
+
+class CodexProvider(CliProvider):
+    """`codex exec` (OpenAI Codex): read-only sandbox, no session kept, prompt on stdin. Codex reports
+    the answer as one message when it is complete (no partial text)."""
+
+    label = "codex"
+
+    def command(self, system: str, messages: list[dict]) -> tuple[list[str], str | None]:
+        args = ["exec", "--json", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "-C", self._cwd()]
+        if self.model:
+            args += ["-m", self.model]
+        if self.effort:
+            args += ["-c", f'model_reasoning_effort="{self.effort}"']
+        return [*args, "-"], cli_prompt(system, messages)
+
+    def parse(self, line: bytes) -> tuple[str, object] | None:
+        data = _json(line)
+        if data is None:
+            return None
+        kind = data.get("type")
+        item = data.get("item") or {}
+        if kind == "item.completed" and item.get("type") == "agent_message" and item.get("text"):
+            return "delta", item["text"]
+        if kind == "turn.completed":
+            usage = data.get("usage") or {}
+            return "done", {"usage": {"input_tokens": usage.get("input_tokens"), "output_tokens": usage.get("output_tokens")}}
+        if kind == "turn.failed":
+            return "error", (data.get("error") or {}).get("message") or "turn failed"
+        if kind == "error":
+            return "error", data.get("message") or "error"
+        return None
+
+
+class ClaudeCliProvider(CliProvider):
+    """`claude -p` (Claude Code): our system prompt replaces the default one, all tools, MCP servers and
+    setting files are off, nothing is persisted; partial text is streamed."""
+
+    label = "claude"
+
+    def command(self, system: str, messages: list[dict]) -> tuple[list[str], str | None]:
+        args = [
+            "-p", "--output-format", "stream-json", "--include-partial-messages", "--verbose",
+            "--system-prompt", system, "--tools", "", "--no-session-persistence",
+            "--strict-mcp-config", "--setting-sources", "",
+        ]  # fmt: skip
+        if self.model:
+            args += ["--model", self.model]
+        if self.effort:
+            args += ["--effort", self.effort]
+        return args, cli_prompt(None, messages)
+
+    def parse(self, line: bytes) -> tuple[str, object] | None:
+        data = _json(line)
+        if data is None:
+            return None
+        if data.get("type") == "stream_event":
+            event = data.get("event") or {}
+            delta = event.get("delta") or {}
+            if event.get("type") == "content_block_delta" and delta.get("type") == "text_delta":
+                return "delta", delta.get("text", "")
+            return None
+        if data.get("type") == "result":
+            if data.get("is_error") or data.get("subtype") != "success":
+                return "error", data.get("result") or data.get("subtype") or "error"
+            return "done", {"text": data.get("result"), "request_id": data.get("session_id"), "usage": data.get("usage")}
+        return None
 
 
 @dataclass

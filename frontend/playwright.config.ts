@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { FAKE_CLI_ENV } from './e2e/fakeCli'
 
 // Real stack: FastAPI backend + Vite dev server. No mocks.
 // Dedicated ports and no server reuse: tests always run against the current code,
@@ -37,7 +38,8 @@ export default defineConfig({
       reuseExistingServer: false,
       // UI wiring is tested against a deterministic fake LLM that echoes the context it received.
       // Real Claude calls are verified separately (they need ANTHROPIC_API_KEY).
-      env: { LLM_PROVIDER: 'fake', REVIEW_MOVETIME_MS: '100' },
+      // The AI CLIs a viewer can choose are fakes too (no subscription quota spent).
+      env: { LLM_PROVIDER: 'fake', REVIEW_MOVETIME_MS: '100', ...FAKE_CLI_ENV },
       timeout: 60_000,
     },
     {

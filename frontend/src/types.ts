@@ -233,6 +233,38 @@ export interface ExplainResponse {
   prompt: PromptRecord | null
 }
 
+export type LlmProviderId = 'agy' | 'codex' | 'claude'
+
+/** The viewer's AI; null model / effort = the CLI's own default. */
+export interface LlmChoice {
+  provider: LlmProviderId
+  model: string | null
+  effort: string | null
+}
+
+export interface LlmModelOption {
+  id: string
+  label: string
+  efforts: string[] | null
+  default_effort: string | null
+}
+
+export interface LlmProviderOption {
+  id: LlmProviderId
+  label: string
+  available: boolean
+  reason: string | null
+  models: LlmModelOption[]
+  efforts: string[]
+}
+
+export interface LlmCatalog {
+  /** The server's own AI, used when the viewer picks nothing. */
+  default: string | null
+  default_reason: string | null
+  providers: LlmProviderOption[]
+}
+
 export interface AnswerWarning {
   kind: 'illegal_move' | 'unanalysed_move' | 'evaluation' | 'mate' | 'advantage'
   quote: string

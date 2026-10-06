@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { formatScore } from '../evaluation'
 import type { CheckedMove, Color } from '../types'
 import type { Turn } from '../useConversation'
-import { type GameScan, scanLabel } from '../useGameScan'
+import type { AiChoiceView } from '../aiChoice'
+import { type ScanState, scanLabel } from '../useGameScan'
+import { AiSettings } from './AiSettings'
 import { AnswerView } from './AnswerView'
 
 export interface ChatPanelProps {
@@ -13,7 +15,9 @@ export interface ChatPanelProps {
   /** SAN of the move the game actually played from this position, if any. */
   gameMoveSan: string | null
   /** Whole-game scans of each side's errors (not tied to the current position). */
-  scan: GameScan
+  scans: Partial<Record<Color, ScanState>>
+  onScan: (side: Color) => void
+  ai: AiChoiceView
 }
 
 const SIDES: Color[] = ['white', 'black']
@@ -39,7 +43,7 @@ function checkedText(move: CheckedMove): string {
 
 /** "Ask about this position": quick questions and free questions share one backend pipeline. */
 export function ChatPanel(props: ChatPanelProps) {
-  const { turns, onAsk, scan } = props
+  const { turns, onAsk, scans, onScan, ai } = props
   const [text, setText] = useState('')
   const chat = turns.filter((t) => t.question !== null)
   // Answers take a while (agy: 30–60 s), so asking never waits for other answers (including the
@@ -56,6 +60,7 @@ export function ChatPanel(props: ChatPanelProps) {
   return (
     <section className="panel chat" data-testid="chat">
       <h2>Ask about this position</h2>
+      <AiSettings ai={ai} />
       <div className="quick-questions">
         {quickQuestions(props).map((q) => (
           <button key={q} className="chip" disabled={waiting.has(q)} onClick={() => send(q)}>
@@ -69,16 +74,16 @@ export function ChatPanel(props: ChatPanelProps) {
             key={side}
             className="chip scan"
             data-side={side}
-            disabled={scan.scans[side]?.pending}
+            disabled={scans[side]?.pending}
             title="依整局分析找出這一方的錯誤與錯過的機會，再由 AI 解釋（需等整局分析完成）"
-            onClick={() => scan.start(side)}
+            onClick={() => onScan(side)}
           >
             {scanLabel(side)}
           </button>
         ))}
       </div>
       {SIDES.map((side) => {
-        const result = scan.scans[side]
+        const result = scans[side]
         if (!result) return null
         const reviewing = result.pending && !result.partial && result.progress && result.progress.done < result.progress.total
         return (

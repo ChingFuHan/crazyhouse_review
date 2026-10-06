@@ -13,6 +13,7 @@ import { PgnLoader } from './components/PgnLoader'
 import { ReviewBoard } from './components/ReviewBoard'
 import { ReviewPanel } from './components/ReviewPanel'
 import { WhyPanel } from './components/WhyPanel'
+import { describeChoice, useAiChoice } from './aiChoice'
 import { useEngineSettings } from './engineSettings'
 import { engineShapes } from './engineShapes'
 import { MAIN, mainlineAncestor } from './tree'
@@ -44,25 +45,28 @@ export default function App() {
   const conversation = useConversation(tree, active?.id ?? null, orientation)
   const gameReview = useGameReview(tree)
   const gameScan = useGameScan(tree)
+  const ai = useAiChoice()
   // A scan needs the whole-game review: start the review panel too (the backend runs one shared job).
   const startReview = gameReview.start
   const reviewShown = gameReview.job !== null
-  const scan = useMemo(
-    () => ({
-      ...gameScan,
-      start: (side: Color) => {
-        if (!reviewShown) startReview()
-        gameScan.start(side)
-      },
-    }),
-    [gameScan, reviewShown, startReview],
+  const startScan = gameScan.start
+  const scan = useCallback(
+    (side: Color) => {
+      if (!reviewShown) startReview()
+      startScan(side, ai.choice)
+    },
+    [reviewShown, startReview, startScan, ai.choice],
   )
   const aiTurn = [...conversation.turns].reverse().find((turn) => turn.question === null)
 
   // Questions explain exactly the engine result on screen.
   const shownId = engine.analysis?.lines.length ? engine.analysis.analysis_id : null
   const askQuestion = conversation.ask
-  const askAbout = useCallback((question: string | null) => askQuestion(question, shownId), [askQuestion, shownId])
+  const aiChoice = ai.choice
+  const askAbout = useCallback(
+    (question: string | null) => askQuestion(question, shownId, aiChoice),
+    [askQuestion, shownId, aiChoice],
+  )
 
   // Auto-explain only after the user dwells on an analysed position; quick browsing never asks.
   const ask = useRef(askAbout)
@@ -135,6 +139,7 @@ export default function App() {
               onExplain={() => void askAbout(null)}
               autoExplain={autoExplain}
               onToggleAutoExplain={toggleAutoExplain}
+              aiLabel={describeChoice(ai.choice, ai.catalog)}
             />
             <section className="panel status" data-testid="status">
               <div>
@@ -171,7 +176,9 @@ export default function App() {
               bestSan={lines[0]?.pv[0].san ?? null}
               secondSan={lines[1]?.pv[0].san ?? null}
               gameMoveSan={gameChild ? (tree.nodes[gameChild].state.last_move?.san ?? null) : null}
-              scan={scan}
+              scans={gameScan.scans}
+              onScan={scan}
+              ai={ai}
             />
           </aside>
         </main>

@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api } from './api'
 import { llmMeta } from './llmRequest'
 import type { GameTree } from './tree'
-import type { ChatTurn, Color, ExplainResponse, PositionState } from './types'
+import type { ChatTurn, Color, ExplainResponse, LlmChoice, PositionState } from './types'
 
 /** Prior turns sent with a follow-up question. */
 const HISTORY_TURNS = 6
@@ -45,9 +45,9 @@ export function useConversation(tree: GameTree | null, activeId: string | null, 
   const key = node ? conversationKey(node.state, node.variationId) : null
 
   /** `analysisId`: the engine result on screen, so the answer explains exactly what the viewer sees
-   * (null: the server analyses the position itself). */
+   * (null: the server analyses the position itself); `llm`: the viewer's AI (null: server default). */
   const ask = useCallback(
-    async (question: string | null, analysisId: string | null) => {
+    async (question: string | null, analysisId: string | null, llm: LlmChoice | null) => {
       if (!tree || !activeId) return
       const position = tree.nodes[activeId].state
       const meta = llmMeta(tree, activeId, viewerSide)
@@ -79,6 +79,7 @@ export function useConversation(tree: GameTree | null, activeId: string | null, 
           question,
           history,
           analysisId,
+          llm,
           (partial) => update({ partial }),
           controller.signal,
         )

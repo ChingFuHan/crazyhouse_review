@@ -17,11 +17,12 @@ from ..chess_core import LineError, build_board, position_state
 from ..chess_core import position_id as position_id_of
 from ..llm.candidates import CandidateCheck, analyse_candidates, extract_candidates, illegal_only_answer
 from ..llm.context import CONTEXT_VERSION, build_context
+from ..llm.catalog import ChoiceError, ProviderPool
 from ..llm.game_scan import build_game_context, no_mistakes_answer, scan_question
 from ..llm.grounding import check_answer
-from ..llm.provider import LLMError, LLMResult, LLMUnavailable
+from ..llm.provider import LLMError, LLMProvider, LLMResult, LLMUnavailable
 from ..llm.service import DEFAULT_QUESTION, SYSTEM_PROMPT, ExplainService, build_messages, new_request_id
-from ..models import ExplainRequest, ExplainResponse, GameScanRequest, PromptRecord
+from ..models import ExplainRequest, ExplainResponse, GameScanRequest, LlmCatalog, LlmChoice, PromptRecord
 from .engine import background_engine, engine_service, has_lines, resolve_analysis, run_threat
 from .game import check_line
 
@@ -30,6 +31,35 @@ router = APIRouter(prefix="/api")
 
 def explain_service(request: Request) -> ExplainService:
     return request.app.state.explain
+
+
+def llm_pool(request: Request) -> ProviderPool:
+    return request.app.state.llm_pool
+
+
+async def chosen_provider(choice: LlmChoice | None, request: Request) -> LLMProvider | None:
+    """The viewer's AI (None: the server default), checked against what the CLI offers right now."""
+    if choice is None:
+        return None
+    try:
+        return await llm_pool(request).provider(choice)
+    except ChoiceError as error:
+        raise HTTPException(status_code=422, detail={"error": "llm_choice", "message": str(error)}) from error
+    except LLMUnavailable as error:
+        raise _llm_unavailable(error) from error
+
+
+@router.get("/llm/catalog", response_model=LlmCatalog)
+async def llm_catalog(request: Request, refresh: bool = False) -> LlmCatalog:
+    """The AI CLIs, models and effort levels a viewer can choose, as the CLIs list them
+    (`refresh=true` reads them anew instead of reusing a catalog up to two minutes old)."""
+    service = explain_service(request)
+    default = service.provider.name if service.provider is not None else None
+    return LlmCatalog(
+        default=default,
+        default_reason=None if default else service.unavailable_reason,
+        providers=await llm_pool(request).catalog(refresh),
+    )
 
 
 @dataclass
@@ -41,6 +71,7 @@ class Prepared:
     question: str
     checks: list[CandidateCheck]
     analysis_id: str = ""
+    provider: LLMProvider | None = None  # the viewer's choice; None: the server default
     context: dict | None = None  # None: answered by the rules, no LLM
     rules_answer: str = ""
     board: CrazyhouseBoard | None = None
@@ -93,10 +124,13 @@ async def prepare(body: ExplainRequest, request: Request) -> Prepared:
         # Illegal candidates are answered by the rules, never by the engine or the LLM.
         prepared.rules_answer = illegal_only_answer(prepared.checks)
         return prepared
-    try:
-        service.model  # fail fast before spending engine time
-    except LLMUnavailable as error:
-        raise _llm_unavailable(error) from error
+    # Fail fast (unknown AI choice, no LLM at all) before spending engine time.
+    prepared.provider = await chosen_provider(body.llm, request)
+    if prepared.provider is None:
+        try:
+            service.model
+        except LLMUnavailable as error:
+            raise _llm_unavailable(error) from error
 
     # Explain exactly the analysis on screen; anything else runs on the background engine (protected),
     # so asking never interrupts the interactive analysis.
@@ -130,7 +164,9 @@ async def explain(body: ExplainRequest, request: Request) -> ExplainResponse:
     if prepared.context is None:
         return prepared.response(request_id, prepared.rules_answer, "rules")
     try:
-        result, cached = await explain_service(request).ask(prepared.context, prepared.question, body.history)
+        result, cached = await explain_service(request).ask(
+            prepared.context, prepared.question, body.history, prepared.provider
+        )
     except LLMUnavailable as error:
         raise _llm_unavailable(error) from error
     except LLMError as error:
@@ -156,7 +192,7 @@ async def explain_stream(body: ExplainRequest, request: Request) -> StreamingRes
             yield _sse("done", prepared.response(request_id, prepared.rules_answer, "rules").model_dump(mode="json"))
             return
         try:
-            async for item in service.ask_stream(prepared.context, prepared.question, body.history):
+            async for item in service.ask_stream(prepared.context, prepared.question, body.history, prepared.provider):
                 if isinstance(item, tuple):
                     result, cached = item
                     yield _sse("done", _final(prepared, request_id, result, cached).model_dump(mode="json"))
@@ -184,6 +220,7 @@ async def explain_game_stream(body: GameScanRequest, request: Request) -> Stream
         raise HTTPException(status_code=422, detail={"error": "invalid_line", "message": str(error)}) from error
     review = request.app.state.review
     service = explain_service(request)
+    provider = await chosen_provider(body.llm, request)
     question = scan_question(body.side)
     request_id = new_request_id()
     job = review.start(root_fen, body.moves)
@@ -225,7 +262,7 @@ async def explain_game_stream(body: GameScanRequest, request: Request) -> Stream
             yield _sse("done", response(text, "rules", None).model_dump(mode="json"))
             return
         try:
-            async for item in service.ask_stream(context, question, []):
+            async for item in service.ask_stream(context, question, [], provider):
                 if isinstance(item, tuple):
                     result, cached = item
                     text = "" if result.refused else result.text

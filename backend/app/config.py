@@ -75,6 +75,8 @@ class LLMSettings:
     max_tokens: int
     agy_path: str = "agy"
     agy_timeout_s: float = 180
+    # The AI CLIs a viewer may choose from (executable names or paths).
+    cli_paths: dict[str, str] | None = None
 
 
 def llm_settings() -> LLMSettings:
@@ -95,6 +97,11 @@ def llm_settings() -> LLMSettings:
         max_tokens=int(os.environ.get("LLM_MAX_TOKENS", "16000")),
         agy_path=agy_path,
         agy_timeout_s=float(os.environ.get("AGY_TIMEOUT_S", "180")),
+        cli_paths={
+            "agy": agy_path,
+            "codex": os.environ.get("CODEX_PATH", "codex"),
+            "claude": os.environ.get("CLAUDE_PATH", "claude"),
+        },
     )
 
 

@@ -59,10 +59,15 @@ class ExplainService:
         return self.provider.name
 
     async def ask_stream(
-        self, context: dict, question: str, history: list[ChatTurn]
+        self, context: dict, question: str, history: list[ChatTurn], provider: LLMProvider | None = None
     ) -> AsyncIterator[str | tuple[LLMResult, bool]]:
-        """Yield text deltas, then (result, cached). Only the latest turn carries the context block."""
-        model = self.model
+        """Yield text deltas, then (result, cached). Only the latest turn carries the context block.
+        ``provider``: the viewer's chosen AI instead of the server default."""
+        if provider is None:
+            self.model  # raises LLMUnavailable without a default provider
+            provider = self.provider
+        assert provider is not None
+        model = provider.name
         key = cache_key(context, question, history, model)
         if key in self._cache:
             self._cache.move_to_end(key)
@@ -70,7 +75,7 @@ class ExplainService:
             return
         messages = build_messages(context, question, history)
         result: LLMResult | None = None
-        async for item in self.provider.stream(SYSTEM_PROMPT, messages):
+        async for item in provider.stream(SYSTEM_PROMPT, messages):
             if isinstance(item, LLMResult):
                 result = item
             else:
@@ -82,8 +87,10 @@ class ExplainService:
                 self._cache.popitem(last=False)
         yield result, False
 
-    async def ask(self, context: dict, question: str, history: list[ChatTurn]) -> tuple[LLMResult, bool]:
-        async for item in self.ask_stream(context, question, history):
+    async def ask(
+        self, context: dict, question: str, history: list[ChatTurn], provider: LLMProvider | None = None
+    ) -> tuple[LLMResult, bool]:
+        async for item in self.ask_stream(context, question, history, provider):
             if isinstance(item, tuple):
                 return item
         raise AssertionError("ask_stream ended without a result")

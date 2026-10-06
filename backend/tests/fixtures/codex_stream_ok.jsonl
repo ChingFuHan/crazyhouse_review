@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a11210-6468-7ec0-a581-0dc46eeaa1b9"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"你好"}}
+{"type":"turn.completed","usage":{"input_tokens":14652,"cached_input_tokens":9856,"cache_write_input_tokens":0,"output_tokens":5,"reasoning_output_tokens":0}}

@@ -3,6 +3,8 @@ import type { LlmMeta } from './llmRequest'
 import type {
   ChatTurn,
   Color,
+  LlmCatalog,
+  LlmChoice,
   EngineAnalysis,
   ExplainResponse,
   GameTreeDto,
@@ -151,22 +153,15 @@ export const api = {
   /** Deterministic facts for exactly the displayed engine result (`analysisId`). */
   insights: (position: PositionState, analysisId: string, signal?: AbortSignal) =>
     post<Insights>('/api/insights', { ...lineOf(position), analysis_id: analysisId }, signal),
-  /** Ask the LLM about this position; null question = explain the best move. */
-  explain: (
-    position: PositionState,
-    meta: LlmMeta,
-    question: string | null,
-    history: ChatTurn[],
-    analysisId: string | null,
-    signal?: AbortSignal,
-  ) => post<ExplainResponse>('/api/explain', { ...lineOf(position), ...meta, question, history, analysis_id: analysisId }, signal),
-  /** Same as `explain`, streamed: `onDelta` receives the answer text so far. */
+  /** Ask the LLM about this position (null question = explain the best move), streamed: `onDelta`
+   * receives the answer text so far; `llm` = the viewer's AI (null: the server default). */
   explainStream: async (
     position: PositionState,
     meta: LlmMeta,
     question: string | null,
     history: ChatTurn[],
     analysisId: string | null,
+    llm: LlmChoice | null,
     onDelta: (textSoFar: string) => void,
     signal?: AbortSignal,
   ): Promise<ExplainResponse> => {
@@ -174,7 +169,7 @@ export const api = {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       // analysis_id: explain exactly the engine result on screen
-      body: JSON.stringify({ ...lineOf(position), ...meta, question, history, analysis_id: analysisId }),
+      body: JSON.stringify({ ...lineOf(position), ...meta, question, history, analysis_id: analysisId, llm }),
       signal,
     })
     return readAnswer(response, onDelta)
@@ -185,6 +180,7 @@ export const api = {
     last: PositionState,
     side: Color,
     headers: Record<string, string>,
+    llm: LlmChoice | null,
     onProgress: (done: number, total: number) => void,
     onDelta: (textSoFar: string) => void,
     signal?: AbortSignal,
@@ -192,11 +188,14 @@ export const api = {
     const response = await fetch('/api/explain/game/stream', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ root_fen: last.root_fen, moves: last.moves, side, headers }),
+      body: JSON.stringify({ root_fen: last.root_fen, moves: last.moves, side, headers, llm }),
       signal,
     })
     return readAnswer(response, onDelta, onProgress)
   },
+  /** The AI CLIs, models and effort levels on offer, as the CLIs list them (`refresh`: read them anew). */
+  llmCatalog: (refresh: boolean, signal?: AbortSignal) =>
+    request<LlmCatalog>(`/api/llm/catalog${refresh ? '?refresh=true' : ''}`, { signal }),
   /** PGN of the whole tree (main line, PGN and user variations, comments), validated by the backend. */
   exportPgn: (rootFen: string, headers: Record<string, string>, nodes: ExportNode[]) =>
     post<{ pgn: string }>('/api/export', { root_fen: rootFen, headers, nodes }),

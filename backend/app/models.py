@@ -284,6 +284,39 @@ class ChatTurn(BaseModel):
     content: str = Field(max_length=8000)
 
 
+CLI_OPTION = r"^[A-Za-z0-9][A-Za-z0-9._:/\-]*$"  # a model id or effort level, never a flag
+
+
+class LlmChoice(BaseModel):
+    """The AI the viewer picked; None for model / effort means the CLI's own default."""
+
+    provider: Literal["agy", "codex", "claude"]
+    model: str | None = Field(default=None, max_length=100, pattern=CLI_OPTION)
+    effort: str | None = Field(default=None, max_length=20, pattern=CLI_OPTION)
+
+
+class LlmModelOption(BaseModel):
+    id: str
+    label: str
+    efforts: list[str] | None = Field(default=None, description="Levels this model supports, if the CLI says.")
+    default_effort: str | None = None
+
+
+class LlmProviderOption(BaseModel):
+    id: Literal["agy", "codex", "claude"]
+    label: str
+    available: bool
+    reason: str | None = None
+    models: list[LlmModelOption] = []
+    efforts: list[str] = []
+
+
+class LlmCatalog(BaseModel):
+    default: str | None = Field(description="The server's own AI (used when the viewer picks nothing).")
+    default_reason: str | None = None
+    providers: list[LlmProviderOption]
+
+
 class ExplainRequest(AnalyzeRequest):
     """Ask about the active position. Everything except the line itself is UI metadata and untrusted."""
 
@@ -302,6 +335,7 @@ class ExplainRequest(AnalyzeRequest):
     viewer_side: Color | None = Field(
         default=None, description="Side shown at the bottom of the user's board (who 'my/我的' most likely means)."
     )
+    llm: LlmChoice | None = Field(default=None, description="The viewer's AI choice; None = the server default.")
 
 
 class GameScanRequest(LineRequest):
@@ -309,6 +343,7 @@ class GameScanRequest(LineRequest):
 
     side: Color
     headers: dict[str, str] = Field(default={}, max_length=30)
+    llm: LlmChoice | None = None
 
 
 class CheckedMove(BaseModel):

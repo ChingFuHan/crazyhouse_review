@@ -1,4 +1,4 @@
-"""AgyProvider against a fake `agy` executable that replays recorded output (no quota spent)."""
+"""CLI providers (agy, codex, claude) against a fake executable that replays recorded output (no quota spent)."""
 
 import asyncio
 import json
@@ -10,15 +10,26 @@ from pathlib import Path
 import pytest
 
 from app.config import llm_settings
-from app.llm.provider import AgyProvider, LLMError, LLMResult, LLMUnavailable, agy_prompt, complete, parse_agy_event
+from app.llm.provider import (
+    AgyProvider,
+    ClaudeCliProvider,
+    CodexProvider,
+    LLMError,
+    LLMResult,
+    LLMUnavailable,
+    cli_prompt,
+    complete,
+    parse_agy_event,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
 FAKE_AGY = r'''
 import json, os, sys, time
 mode = os.environ["FAKE_AGY_MODE"]
+stdin = sys.stdin.read()
 with open(os.environ["FAKE_AGY_ARGS"], "w") as f:
-    json.dump({"argv": sys.argv[1:], "cwd": os.getcwd()}, f)
+    json.dump({"argv": sys.argv[1:], "cwd": os.getcwd(), "stdin": stdin}, f)
 if mode == "ok":
     for line in open(os.environ["FAKE_AGY_FIXTURE"]):
         sys.stdout.write(line); sys.stdout.flush(); time.sleep(0.02)
@@ -46,10 +57,10 @@ def fake_agy(tmp_path, monkeypatch):
 
     providers: list[AgyProvider] = []
 
-    def run(mode, fixture="agy_stream_ok.ndjson", timeout_s=30):
+    def run(mode, fixture="agy_stream_ok.ndjson", timeout_s=30, cls=AgyProvider, model="gemini-3.8-flash-high", effort=None):
         monkeypatch.setenv("FAKE_AGY_MODE", mode)
         monkeypatch.setenv("FAKE_AGY_FIXTURE", str(FIXTURES / fixture))
-        providers.append(AgyProvider("gemini-3.8-flash-high", str(exe), timeout_s))
+        providers.append(cls(str(exe), model, effort, timeout_s))
         return providers[-1], args
 
     yield run
@@ -73,7 +84,7 @@ def test_parse_recorded_events():
 
 
 def test_prompt_puts_rules_first_then_history_then_question():
-    prompt = agy_prompt("SYSTEM RULES", MESSAGES)
+    prompt = cli_prompt("SYSTEM RULES", MESSAGES)
     assert prompt.startswith("SYSTEM RULES")
     assert prompt.index("不要使用任何工具") < prompt.index("[使用者] 先前的問題") < prompt.index("[助手] 先前的回答")
     assert prompt.rstrip().endswith("現在呢？") and prompt.count("<position_context>") == 1
@@ -112,7 +123,7 @@ def test_not_logged_in_is_unavailable(fake_agy):
 
 
 def test_timeout_kills_the_run(fake_agy, monkeypatch):
-    monkeypatch.setattr("app.llm.provider.AGY_GRACE_S", 0)
+    monkeypatch.setattr("app.llm.provider.CLI_GRACE_S", 0)
     provider, args = fake_agy("hang", timeout_s=1)
     start = time.monotonic()
     with pytest.raises(LLMError, match="逾時"):
@@ -140,7 +151,7 @@ def test_closing_the_stream_early_kills_the_run(fake_agy):
 
 def test_missing_binary_is_unavailable():
     with pytest.raises(LLMUnavailable, match="找不到 agy"):
-        AgyProvider("gemini-3.8-flash-high", "/nonexistent/agy")
+        AgyProvider("/nonexistent/agy", "gemini-3.8-flash-high")
 
 
 def test_auto_provider_selection(monkeypatch, tmp_path):
@@ -158,3 +169,71 @@ def test_auto_provider_selection(monkeypatch, tmp_path):
     assert (settings.provider, settings.model) == ("agy", "gemini-3.8-flash-high")
     monkeypatch.setenv("AGY_PATH", "/nonexistent/agy")
     assert llm_settings().provider == "none"
+
+
+def collect(provider):
+    async def run():
+        return [item async for item in provider.stream("SYSTEM", MESSAGES)]
+
+    return asyncio.run(run())
+
+
+def test_agy_passes_the_chosen_effort(fake_agy):
+    provider, args = fake_agy("ok", effort="max")
+    assert isinstance(collect(provider)[-1], LLMResult)
+    argv = json.loads(args.read_text())["argv"]
+    assert argv[argv.index("--effort") + 1] == "max" and provider.name == "agy:gemini-3.8-flash-high (max)"
+
+
+def test_codex_runs_read_only_with_the_prompt_on_stdin(fake_agy):
+    provider, args = fake_agy("ok", "codex_stream_ok.jsonl", cls=CodexProvider, model="gpt-6.1-sol", effort="low")
+    items = collect(provider)
+    assert items[:-1] == ["你好"] and items[-1].text == "你好" and items[-1].model == "codex:gpt-6.1-sol (low)"
+    assert items[-1].input_tokens and items[-1].output_tokens == 5
+    recorded = json.loads(args.read_text())
+    argv = recorded["argv"]
+    assert argv[0] == "exec" and argv[-1] == "-" and "--json" in argv and "--ephemeral" in argv
+    assert argv[argv.index("-s") + 1] == "read-only" and argv[argv.index("-C") + 1] == recorded["cwd"]
+    assert argv[argv.index("-m") + 1] == "gpt-6.1-sol"
+    assert argv[argv.index("-c") + 1] == 'model_reasoning_effort="low"'
+    assert recorded["stdin"].startswith("SYSTEM") and recorded["stdin"].rstrip().endswith("現在呢？")
+
+
+def test_codex_default_model_and_effort_add_no_flags(fake_agy):
+    provider, args = fake_agy("ok", "codex_stream_ok.jsonl", cls=CodexProvider, model=None)
+    collect(provider)
+    argv = json.loads(args.read_text())["argv"]
+    assert "-m" not in argv and "-c" not in argv and provider.name == "codex:default"
+
+
+def test_codex_failed_turn_is_an_error(fake_agy, tmp_path):
+    fixture = tmp_path / "codex_failed.jsonl"
+    fixture.write_text('{"type":"turn.started"}\n{"type":"turn.failed","error":{"message":"model is not supported"}}\n')
+    provider, _ = fake_agy("ok", str(fixture), cls=CodexProvider, model="old-model")
+    with pytest.raises(LLMError, match="model is not supported"):
+        collect(provider)
+
+
+def test_claude_streams_with_our_system_prompt_and_no_tools(fake_agy):
+    provider, args = fake_agy("ok", "claude_stream_ok.jsonl", cls=ClaudeCliProvider, model="sonnet", effort="low")
+    items = collect(provider)
+    assert items[:-1] == ["你好"] and items[-1].text == "你好" and items[-1].model == "claude:sonnet (low)"
+    recorded = json.loads(args.read_text())
+    argv = recorded["argv"]
+    assert argv[0] == "-p" and argv[argv.index("--system-prompt") + 1] == "SYSTEM"
+    assert argv[argv.index("--tools") + 1] == "" and argv[argv.index("--setting-sources") + 1] == ""
+    assert "--no-session-persistence" in argv and "--strict-mcp-config" in argv and "--bare" not in argv
+    assert argv[argv.index("--model") + 1] == "sonnet" and argv[argv.index("--effort") + 1] == "low"
+    # The rules travel as the system prompt, so the message itself starts with the output rule.
+    assert recorded["stdin"].startswith("# 輸出規則") and "SYSTEM" not in recorded["stdin"]
+
+
+def test_claude_error_result_and_login_failure(fake_agy, tmp_path):
+    fixture = tmp_path / "claude_error.jsonl"
+    fixture.write_text('{"type":"result","subtype":"success","is_error":true,"result":"Invalid model name"}\n')
+    provider, _ = fake_agy("ok", str(fixture), cls=ClaudeCliProvider, model="nope")
+    with pytest.raises(LLMError, match="Invalid model name"):
+        collect(provider)
+    provider, _ = fake_agy("login", cls=ClaudeCliProvider, model=None)
+    with pytest.raises(LLMUnavailable, match="claude 尚未登入"):
+        collect(provider)

@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api } from './api'
 import { type GameTree, mainline } from './tree'
-import type { Color } from './types'
+import type { Color, LlmChoice } from './types'
 import type { Turn } from './useConversation'
 
 export interface ScanState extends Turn {
@@ -14,7 +14,7 @@ export interface ScanState extends Turn {
 
 export interface GameScan {
   scans: Partial<Record<Color, ScanState>>
-  start: (side: Color) => void
+  start: (side: Color, llm: LlmChoice | null) => void
 }
 
 const SIDE_LABELS: Record<Color, string> = { white: '白方', black: '黑方' }
@@ -45,7 +45,7 @@ export function useGameScan(tree: GameTree | null): GameScan {
   }, [key])
 
   const start = useCallback(
-    (side: Color) => {
+    (side: Color, llm: LlmChoice | null) => {
       if (!tree || !key) return
       const last = tree.nodes[mainline(tree).at(-1)!].state
       const id = nextId.current++
@@ -73,6 +73,7 @@ export function useGameScan(tree: GameTree | null): GameScan {
           last,
           side,
           tree.headers,
+          llm,
           (done, total) => update({ progress: { done, total } }),
           (partial) => update({ partial }),
           controller.signal,
