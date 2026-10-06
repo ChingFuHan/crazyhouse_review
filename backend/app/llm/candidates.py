@@ -137,7 +137,12 @@ async def analyse_candidates(
         line_moves = [*moves, check.uci]
         try:
             result = await engine.analyse(
-                root_fen, line_moves, position_id(root_fen, line_moves), analysis.multipv, analysis.movetime_ms
+                root_fen,
+                line_moves,
+                position_id(root_fen, line_moves),
+                analysis.multipv,
+                analysis.movetime_ms,
+                protected=True,
             )
         except EngineUnavailable:
             result = None

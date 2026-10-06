@@ -93,3 +93,27 @@ test('the board orientation tells the LLM whose "我的" it is', async ({ page }
   await expect(chat.locator('.chat-turn .answer')).toHaveCount(2)
   expect(sides).toEqual(['white', 'black'])
 })
+
+test('asking and immediately browsing away still produces the answer (user searches are protected)', async ({ page }) => {
+  await page.goto('/')
+  await loadPgn(page, GAME)
+  await page.keyboard.press('End')
+  await activePly(page, 7)
+  const asked = await board(page)
+  // Ask before this position's analysis finished, then browse: the UI's searches must not cancel it.
+  await page.getByTestId('ai-explain').getByRole('button', { name: 'AI 解釋' }).click()
+  for (let i = 0; i < 4; i++) {
+    await page.keyboard.press('ArrowLeft')
+    await page.waitForTimeout(60)
+  }
+  await page.waitForTimeout(4000)
+  await page.keyboard.press('End')
+  await activePly(page, 7)
+  const ai = page.getByTestId('ai-explain')
+  await expect(ai.locator('.answer')).toContainText(`position_id=${asked.id}`)
+  await expect(ai.locator('.engine-error')).toHaveCount(0)
+  // The answer was grounded on a complete search: the same (cached) result the panel now shows.
+  const engine = page.getByTestId('engine')
+  await expect(engine).not.toHaveAttribute('data-analysis-id', '')
+  await expect(ai.locator('.answer')).toHaveAttribute('data-analysis-id', (await engine.getAttribute('data-analysis-id'))!)
+})

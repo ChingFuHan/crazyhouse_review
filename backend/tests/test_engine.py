@@ -382,3 +382,41 @@ def test_missing_nnue_file_is_reported():
         response = client.post("/api/analyze", json={"moves": []})
         assert response.status_code == 503
         assert "NNUE file not found" in response.json()["detail"]["message"]
+
+
+@needs_engine
+def test_protected_search_is_not_cancelled_by_navigation():
+    """A user-requested search (protected) runs to its full time even if the UI moves on."""
+
+    async def go(engine):
+        await engine.analyse(STARTING_FEN, [], position_id(STARTING_FEN, []), 1, 50)  # start the process
+        start = time.monotonic()
+        asked = asyncio.create_task(
+            engine.analyse(STARTING_FEN, ["d2d4"], position_id(STARTING_FEN, ["d2d4"]), 1, 800, protected=True)
+        )
+        await asyncio.sleep(0.1)
+        browsing = await engine.analyse(STARTING_FEN, ["c2c4"], position_id(STARTING_FEN, ["c2c4"]), 1, 200)
+        browsed_at = time.monotonic() - start
+        return await asked, browsing, browsed_at
+
+    asked, browsing, browsed_at = run(with_engine(go))
+    assert asked.status == "ok" and browsing.status == "ok"
+    assert browsed_at >= 0.8, "the browsing search queued behind the protected one instead of stopping it"
+
+
+@needs_engine
+def test_protected_request_joining_a_superseded_search_reruns_it():
+    async def go(engine):
+        await engine.analyse(STARTING_FEN, [], position_id(STARTING_FEN, []), 1, 50)
+        pid = position_id(STARTING_FEN, ["g1f3"])
+        background = asyncio.create_task(engine.analyse(STARTING_FEN, ["g1f3"], pid, 1, 1500))
+        await asyncio.sleep(0.1)
+        asked = asyncio.create_task(engine.analyse(STARTING_FEN, ["g1f3"], pid, 1, 1500, protected=True))
+        await asyncio.sleep(0.1)
+        # The user navigates: this supersedes the shared (unprotected) search.
+        await engine.analyse(STARTING_FEN, ["b1c3"], position_id(STARTING_FEN, ["b1c3"]), 1, 100)
+        return await background, await asked
+
+    background, asked = run(with_engine(go))
+    assert background.status == "cancelled"
+    assert asked.status == "ok" and asked.position_id == position_id(STARTING_FEN, ["g1f3"])

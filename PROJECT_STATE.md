@@ -57,7 +57,9 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
     which invalidated several hand-made test assumptions — compute, don't assume.
   - Engine supersede policy: only a request for a DIFFERENT position stops the running search
     (generation bump); same-position requests with other settings queue (found by E2E: the UI's
-    quick look used to cancel a user's explain request).
+    quick look used to cancel a user's explain request). `protected=True` searches (explain, its
+    candidate moves and threat) never stop others and are never stopped — browsing queues behind
+    them; a protected caller that joined a superseded shared search re-runs it.
   - `app/llm/`: `provider.py` (`LLMProvider` protocol; `AnthropicProvider` = official SDK,
     `claude-opus-5-5`, effort medium, `fallbacks="default"` + beta `server-side-fallback-2026-07-01`,
     refusal handled, typed error chain → safe Chinese messages, key only from env/.env;
@@ -193,13 +195,11 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
 - Analyzer reports king-zone attackers but no weighted pressure score; opened diagonals are covered
   only through discovered attacks; "tempo" is expressed only through checks/forced replies. "Why" panel is fact-only (no strategic interpretation) until the LLM.
 - LLM: real Claude output never exercised here (no key). E2E uses LLM_PROVIDER=fake.
-- If the user asks AI about position A and navigates to B before A's engine search finishes,
-  A's search can be superseded → that turn shows "請再問一次".
 - (Resolved) The intermittent engine.spec failure was a wrong test expectation (ply 1 instead of 2
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 154 passed (incl. PGN export round trip, answer grounding). Rules suite (drops, pawn ranks, drop mates, promoted
+- `cd backend && uv run pytest -q` → 156 passed (incl. PGN export round trip, answer grounding). Rules suite (drops, pawn ranks, drop mates, promoted
   capture → pawn, FEN round trip, castling rights); 3 real lichess games reach lichess's final FEN;
   real Fairy-Stockfish: drop mates both colors, White-POV signs, supersede race (deterministic, proven
   to fail without the fix), crash restart, root_moves, FSF `d`/`perft 1` == python-chess FEN and
@@ -209,7 +209,7 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
   503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
 - `cd frontend && npx vitest run` → 41 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 29 passed. Real backend + real Fairy-Stockfish + vite, fresh
+- `cd frontend && npx playwright test` → 30 passed. Real backend + real Fairy-Stockfish + vite, fresh
   servers on 8821/5181, LLM_PROVIDER=fake. Covers: DOM board/pockets == backend FEN square-by-square
   (all 83 plies of a real game); mouse, click-to-drop, touch (tap + CDP drags) and keyboard input;
   illegal drop rollback; promotion → captured → pawn in pocket; variations / main line preservation;
@@ -219,7 +219,8 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
   core flow; whole-game review annotations + eval graph; FEN load; engine toggle; auto-explain (15
   fast plies → zero LLM requests, dwell → exactly one); viewer side; session restore after reload;
   PGN export → download → re-import gives the same move tree; an unbacked move echoed into an answer
-  is flagged as unverified.
+  is flagged as unverified; asking then browsing away still yields an answer grounded on the complete
+  (cached) analysis (this E2E fails intermittently with protection disabled).
 - Real-data cross-check: 3 finished lichess crazyhouse games (fixtures) reach lichess's own
   final FEN (board, pocket, side, castling). Ongoing TV games mismatch only because lichess
   delays published moves of games in progress (not a rules issue).

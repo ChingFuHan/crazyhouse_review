@@ -19,8 +19,10 @@ def engine_service(request: Request) -> EngineService:
     return request.app.state.engine
 
 
-async def run_engine(body: AnalyzeRequest, engine: EngineService) -> tuple[str, chess.variant.CrazyhouseBoard, EngineAnalysis]:
-    """Validate the line and analyse it (cache-backed). Shared by /analyze and /insights."""
+async def run_engine(
+    body: AnalyzeRequest, engine: EngineService, protected: bool = False
+) -> tuple[str, chess.variant.CrazyhouseBoard, EngineAnalysis]:
+    """Validate the line and analyse it (cache-backed). ``protected``: see EngineService.analyse."""
     settings = engine.settings
     root_fen = check_line(body)
     pid = position_id(root_fen, body.moves)
@@ -43,19 +45,23 @@ async def run_engine(body: AnalyzeRequest, engine: EngineService) -> tuple[str, 
             analysis_id=analysis_id(pid, engine.name, []),
         )
     try:
-        return root_fen, board, await engine.analyse(root_fen, body.moves, pid, multipv, movetime_ms)
+        return root_fen, board, await engine.analyse(root_fen, body.moves, pid, multipv, movetime_ms, protected=protected)
     except EngineUnavailable as error:
         raise HTTPException(status_code=503, detail={"error": "engine_unavailable", "message": str(error)}) from error
 
 
-async def run_threat(board: chess.variant.CrazyhouseBoard, engine: EngineService) -> ThreatFacts | None:
+async def run_threat(
+    board: chess.variant.CrazyhouseBoard, engine: EngineService, protected: bool = False
+) -> ThreatFacts | None:
     """Engine search of the null-move position: what the opponent would do if the side to move passed."""
     view = null_move_view(board)
     if view is None:
         return None
     fen = view.fen()
     try:
-        analysis = await engine.analyse(fen, [], position_id(fen, []), 1, engine.settings.threat_movetime_ms)
+        analysis = await engine.analyse(
+            fen, [], position_id(fen, []), 1, engine.settings.threat_movetime_ms, protected=protected
+        )
     except EngineUnavailable:
         return None
     if analysis.status != "ok" or not analysis.lines:

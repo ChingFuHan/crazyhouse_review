@@ -76,6 +76,7 @@ class EngineService:
         self._generation = 0
         self._latest_position: str | None = None
         self._running: chess.engine.AnalysisResult | None = None
+        self._running_protected = False
         self._cache: OrderedDict[tuple[str, int, int, tuple[str, ...]], EngineAnalysis] = OrderedDict()
         # Identical requests share one search instead of superseding each other.
         self._inflight: dict[tuple[str, int, int, tuple[str, ...]], asyncio.Future[EngineAnalysis]] = {}
@@ -122,18 +123,30 @@ class EngineService:
         multipv: int,
         movetime_ms: int,
         root_moves: tuple[str, ...] = (),
+        protected: bool = False,
     ) -> EngineAnalysis:
-        """``root_moves`` (UCI) restricts the search to those moves (UCI ``searchmoves``)."""
+        """``root_moves`` (UCI) restricts the search to those moves (UCI ``searchmoves``).
+
+        ``protected`` searches (asked for explicitly by the user, e.g. an explanation) take no part in
+        superseding: they never stop other searches and are never stopped; they only queue.
+        """
         key = (position_id, multipv, movetime_ms, root_moves)
         if key in self._cache:
             self._cache.move_to_end(key)
             return self._cache[key].model_copy(update={"cached": True})
-        if (shared := self._inflight.get(key)) is None:
-            shared = asyncio.ensure_future(self._search(root_fen, moves, position_id, multipv, movetime_ms, root_moves))
-            self._inflight[key] = shared
-            shared.add_done_callback(lambda done: self._inflight.pop(key, None) if self._inflight.get(key) is done else None)
+        args = (root_fen, moves, position_id, multipv, movetime_ms, root_moves)
+        shared = self._inflight.get(key) or self._start(key, args, protected)
         # shield: a caller going away must not cancel a search others are waiting for.
-        return await asyncio.shield(shared)
+        result = await asyncio.shield(shared)
+        if protected and result.status == "cancelled":
+            result = await asyncio.shield(self._start(key, args, protected=True))  # joined a superseded search
+        return result
+
+    def _start(self, key: tuple, args: tuple, protected: bool) -> asyncio.Future[EngineAnalysis]:
+        shared = asyncio.ensure_future(self._search(*args, protected=protected))
+        self._inflight[key] = shared
+        shared.add_done_callback(lambda done: self._inflight.pop(key, None) if self._inflight.get(key) is done else None)
+        return shared
 
     async def _search(
         self,
@@ -143,19 +156,20 @@ class EngineService:
         multipv: int,
         movetime_ms: int,
         root_moves: tuple[str, ...],
+        protected: bool = False,
     ) -> EngineAnalysis:
         key = (position_id, multipv, movetime_ms, root_moves)
         # A request for another position supersedes the running search: stop it so the lock frees quickly.
-        if position_id != self._latest_position:
+        if not protected and position_id != self._latest_position:
             self._latest_position = position_id
             self._generation += 1
-            if self._running is not None:
+            if self._running is not None and not self._running_protected:
                 self._running.stop()
         # Same position, other settings (e.g. quick look vs. full search): queue, never cancel.
         generation = self._generation
 
         async with self._lock:
-            if generation != self._generation:
+            if not protected and generation != self._generation:
                 return self._cancelled(position_id, multipv, movetime_ms)
             engine = await self._ensure_started()
             board = build_board(root_fen, moves)
@@ -167,8 +181,8 @@ class EngineService:
                     info=chess.engine.INFO_SCORE | chess.engine.INFO_PV | chess.engine.INFO_BASIC,
                     root_moves=[chess.Move.from_uci(uci) for uci in root_moves] or None,
                 )
-                self._running = analysis
-                if generation != self._generation:
+                self._running, self._running_protected = analysis, protected
+                if not protected and generation != self._generation:
                     analysis.stop()  # superseded while the search was being started
                 await asyncio.wait_for(analysis.wait(), timeout=movetime_ms / 1000 + TIMEOUT_MARGIN_S)
             except (TimeoutError, chess.engine.EngineError, chess.engine.EngineTerminatedError) as error:
@@ -179,7 +193,7 @@ class EngineService:
                 self._running = None
 
             lines = [line for rank, info in enumerate(analysis.multipv, 1) if (line := normalize_line(board, info, rank))]
-            superseded = generation != self._generation
+            superseded = not protected and generation != self._generation
             result = EngineAnalysis(
                 position_id=position_id,
                 status="cancelled" if superseded else "ok",

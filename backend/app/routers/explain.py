@@ -90,13 +90,10 @@ async def prepare(body: ExplainRequest, request: Request) -> Prepared:
     except LLMUnavailable as error:
         raise _llm_unavailable(error) from error
 
-    root_fen, board, analysis = await run_engine(body, engine)
-    if analysis.status == "cancelled":
-        raise HTTPException(
-            status_code=409, detail={"error": "engine_cancelled", "message": "Engine 分析被較新的局面取代，請再問一次"}
-        )
+    # The user asked explicitly: navigation elsewhere must not cancel these searches.
+    root_fen, board, analysis = await run_engine(body, engine, protected=True)
     await analyse_candidates(prepared.checks, board, root_fen, body.moves, analysis, engine)
-    threat = await run_threat(board, engine) if analysis.status == "ok" else None
+    threat = await run_threat(board, engine, protected=True) if analysis.status == "ok" else None
     state = position_state(root_fen, body.moves, board)
     facts = compute_insights(root_fen, body.moves, board, analysis, threat)
     prepared.analysis_id = analysis.analysis_id
