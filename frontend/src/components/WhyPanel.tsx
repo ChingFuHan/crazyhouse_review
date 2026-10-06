@@ -15,9 +15,10 @@ export interface WhyPanelProps {
   onToggleAutoExplain: () => void
   /** Which AI answers (chosen in the Ask panel). */
   aiLabel: string
+  onCancel: (turnId: number) => void
 }
 
-export function WhyPanel({ position, view, engineOn, aiTurn, onExplain, autoExplain, onToggleAutoExplain, aiLabel }: WhyPanelProps) {
+export function WhyPanel({ position, view, engineOn, aiTurn, onExplain, autoExplain, onToggleAutoExplain, aiLabel, onCancel }: WhyPanelProps) {
   const { insights, loading, error, engineMismatch } = view
   const explanation = insights ? explain(insights, position.move_number) : null
   const last = insights?.last_move
@@ -115,7 +116,7 @@ export function WhyPanel({ position, view, engineOn, aiTurn, onExplain, autoExpl
         <div className="ai-source" title="在下方「Ask about this position」的 ⚙ 更改">
           AI：{aiLabel}
         </div>
-        {aiTurn && <AnswerView turn={aiTurn} />}
+        {aiTurn && <AnswerView turn={aiTurn} onCancel={() => onCancel(aiTurn.id)} />}
       </div>
     </section>
   )

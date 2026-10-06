@@ -9,6 +9,7 @@ import json
 import os
 import re
 import sys
+import time
 
 name = os.path.basename(sys.argv[0])
 args = sys.argv[1:]
@@ -44,6 +45,7 @@ elif name == "codex" and args == ["debug", "models"]:
                                   "default_reasoning_level": "low", "supported_reasoning_levels": levels}
                                  for m in codex_models]}))
 elif name == "codex" and args[:1] == ["exec"]:
+    time.sleep(state.get("slow_seconds", 0))  # a slow answer, to cancel
     effort = re.search(r'model_reasoning_effort="([^"]+)"', " ".join(args))
     text = answer(sys.stdin.read(), flag("-m"), effort.group(1) if effort else "default")
     print(json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": text}}))

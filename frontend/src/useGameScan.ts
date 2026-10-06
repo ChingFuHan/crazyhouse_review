@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api } from './api'
 import { type GameTree, mainline } from './tree'
 import type { Color, LlmChoice } from './types'
-import type { Turn } from './useConversation'
+import { CANCELLED, type Turn } from './useConversation'
 
 export interface ScanState extends Turn {
   /** Whole-game review progress (positions analysed / total) while the scan waits for it. */
@@ -14,7 +14,9 @@ export interface ScanState extends Turn {
 
 export interface GameScan {
   scans: Partial<Record<Color, ScanState>>
-  start: (side: Color, llm: LlmChoice | null) => void
+  start: (side: Color, llm: LlmChoice | null, aiLabel: string) => void
+  /** Stop a running scan (its AI run ends with the request). */
+  cancel: (side: Color) => void
 }
 
 const SIDE_LABELS: Record<Color, string> = { white: '白方', black: '黑方' }
@@ -33,6 +35,7 @@ export function useGameScan(tree: GameTree | null): GameScan {
   const key = lineKey(tree)
   const [state, setState] = useState<{ key: string | null; scans: Partial<Record<Color, ScanState>> }>({ key, scans: {} })
   const controllers = useRef(new Set<AbortController>())
+  const cancels = useRef(new Map<Color, { id: number; cancel: () => void }>())
   const nextId = useRef(1)
 
   // A different main line cancels running scans (their results would describe another game).
@@ -45,7 +48,7 @@ export function useGameScan(tree: GameTree | null): GameScan {
   }, [key])
 
   const start = useCallback(
-    (side: Color, llm: LlmChoice | null) => {
+    (side: Color, llm: LlmChoice | null, aiLabel: string) => {
       if (!tree || !key) return
       const last = tree.nodes[mainline(tree).at(-1)!].state
       const id = nextId.current++
@@ -64,10 +67,18 @@ export function useGameScan(tree: GameTree | null): GameScan {
         error: null,
         pending: true,
         progress: null,
+        aiLabel,
       }
       setState((current) => ({ key, scans: { ...(current.key === key ? current.scans : {}), [side]: fresh } }))
       const controller = new AbortController()
       controllers.current.add(controller)
+      cancels.current.set(side, {
+        id,
+        cancel: () => {
+          controller.abort()
+          update({ pending: false, error: CANCELLED })
+        },
+      })
       api
         .gameScanStream(
           last,
@@ -83,10 +94,15 @@ export function useGameScan(tree: GameTree | null): GameScan {
           if (controller.signal.aborted) return
           update({ error: error instanceof ApiError || error instanceof Error ? error.message : String(error), pending: false })
         })
-        .finally(() => controllers.current.delete(controller))
+        .finally(() => {
+          controllers.current.delete(controller)
+          if (cancels.current.get(side)?.id === id) cancels.current.delete(side)
+        })
     },
     [tree, key],
   )
 
-  return { scans: state.key === key ? state.scans : {}, start }
+  const cancel = useCallback((side: Color) => cancels.current.get(side)?.cancel(), [])
+
+  return { scans: state.key === key ? state.scans : {}, start, cancel }
 }

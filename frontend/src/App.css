@@ -689,6 +689,15 @@ cg-board square.drop-dest {
   grid-column: 1 / -1;
 }
 
+.ai-waiting .ai-who,
+.answer-meta .ai-who {
+  color: var(--muted);
+}
+
+.engine-action.cancel {
+  margin-left: 8px;
+}
+
 .ai-source {
   margin-top: 4px;
   font-size: 0.75rem;

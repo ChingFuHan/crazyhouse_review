@@ -37,13 +37,25 @@ function PromptView({ prompt }: { prompt: PromptRecord }) {
   )
 }
 
+/** Stop a pending answer: its request is aborted and the server ends the AI run. */
+function CancelButton({ onCancel }: { onCancel?: () => void }) {
+  return onCancel ? (
+    <button className="engine-action cancel" data-testid="ai-cancel" onClick={onCancel}>
+      取消
+    </button>
+  ) : null
+}
+
 /** One LLM answer with its provenance (which position / engine result it was grounded on). */
-export function AnswerView({ turn }: { turn: Turn }) {
+export function AnswerView({ turn, onCancel }: { turn: Turn; onCancel?: () => void }) {
   if (turn.pending) {
+    const who = turn.aiLabel ? <span className="ai-who"> · {turn.aiLabel}</span> : null
     if (!turn.partial) {
       return (
-        <div className="engine-note" data-testid="ai-waiting">
+        <div className="engine-note ai-waiting" data-testid="ai-waiting">
           AI 思考中…<Elapsed />
+          {who}
+          <CancelButton onCancel={onCancel} />
         </div>
       )
     }
@@ -51,7 +63,8 @@ export function AnswerView({ turn }: { turn: Turn }) {
       <div className="answer streaming" aria-busy="true">
         <RichText text={turn.partial} />
         <div className="answer-meta">
-          <span className="spinner" aria-label="streaming" /> 回答中…
+          <span className="spinner" aria-label="streaming" /> 回答中…{who}
+          <CancelButton onCancel={onCancel} />
         </div>
       </div>
     )

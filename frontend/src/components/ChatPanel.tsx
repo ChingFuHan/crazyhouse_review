@@ -17,6 +17,9 @@ export interface ChatPanelProps {
   /** Whole-game scans of each side's errors (not tied to the current position). */
   scans: Partial<Record<Color, ScanState>>
   onScan: (side: Color) => void
+  onCancelScan: (side: Color) => void
+  /** Stop a pending answer (its AI run ends). */
+  onCancel: (turnId: number) => void
   ai: AiChoiceView
 }
 
@@ -43,7 +46,7 @@ function checkedText(move: CheckedMove): string {
 
 /** "Ask about this position": quick questions and free questions share one backend pipeline. */
 export function ChatPanel(props: ChatPanelProps) {
-  const { turns, onAsk, scans, onScan, ai } = props
+  const { turns, onAsk, scans, onScan, onCancelScan, onCancel, ai } = props
   const [text, setText] = useState('')
   const chat = turns.filter((t) => t.question !== null)
   // Answers take a while (agy: 30–60 s), so asking never waits for other answers (including the
@@ -94,7 +97,7 @@ export function ChatPanel(props: ChatPanelProps) {
                 整局分析中 {result.progress!.done}/{result.progress!.total}…
               </div>
             )}
-            <AnswerView turn={result} />
+            <AnswerView turn={result} onCancel={() => onCancelScan(side)} />
           </div>
         )
       })}
@@ -111,7 +114,7 @@ export function ChatPanel(props: ChatPanelProps) {
                 ))}
               </ul>
             )}
-            <AnswerView turn={turn} />
+            <AnswerView turn={turn} onCancel={() => onCancel(turn.id)} />
           </li>
         ))}
       </ol>

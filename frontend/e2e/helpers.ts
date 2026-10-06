@@ -92,7 +92,13 @@ async function squareCenter(page: Page, square: string): Promise<{ x: number; y:
 }
 
 /** Real mouse drag on the board. */
+/** A user scrolls the board into view before moving pieces (the page itself never jumps to it). */
+async function boardInView(page: Page) {
+  await page.locator('cg-board').scrollIntoViewIfNeeded()
+}
+
 export async function dragMove(page: Page, from: string, to: string) {
+  await boardInView(page)
   const a = await squareCenter(page, from)
   const b = await squareCenter(page, to)
   await page.mouse.move(a.x, a.y)
@@ -103,6 +109,7 @@ export async function dragMove(page: Page, from: string, to: string) {
 
 /** Press on a pocket piece and move over `to`; call `finish` to release. */
 export async function startPocketDrag(page: Page, color: string, letter: string, to: string) {
+  await boardInView(page)
   const slot = (await page.locator(`.pocket[data-color=${color}] .pocket-slot[data-role=${letter}]`).boundingBox())!
   await page.mouse.move(slot.x + slot.width / 2, slot.y + slot.height / 2)
   await page.mouse.down()

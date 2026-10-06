@@ -20,7 +20,11 @@ export interface Turn {
   partial: string
   error: string | null
   pending: boolean
+  /** Which AI was asked (shown while waiting). */
+  aiLabel: string | null
 }
+
+export const CANCELLED = '已取消（AI 程序已停止，不再消耗額度）'
 
 export function conversationKey(position: PositionState, variationId: string): string {
   return `${position.position_id}|${variationId}`
@@ -35,6 +39,7 @@ export function useConversation(tree: GameTree | null, activeId: string | null, 
   const [threads, setThreads] = useState<Record<string, Turn[]>>({})
   const nextId = useRef(1)
   const controllers = useRef(new Set<AbortController>())
+  const cancels = useRef(new Map<number, () => void>())
 
   useEffect(() => {
     const all = controllers.current
@@ -45,9 +50,10 @@ export function useConversation(tree: GameTree | null, activeId: string | null, 
   const key = node ? conversationKey(node.state, node.variationId) : null
 
   /** `analysisId`: the engine result on screen, so the answer explains exactly what the viewer sees
-   * (null: the server analyses the position itself); `llm`: the viewer's AI (null: server default). */
+   * (null: the server analyses the position itself); `llm`: the viewer's AI (null: server default),
+   * described by `aiLabel`. */
   const ask = useCallback(
-    async (question: string | null, analysisId: string | null, llm: LlmChoice | null) => {
+    async (question: string | null, analysisId: string | null, llm: LlmChoice | null, aiLabel: string) => {
       if (!tree || !activeId) return
       const position = tree.nodes[activeId].state
       const meta = llmMeta(tree, activeId, viewerSide)
@@ -68,10 +74,18 @@ export function useConversation(tree: GameTree | null, activeId: string | null, 
         }))
       setThreads((all) => ({
         ...all,
-        [threadKey]: [...(all[threadKey] ?? []), { id, question, answer: null, partial: '', error: null, pending: true }],
+        [threadKey]: [
+          ...(all[threadKey] ?? []),
+          { id, question, answer: null, partial: '', error: null, pending: true, aiLabel },
+        ],
       }))
       const controller = new AbortController()
       controllers.current.add(controller)
+      // Aborting the request closes its stream: the server stops the AI run.
+      cancels.current.set(id, () => {
+        controller.abort()
+        update({ pending: false, error: CANCELLED })
+      })
       try {
         const answer = await api.explainStream(
           position,
@@ -91,10 +105,13 @@ export function useConversation(tree: GameTree | null, activeId: string | null, 
         if (!controller.signal.aborted) update({ error: errorText(error), pending: false })
       } finally {
         controllers.current.delete(controller)
+        cancels.current.delete(id)
       }
     },
     [tree, activeId, threads, viewerSide],
   )
 
-  return { key, turns: key ? (threads[key] ?? []) : [], ask }
+  const cancel = useCallback((id: number) => cancels.current.get(id)?.(), [])
+
+  return { key, turns: key ? (threads[key] ?? []) : [], ask, cancel }
 }

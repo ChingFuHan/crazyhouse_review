@@ -8,6 +8,7 @@ export function AiSettings({ ai }: { ai: AiChoiceView }) {
   const [open, setOpen] = useState(false)
   const { choice, catalog } = ai
   const provider = catalog?.providers.find((p) => p.id === choice?.provider) ?? null
+  const modelDefault = provider?.models.find((m) => m.id === choice?.model)?.default_effort
 
   const toggle = () => {
     if (!open) ai.refresh()
@@ -77,7 +78,7 @@ export function AiSettings({ ai }: { ai: AiChoiceView }) {
                       value={choice.effort ?? ''}
                       onChange={(e) => ai.setChoice({ ...choice, effort: e.target.value || null })}
                     >
-                      <option value="">CLI 預設</option>
+                      <option value="">CLI 預設{modelDefault ? `（${modelDefault}）` : ''}</option>
                       {effortsFor(provider, choice.model).map((effort) => (
                         <option key={effort} value={effort}>
                           {effort}

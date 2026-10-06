@@ -46,3 +46,31 @@ test('a model a CLI update removed falls back to the default instead of failing'
   await expect(settings.getByTestId('ai-choice')).toHaveText('Codex CLI · CLI 預設 model')
   await expect(settings.getByLabel('Model').locator('option')).toHaveText(['CLI 預設', 'GPT-6.1-SOL（gpt-6.1-sol）', 'GPT-7（gpt-7）'])
 })
+
+test('a slow answer can be cancelled, and asking again works', async ({ page }) => {
+  writeFileSync(FAKE_CLI_ENV.FAKE_CLI_STATE, JSON.stringify({ slow_seconds: 60 }))
+  await page.goto('/')
+  const settings = page.getByTestId('ai-settings')
+  await settings.getByLabel('AI 設定').click()
+  await settings.getByLabel('AI 來源').selectOption({ label: 'Codex CLI' })
+  await settings.getByLabel('Model').selectOption('gpt-6-luna')
+
+  const chat = page.getByTestId('chat')
+  await chat.getByLabel('提問').fill('這裡真正的威脅是什麼？')
+  await chat.getByLabel('提問').press('Enter')
+  const waiting = chat.locator('.chat-turn').last().getByTestId('ai-waiting')
+  await expect(waiting).toContainText('Codex CLI · gpt-6-luna')
+  await waiting.getByTestId('ai-cancel').click()
+  await expect(chat.locator('.chat-turn').last()).toContainText('已取消')
+
+  // The whole-game scan can be cancelled the same way.
+  await page.getByTestId('game-scan').getByRole('button', { name: '全局掃描：白方 miss 的錯誤' }).click()
+  const scan = page.getByTestId('scan-white')
+  await scan.getByTestId('ai-cancel').click()
+  await expect(scan).toContainText('已取消')
+
+  rmSync(FAKE_CLI_ENV.FAKE_CLI_STATE, { force: true })
+  await chat.getByLabel('提問').fill('這裡真正的威脅是什麼？')
+  await chat.getByLabel('提問').press('Enter')
+  await expect(chat.locator('.chat-turn .answer').last()).toContainText('[FAKE CODEX] model=gpt-6-luna', { timeout: 20_000 })
+})

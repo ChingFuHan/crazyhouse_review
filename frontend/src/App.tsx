@@ -50,12 +50,13 @@ export default function App() {
   const startReview = gameReview.start
   const reviewShown = gameReview.job !== null
   const startScan = gameScan.start
+  const aiLabel = describeChoice(ai.choice, ai.catalog)
   const scan = useCallback(
     (side: Color) => {
       if (!reviewShown) startReview()
-      startScan(side, ai.choice)
+      startScan(side, ai.choice, aiLabel)
     },
-    [reviewShown, startReview, startScan, ai.choice],
+    [reviewShown, startReview, startScan, ai.choice, aiLabel],
   )
   const aiTurn = [...conversation.turns].reverse().find((turn) => turn.question === null)
 
@@ -64,8 +65,8 @@ export default function App() {
   const askQuestion = conversation.ask
   const aiChoice = ai.choice
   const askAbout = useCallback(
-    (question: string | null) => askQuestion(question, shownId, aiChoice),
-    [askQuestion, shownId, aiChoice],
+    (question: string | null) => askQuestion(question, shownId, aiChoice, aiLabel),
+    [askQuestion, shownId, aiChoice, aiLabel],
   )
 
   // Auto-explain only after the user dwells on an analysed position; quick browsing never asks.
@@ -139,7 +140,8 @@ export default function App() {
               onExplain={() => void askAbout(null)}
               autoExplain={autoExplain}
               onToggleAutoExplain={toggleAutoExplain}
-              aiLabel={describeChoice(ai.choice, ai.catalog)}
+              aiLabel={aiLabel}
+              onCancel={conversation.cancel}
             />
             <section className="panel status" data-testid="status">
               <div>
@@ -178,6 +180,8 @@ export default function App() {
               gameMoveSan={gameChild ? (tree.nodes[gameChild].state.last_move?.san ?? null) : null}
               scans={gameScan.scans}
               onScan={scan}
+              onCancelScan={gameScan.cancel}
+              onCancel={conversation.cancel}
               ai={ai}
             />
           </aside>

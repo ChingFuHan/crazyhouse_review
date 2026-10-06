@@ -3,7 +3,12 @@ checked against them, and the chosen CLI answering through the normal explanatio
 
 import asyncio
 import json
+import os
+import http.client
+import socket
+import subprocess
 import sys
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -57,7 +62,7 @@ def test_parsers_read_what_the_clis_print():
 
 
 FAKE_CLI = r'''
-import json, os, sys
+import json, os, sys, time
 name = os.environ["FAKE_CLI_NAME"]
 state = json.load(open(os.environ["FAKE_CLI_STATE"]))
 args = sys.argv[1:]
@@ -71,6 +76,9 @@ if name == "codex" and args == ["debug", "models"]:
     print(json.dumps(state["codex_models"])); sys.exit(0)
 if name == "codex" and args[:1] == ["exec"]:
     sys.stdin.read()
+    if state.get("hang_pid_file"):  # a slow answer: wait to be killed
+        open(state["hang_pid_file"], "w").write(str(os.getpid()))
+        time.sleep(60)
     model = args[args.index("-m") + 1] if "-m" in args else "default"
     print(json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": f"codex {model} 的回答"}}))
     print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 1, "output_tokens": 2}}))
@@ -161,3 +169,54 @@ def test_the_chosen_cli_answers_and_bad_choices_are_rejected_before_any_work(fak
         assert refused.status_code == 422 and refused.json()["detail"]["error"] == "llm_choice"
         scan = client.post("/api/explain/game/stream", json={"moves": moves, "side": "white", "llm": {"provider": "agy", "effort": "turbo"}})
         assert scan.status_code == 422 and "turbo" in scan.json()["detail"]["message"]
+
+
+@needs_engine
+def test_a_client_that_leaves_stops_the_cli(fake_clis, tmp_path):
+    """Cancelling a pending answer in the UI aborts its request; the CLI run must end with it. A real
+    server and connection: the test client cannot drop a connection mid-stream."""
+    paths, write = fake_clis
+    pid_file = tmp_path / "codex.pid"
+    write(hang_pid_file=str(pid_file))
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    env = {**os.environ, "LLM_PROVIDER": "fake", "CODEX_PATH": paths["codex"], "AGY_PATH": paths["agy"],
+           "CLAUDE_PATH": paths["claude"], "ENGINE_THREADS": "2", "ENGINE_HASH_MB": "32"}
+    server = subprocess.Popen(
+        [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port)],
+        cwd=Path(__file__).resolve().parents[1], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    try:
+        for _ in range(150):
+            try:
+                health = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+                health.request("GET", "/api/health")
+                if health.getresponse().status == 200:
+                    break
+            except OSError:
+                time.sleep(0.1)
+        body = json.dumps({"moves": ["e2e4", "e7e5"], "llm": {"provider": "codex", "model": "gpt-6-luna"}})
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+        connection.request("POST", "/api/explain/stream", body, {"content-type": "application/json"})
+        response = connection.getresponse()
+        assert response.status == 200 and response.readline().startswith(b"event: meta")
+        for _ in range(200):
+            if pid_file.exists() and pid_file.read_text():
+                break
+            time.sleep(0.05)
+        pid = int(pid_file.read_text())
+        connection.close()  # like an aborted fetch
+        left = time.monotonic()
+        while time.monotonic() - left < 10:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            os.kill(pid, 9)
+            pytest.fail("the codex run kept going after the client left")
+    finally:
+        server.terminate()
+        server.wait(10)
