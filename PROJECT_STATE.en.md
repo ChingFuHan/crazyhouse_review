@@ -20,6 +20,8 @@ Whole-game review (critical moves, task.md §30) + eval graph DONE.
 Lichess-style engine settings + streamed analysis DONE (user request after task.md, 2026-10-06).
 Anti-hallucination layer (answer checks, model-input viewer, real-LLM eval) and whole-game scans of
 each side's errors DONE (user requests, 2026-10-07).
+Viewer choice of AI source (agy / codex / claude CLI subscriptions), model and effort from live CLI
+catalogs DONE (user request, 2026-10-07).
 
 ## Current task status
 Strict verification against task.md (2026-10-06) found and fixed: stale README/PROJECT_STATE,
@@ -39,8 +41,10 @@ still sends `go`; infinite → up to 10 min).
 Then (user worried about hallucinations): answer checks for moves / evaluations / mates / advantage,
 「AI 看到的資料」 viewer, tighter system prompt, real-LLM eval (`scripts/llm_eval.py`); and whole-game
 scan buttons (「全局掃描：白方／黑方 miss 的錯誤」).
-NEXT (requested, not started): let the user pick the AI source — agy / codex / claude CLI subscriptions —
-plus model and effort, enumerated live from each CLI every time (see Next recommended task).
+Then: viewer choice of the AI CLI, model and effort, enumerated live from the CLIs (never hard-coded).
+Found on the way: on a phone the move list's scrollIntoView scrolled the whole page after every move,
+moving the board away mid-interaction (now only the move panel scrolls).
+No task in progress.
 
 ## Current architecture
 - `backend/` Python 3.13 (uv), FastAPI, python-chess 1.11.2.
@@ -147,6 +151,21 @@ plus model and effort, enumerated live from each CLI every time (see Next recomm
     lichess fixture game + 2 tactics) × (default explanation + a quick question), report + JSON with each
     answer's context in `backend/reports/` (git-ignored); `--recheck file.json` re-applies the checks
     without the LLM.
+  - AI choice: `app/llm/provider.py` `CliProvider` (shared runner: private empty temp dir, stdin or
+    argv prompt, deadline = timeout + CLI_GRACE_S, kill on early close, stderr drained, auth errors →
+    LLMUnavailable) with `AgyProvider` (`-p`, `--model`, `--effort`, plan mode, sandbox), `CodexProvider`
+    (`exec --json --skip-git-repo-check --ephemeral -s read-only -C dir [-m] [-c
+    model_reasoning_effort="E"] -`, prompt on stdin, one complete agent_message, no partial text),
+    `ClaudeCliProvider` (`-p --output-format stream-json --include-partial-messages --verbose
+    --system-prompt S --tools "" --no-session-persistence --strict-mcp-config --setting-sources ""
+    [--model] [--effort]`, prompt on stdin; not `--bare`, which ignores the subscription login). Provider
+    name = `cli:model (effort)` (part of the LLM cache key). `app/llm/catalog.py` `ProviderPool`:
+    catalogs read from `agy models` + `agy --help` (help is on stderr), `codex debug models` (visibility
+    "list", per-model reasoning levels; union offered for the CLI default model), `claude --help`
+    (`--model` aliases, `--effort` list); cached ≤ 2 min, `GET /api/llm/catalog?refresh=true` reads
+    anew; `provider(choice)` validates (re-reads once if unknown) → `ChoiceError` → 422 `llm_choice`;
+    one instance per (cli, model, effort). `LlmChoice` fields are pattern-restricted (no flags).
+    `ExplainRequest.llm` / `GameScanRequest.llm`; None = server default (LLM_PROVIDER).
   - `app/llm/game_scan.py` + `POST /api/explain/game/stream` (`GameScanRequest{line, side, headers}`):
     starts or reuses the whole-game review job, SSE `progress` until it is done, then the side's flagged
     moves (most severe 12, game order; mover from ply parity of the root) with fen/pockets before, the
@@ -219,6 +238,12 @@ plus model and effort, enumerated live from each CLI every time (see Next recomm
     system prompt say "我/我的" ("I/my") = viewer side (else side to move), and to say so when the named
     piece does not exist instead of guessing. AnswerView + RichText
     (safe minimal markdown). WhyPanel has an on-demand 「AI 解釋」 (AI explanation) button.
+  - `src/aiChoice.ts` (`useAiChoice`: stored choice, catalog on load and on opening the settings,
+    `sanitizeChoice` resets what the catalog no longer offers with a notice) + `AiSettings` (⚙ in the
+    Ask panel: source / model / effort selects, per-model effort lists); WhyPanel shows the current AI.
+    Fake CLIs for E2E: `frontend/e2e/fake-cli/` (symlinks agy/codex/claude → fake_cli.py; catalog
+    changes through `FAKE_CLI_STATE`).
+  - MoveList reveals the active move by scrolling only its own panel (`revealInPanel`), never the page.
   - `src/useGameScan.ts`: per main line (root_fen + moves) and side: pending / review progress / partial
     / answer; a changed main line aborts and hides scans; requests guarded by id. App starts the review
     panel's own review too (same backend job), ChatPanel shows the two scan buttons and results.
@@ -307,6 +332,8 @@ plus model and effort, enumerated live from each CLI every time (see Next recomm
 - Engine: single shared interactive process; two tabs analysing different positions replace each
   other's searches (shown as 已中斷 "interrupted" + 重新分析 "analyse again"). Threads/Hash choices affect the whole machine.
 - At 390 px width chessground's file coordinates overflow by 2 px (pre-existing).
+- AI choice: Codex returns its answer in one piece (no partial text while it thinks); Claude's model list
+  is the aliases its `--help` names (full model names are accepted by the CLI but not listed).
 - Answer checks cover moves, evaluations, mates and advantage claims only (not piece placement or other
   statements); Chinese mate claims without a side or move in the clause are not checked.
 - Analyzer reports king-zone attackers but no weighted pressure score; opened diagonals are covered
@@ -317,7 +344,11 @@ plus model and effort, enumerated live from each CLI every time (see Next recomm
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 204 passed (incl. `tests/test_grounding.py` with regressions for
+- `cd backend && uv run pytest -q` → 214 passed (incl. `tests/test_cli_providers.py` for all three CLIs
+  against a fake executable replaying recorded real output — argv, stdin, private dir, effort flags,
+  failures, login errors, timeout and early-close kills; `tests/test_llm_catalog.py`: catalog parsers on
+  real help/catalog text, live re-read when a CLI update adds/drops a model, refused choices, flag
+  smuggling rejected, the chosen CLI answering through /api/explain) (incl. `tests/test_grounding.py` with regressions for
   every false alarm found by the real evaluations; `tests/test_game_scan.py`: one side only, most severe
   moments in game order, black-to-move roots, progress then grounded answer, cached repeat, rules answer
   without flagged moves, invalid line 422) (incl. candidate searches of a 60 s analysis capped
@@ -340,8 +371,10 @@ plus model and effort, enumerated live from each CLI every time (see Next recomm
   a real-game job not disturbing interactive analysis; LLM context == board/engine/analyzer, variation
   and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
   503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
-- `cd frontend && npx vitest run` → 46 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 35 passed (incl. answer warnings for an unanalysed move and a
+- `cd frontend && npx vitest run` → 49 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
+- `cd frontend && npx playwright test` → 37 passed (incl. picking Codex CLI + model + effort from the
+  live list and getting that CLI's answer about the board FEN, kept after reload; a CLI update dropping
+  the chosen model → notice and fallback; on a phone, playing a move no longer scrolls the page) (incl. answer warnings for an unanalysed move and a
   +9.9 evaluation, 「AI 看到的資料」 with the board FEN, whole-game scans of both sides that survive
   browsing) (incl. asking a free and a quick question while
   the AI explanation is held back 4 s; a double click sends once; no server tracebacks in the run)
@@ -363,6 +396,9 @@ plus model and effort, enumerated live from each CLI every time (see Next recomm
   final FEN (board, pocket, side, castling). Ongoing TV games mismatch only because lichess
   delays published moves of games in progress (not a rules issue).
 
+- Real AI CLIs (2026-10-07): live catalogs agy 14 models / 5 efforts, codex 7 models / 6 efforts,
+  claude 3 aliases / 5 efforts; one real answer each — codex gpt-6.1-sol low (14 s), claude sonnet low
+  (8 s), agy gemini-3.8-flash-low low (18 s) — Chinese, engine values quoted, 0 warnings.
 - Real LLM eval (agy gemini-3.8-flash-high, 2026-10-07, `scripts/llm_eval.py`, 2 × 28 answers, ~70 s
   each): run 1 → 5/28 answers with warnings, run 2 (tighter prompt) → 2/28; every warning reviewed by
   hand: all 8 were checker false alarms (fixed + regression tests; recheck of run 2 → 0/28), no
@@ -384,7 +420,7 @@ plus model and effort, enumerated live from each CLI every time (see Next recomm
 ## Next recommended task
 1. Optional: if an ANTHROPIC_API_KEY becomes available, run `scripts/llm_smoke.py` with
    `LLM_PROVIDER=anthropic` to verify the Claude path too.
-2. REQUESTED: AI source choice. Providers: agy (`agy models` lists ids; `--effort` levels parsed from
+2. DONE (kept for reference): AI source choice. Providers: agy (`agy models` lists ids; `--effort` levels parsed from
    `agy --help`), codex (`codex debug models` JSON: slug, visibility, supported_reasoning_levels; run
    `codex exec --json --skip-git-repo-check --ephemeral -s read-only -C <empty dir> -m M -c
    model_reasoning_effort=E`, answer = `item.completed` agent_message, no deltas), claude (`claude -p

@@ -19,6 +19,7 @@ Milestone 4（對話 + 候選著重新分析 + 能感知變化的問答）完成
 整局分析（關鍵著法，task.md §30）+ 評估曲線圖完成。
 類 lichess 的 engine 設定 + 串流分析完成（task.md 之後的使用者需求，2026-10-06）。
 防幻覺機制（回答自動檢查、「AI 看到的資料」、真實 LLM 評測）與雙方全局掃描完成（使用者需求，2026-10-07）。
+觀看者可自選 AI 來源（agy／codex／claude CLI 訂閱）、model 與 effort，清單即時從 CLI 讀取，完成（使用者需求，2026-10-07）。
 
 ## 目前任務狀態
 依 task.md 嚴格驗證（2026-10-06）發現並修正：README/PROJECT_STATE 過時、LLM context 缺
@@ -34,8 +35,9 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
 仍會送出 `go`；無限分析時最多 10 分鐘）。
 再之後（使用者擔心幻覺）：著法／評估／將殺／優勢的回答自動檢查、「AI 看到的資料」、加嚴的 system prompt、
 真實 LLM 評測（`scripts/llm_eval.py`）；以及全局掃描按鈕（「全局掃描：白方／黑方 miss 的錯誤」）。
-下一個（已要求、尚未開始）：讓使用者選擇 AI 來源——agy／codex／claude CLI 訂閱——以及 model 與 effort，
-每次都從各 CLI 即時列舉（見「建議的下一個任務」）。
+再之後：觀看者自選 AI CLI、model 與 effort，清單即時從 CLI 列舉（從不寫死）。過程中發現：手機上著法列表的
+scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑掉（現在只捲動著法面板）。
+目前沒有進行中的任務。
 
 ## 目前架構
 - `backend/` Python 3.13（uv）、FastAPI、python-chess 1.11.2。
@@ -129,6 +131,19 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
     provider 跑 4 個固定案例（有回答、中文、沒有警告、切題）。`scripts/llm_eval.py`：14 個局面（每盤
     lichess fixture 4 個 + 2 個戰術局面）×（預設解釋 + 一個快捷問題），報告與含每題 context 的 JSON 寫到
     `backend/reports/`（git-ignore）；`--recheck file.json` 不呼叫 LLM 重新套用檢查。
+  - AI 選擇：`app/llm/provider.py` `CliProvider`（共用執行流程：私有空暫存目錄、stdin 或 argv 傳 prompt、
+    期限 = timeout + CLI_GRACE_S、提早關閉時結束程序、同時讀取 stderr、認證錯誤 → LLMUnavailable），子類別
+    `AgyProvider`（`-p`、`--model`、`--effort`、plan mode、sandbox）、`CodexProvider`（`exec --json
+    --skip-git-repo-check --ephemeral -s read-only -C dir [-m] [-c model_reasoning_effort="E"] -`，prompt 走
+    stdin，最後一次給出完整 agent_message，沒有逐字串流）、`ClaudeCliProvider`（`-p --output-format
+    stream-json --include-partial-messages --verbose --system-prompt S --tools "" --no-session-persistence
+    --strict-mcp-config --setting-sources "" [--model] [--effort]`，prompt 走 stdin；不用 `--bare`，它不讀
+    訂閱登入）。Provider 名稱 = `cli:model (effort)`（屬於 LLM 快取鍵）。`app/llm/catalog.py` `ProviderPool`：
+    清單來自 `agy models` + `agy --help`（help 印在 stderr）、`codex debug models`（visibility "list"、各
+    model 的 reasoning 等級；CLI 預設 model 提供聯集）、`claude --help`（`--model` 別名、`--effort` 清單）；
+    快取 ≤ 2 分鐘，`GET /api/llm/catalog?refresh=true` 重新讀取；`provider(choice)` 驗證（未知時重讀一次）
+    → `ChoiceError` → 422 `llm_choice`；每個（cli, model, effort）一個實例。`LlmChoice` 欄位有字元限制
+    （不能夾帶參數）。`ExplainRequest.llm`／`GameScanRequest.llm`；None = 伺服器預設（LLM_PROVIDER）。
   - `app/llm/game_scan.py` + `POST /api/explain/game/stream`（`GameScanRequest{line, side, headers}`）：
     啟動或沿用整局分析工作，分析期間以 SSE `progress` 回報，完成後取該方被判錯的著法（最嚴重 12 個、依時間
     順序；走子方由 root 的 ply 奇偶判斷），附走子前 fen／pocket、engine 最佳線、實戰著後的變化（review
@@ -191,6 +206,11 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
   - LLM 請求帶有 `viewer_side`（棋盤方向）；context `game.viewer_side`（ctx-v2）與 system prompt 說明
     「我/我的」= 觀看者那一方（否則為走子方），且所指棋子不存在時要直說而不是猜。AnswerView + RichText
     （安全的極簡 markdown）。WhyPanel 有按需的「AI 解釋」按鈕。
+  - `src/aiChoice.ts`（`useAiChoice`：儲存的選擇、載入時與開啟設定時讀取清單、`sanitizeChoice` 把清單已不提供
+    的選項改回預設並提示）+ `AiSettings`（Ask 面板的 ⚙：來源／model／effort 下拉，effort 依 model）；
+    WhyPanel 顯示目前的 AI。E2E 用的假 CLI：`frontend/e2e/fake-cli/`（agy/codex/claude 符號連結到
+    fake_cli.py；透過 `FAKE_CLI_STATE` 改變清單）。
+  - MoveList 只捲動自己的面板來顯示目前著法（`revealInPanel`），絕不捲動整個頁面。
   - `src/useGameScan.ts`：依主線（root_fen + moves）與哪一方記錄 pending／整局分析進度／部分回答／回答；
     主線改變時中止並隱藏掃描；請求以 id 防止舊回答覆蓋。App 同時啟動整局分析面板（後端同一個工作），
     ChatPanel 顯示兩個掃描按鈕與結果。
@@ -266,6 +286,8 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
 - Engine：只有一個共用的互動 process；兩個分頁分析不同局面時會互相取代對方的搜尋（顯示為 已中斷 +
   重新分析）。Threads/Hash 的選擇會影響整台機器。
 - 寬度 390 px 時 chessground 的檔案座標會超出 2 px（原本就有）。
+- AI 選擇：Codex 一次給出完整回答（思考時沒有逐字顯示）；Claude 的 model 清單是 `--help` 列出的別名
+  （CLI 也接受完整 model 名稱，但不會列出）。
 - 回答自動檢查只涵蓋著法、評估、將殺與優勢方向（不含棋子位置等其他敘述）；子句中沒提到某方或著法的中文
   將殺說法不檢查。
 - Analyzer 會回報王區攻擊者，但沒有加權的壓力分數；開放的斜線只透過閃擊涵蓋；「先手」只以將軍／被迫
@@ -276,7 +298,10 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
   於著法落地前執行時才通過。
 
 ## 驗證狀態
-- `cd backend && uv run pytest -q` → 204 passed（含 `tests/test_grounding.py` 中真實評測發現的每個誤報的
+- `cd backend && uv run pytest -q` → 214 passed（含 `tests/test_cli_providers.py`：三個 CLI 以重播真實輸出
+  的假執行檔測試——argv、stdin、私有目錄、effort 參數、失敗、未登入、逾時與提早關閉時結束程序；
+  `tests/test_llm_catalog.py`：以真實 help／清單文字測試解析、CLI 更新新增／移除 model 時即時重讀、拒絕的
+  選擇、拒絕夾帶參數、所選 CLI 經 /api/explain 回答）（含 `tests/test_grounding.py` 中真實評測發現的每個誤報的
   回歸測試；`tests/test_game_scan.py`：只取一方、依時間順序的最嚴重時刻、黑方先走的 root、先回報進度再給出
   有依據的回答、重複請求命中快取、沒有被判錯的著法時由規則回答、不合法序列 422）（含：60 秒分析下候選著搜尋受 ENGINE_MAX_MOVETIME_MS
   限制、退回搜尋的解釋使用 3 條線／預設時間、串流在搜尋啟動中被取消後不留下孤兒搜尋——此測試在修正前
@@ -295,8 +320,9 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
   互動分析；LLM context == 棋盤／engine／analyzer、變化與觀看方、prompt injection 邊界、快取鍵、
   候選著流程、SSE 事件、缺 key 時 503、key 永不出現在錯誤中、以模擬 SDK 串流測試拒答／fallback。
   沒有真實的 Claude 呼叫。
-- `cd frontend && npx vitest run` → 46 passed；`npx tsc -b`、`npm run lint`、`npx vite build` 無誤。
-- `cd frontend && npx playwright test` → 35 passed（含：未分析著法與 +9.9 評估的回答警告、含棋盤 FEN 的
+- `cd frontend && npx vitest run` → 49 passed；`npx tsc -b`、`npm run lint`、`npx vite build` 無誤。
+- `cd frontend && npx playwright test` → 37 passed（含：從即時清單選 Codex CLI + model + effort，並取得該 CLI
+  針對棋盤 FEN 的回答，重新整理後保留；CLI 更新移除所選 model → 提示並改回預設；手機上走棋不再捲動頁面）（含：未分析著法與 +9.9 評估的回答警告、含棋盤 FEN 的
   「AI 看到的資料」、雙方全局掃描且瀏覽時保留）（含：AI 解釋被延遲 4 秒期間仍可送出自由問題與快捷
   問題、連點只送出一次、整次執行 server 沒有 traceback）（storageState 預設 1 秒搜尋；
   `e2e/engine-settings.spec.ts`：線數 1→5、深度上限 15 提早結束、設定持久化 + 恢復預設、無限分析逐步
@@ -313,6 +339,9 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
   （棋盤、pocket、走子方、易位權）。進行中的 TV 對局不一致只是因為 lichess 會延遲公開進行中對局的
   著法（不是規則問題）。
 
+- 真實 AI CLI（2026-10-07）：即時清單 agy 14 個 model／5 種 effort、codex 7 個 model／6 種 effort、claude
+  3 個別名／5 種 effort；各一題真實回答——codex gpt-6.1-sol low（14 秒）、claude sonnet low（8 秒）、agy
+  gemini-3.8-flash-low low（18 秒）——皆為中文、引用 engine 數值、0 個警告。
 - 真實 LLM 評測（agy gemini-3.8-flash-high，2026-10-07，`scripts/llm_eval.py`，2 × 28 題，每題約 70 秒）：
   第 1 輪 5/28 題有警告，第 2 輪（加嚴 prompt 後）2/28；所有警告都人工檢視：8 個全是檢查規則的誤報（已修正並
   加回歸測試；第 2 輪重新檢查 → 0/28），沒有確認的幻覺；抽查的無警告回答事實正確。真實全局掃描（fixture 第 3
@@ -332,7 +361,7 @@ engine 設定（線數、深度上限、含無限的時間、threads、hash；�
 ## 建議的下一個任務
 1. 選用：若取得 ANTHROPIC_API_KEY，以 `LLM_PROVIDER=anthropic` 執行 `scripts/llm_smoke.py`，也驗證
    Claude 路徑。
-2. 已要求：AI 來源選擇。Provider：agy（`agy models` 列出 id；`--effort` 等級從 `agy --help` 解析）、codex
+2. 已完成（保留作為參考）：AI 來源選擇。Provider：agy（`agy models` 列出 id；`--effort` 等級從 `agy --help` 解析）、codex
    （`codex debug models` JSON：slug、visibility、supported_reasoning_levels；以 `codex exec --json
    --skip-git-repo-check --ephemeral -s read-only -C <空目錄> -m M -c model_reasoning_effort=E` 執行，回答在
    `item.completed` 的 agent_message，沒有逐字串流）、claude（`claude -p --output-format stream-json

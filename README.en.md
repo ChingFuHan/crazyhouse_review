@@ -105,6 +105,24 @@ available; see `.env.example`):
 Without either, everything else works and the AI button reports that no LLM is configured.
 `LLM_PROVIDER=fake` is a deterministic stand-in used only by automated tests.
 
+### Choosing the AI (per viewer)
+The ⚙ in the "Ask about this position" panel lets a viewer use another local AI CLI's subscription
+instead, with a model and effort level (kept in the browser; without a choice the server default
+above is used):
+
+| CLI | Models from | Effort levels from | How it runs |
+|---|---|---|---|
+| agy | `agy models` | `--effort` in `agy --help` | `agy -p`, plan mode, terminal sandbox |
+| codex | `codex debug models` (hidden models left out; levels per model) | same | `codex exec --json`, read-only sandbox, no session kept |
+| claude | aliases named for `--model` in `claude --help` | `--effort` in `claude --help` | `claude -p` with this project's system prompt instead of the default, all tools, MCP servers and setting files off, no session kept |
+
+Nothing is hard-coded: opening the settings asks the CLIs again (the server also keeps a catalog for
+up to 2 minutes and re-reads it when a request names an unknown option), so a model added by a CLI
+update can be chosen at once, and a stored model or effort that disappeared falls back to the default
+with a notice. Every request is checked against the current catalog before any CLI runs (422; no
+arbitrary string reaches a CLI). Executables: `AGY_PATH`, `CODEX_PATH`, `CLAUDE_PATH`; each CLI runs
+in a private empty temporary directory.
+
 ### Guarding against hallucinations
 - **Rules** (`backend/app/llm/system_prompt.md`, sent every time): best moves, candidates and lines come
   only from Fairy-Stockfish; legal moves, pockets and position facts only from the rules engine;
@@ -160,7 +178,8 @@ cd backend && SHOW_ANSWERS=1 uv run python scripts/llm_smoke.py   # a few reques
 
 - 「AI 解釋」 (AI explanation): on-demand (or, optionally, automatic after you stay on a position), streamed LLM
   explanation grounded on the same engine result and facts shown on screen, aware of the current
-  variation and the game move — Claude with `ANTHROPIC_API_KEY`, or the local `agy` CLI with no key
+  variation and the game move — Claude with `ANTHROPIC_API_KEY`, or the local `agy` CLI with no key, or
+  the agy / codex / claude CLI, model and effort a viewer picks
   (see LLM setup); unbacked moves, evaluations, mates and advantage claims in an answer are flagged,
   and 「AI 看到的資料」 (what the AI saw) can be expanded
 

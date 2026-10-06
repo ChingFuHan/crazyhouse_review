@@ -98,6 +98,21 @@ cd frontend && npx vitest run && npx tsc -b && npx playwright test
 兩者都沒有時，其他功能照常運作，AI 按鈕會顯示尚未設定 LLM。
 `LLM_PROVIDER=fake` 是只給自動化測試用的確定性替身。
 
+### 選擇 AI（觀看者自選）
+「Ask about this position」面板的 ⚙ 可改用本機其他 AI CLI 的訂閱額度，並選擇 model 與 effort（存在
+瀏覽器中；不選則用上面的伺服器預設）：
+
+| CLI | model 清單來源 | effort 清單來源 | 執行方式 |
+|---|---|---|---|
+| agy | `agy models` | `agy --help` 的 `--effort` | `agy -p`，plan mode、terminal sandbox |
+| codex | `codex debug models`（隱藏的 model 不列；effort 依各 model） | 同左 | `codex exec --json`，read-only sandbox、不保存 session |
+| claude | `claude --help` 中 `--model` 列出的別名 | `claude --help` 的 `--effort` | `claude -p`，以本專案的 system prompt 取代預設、關閉所有工具、MCP 與設定檔、不保存 session |
+
+清單從不寫死：每次開啟設定都向 CLI 重新查詢（伺服器另有最多 2 分鐘的快取，遇到未知選項會再查一次），
+所以 CLI 更新後新的 model 立即可選；原本選的 model 或 effort 若已不提供，會自動改回預設並提示。每個請求
+在執行 CLI 前都會依最新清單驗證（422，不會把任意字串傳給 CLI）。執行檔路徑：`AGY_PATH`、`CODEX_PATH`、
+`CLAUDE_PATH`；每個 CLI 都在空的私有暫存目錄中執行。
+
 ### 防止幻覺
 - **規則**（`backend/app/llm/system_prompt.md`，每次都送）：最佳著、候選著與變化只來自 Fairy-Stockfish，
   合法著、pocket 與局面事實只來自規則引擎；評估數字與將殺步數只能引用 engine 的值；每個說法要分清
@@ -143,7 +158,8 @@ cd backend && SHOW_ANSWERS=1 uv run python scripts/llm_smoke.py   # a few reques
 
 - 「AI 解釋」：按需（也可選擇停留在局面上時自動）產生、串流顯示的 LLM 解釋，依據的正是畫面上
   的 engine 結果與事實，並知道目前的變化與實戰著法——有 `ANTHROPIC_API_KEY` 時用 Claude，
-  沒有 key 時用本機 `agy` CLI（見 LLM 設定）；回答中沒有依據的著法、評估、將殺與優勢說法會被標示，
+  沒有 key 時用本機 `agy` CLI，觀看者也可自選 agy／codex／claude CLI 及其 model 與 effort（見 LLM 設定）；
+  回答中沒有依據的著法、評估、將殺與優勢說法會被標示，
   並可展開「AI 看到的資料」
 
 - 「Ask about this position」：針對目前局面或變化的快速問題與自由提問；你提到的著法（例如
