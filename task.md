@@ -1,3 +1,8 @@
+<p align="right">
+  <a href="task.md"><img alt="繁體中文" src="https://img.shields.io/badge/%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-0969da?style=for-the-badge"></a>
+  <a href="task.en.md"><img alt="English" src="https://img.shields.io/badge/English-6e7781?style=for-the-badge"></a>
+</p>
+
 # Crazyhouse Review 專案主控 Prompt
 
 你現在是本專案的主要軟體工程 Agent。
