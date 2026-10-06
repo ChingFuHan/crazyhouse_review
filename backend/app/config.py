@@ -74,7 +74,8 @@ class LLMSettings:
     effort: str
     max_tokens: int
     agy_path: str = "agy"
-    agy_timeout_s: float = 180
+    # Time limit for one answer from an AI CLI (high effort levels and whole-game scans take minutes).
+    cli_timeout_s: float = 600
     # The AI CLIs a viewer may choose from (executable names or paths).
     cli_paths: dict[str, str] | None = None
 
@@ -96,7 +97,7 @@ def llm_settings() -> LLMSettings:
         effort=os.environ.get("LLM_EFFORT", "medium"),
         max_tokens=int(os.environ.get("LLM_MAX_TOKENS", "16000")),
         agy_path=agy_path,
-        agy_timeout_s=float(os.environ.get("AGY_TIMEOUT_S", "180")),
+        cli_timeout_s=float(os.environ.get("LLM_CLI_TIMEOUT_S") or os.environ.get("AGY_TIMEOUT_S") or 600),
         cli_paths={
             "agy": agy_path,
             "codex": os.environ.get("CODEX_PATH", "codex"),

@@ -126,7 +126,7 @@ def test_timeout_kills_the_run(fake_agy, monkeypatch):
     monkeypatch.setattr("app.llm.provider.CLI_GRACE_S", 0)
     provider, args = fake_agy("hang", timeout_s=1)
     start = time.monotonic()
-    with pytest.raises(LLMError, match="逾時"):
+    with pytest.raises(LLMError, match=r"逾時：agy:gemini-3\.8-flash-high 超過 1 秒.*降低 effort"):
         asyncio.run(complete(provider, "S", MESSAGES))
     assert time.monotonic() - start < 5
     pid = int(Path(str(args) + ".pid").read_text())
@@ -196,6 +196,10 @@ def test_codex_runs_read_only_with_the_prompt_on_stdin(fake_agy):
     assert argv[argv.index("-s") + 1] == "read-only" and argv[argv.index("-C") + 1] == recorded["cwd"]
     assert argv[argv.index("-m") + 1] == "gpt-6.1-sol"
     assert argv[argv.index("-c") + 1] == 'model_reasoning_effort="low"'
+    # Clean run: none of the user's own codex config, rules, hooks, plugins or tools.
+    assert "--ignore-user-config" in argv and "--ignore-rules" in argv
+    disabled = {argv[i + 1] for i, arg in enumerate(argv) if arg == "--disable"}
+    assert {"hooks", "plugins", "apps", "shell_tool", "shell_snapshot"} <= disabled
     assert recorded["stdin"].startswith("SYSTEM") and recorded["stdin"].rstrip().endswith("現在呢？")
 
 

@@ -152,7 +152,7 @@ class CliProvider:
 
     label = "cli"
 
-    def __init__(self, command: str, model: str | None = None, effort: str | None = None, timeout_s: float = 180) -> None:
+    def __init__(self, command: str, model: str | None = None, effort: str | None = None, timeout_s: float = 600) -> None:
         executable = shutil.which(command)
         if executable is None:
             raise LLMUnavailable(f"找不到 {self.label} CLI（{command}）")
@@ -173,6 +173,12 @@ class CliProvider:
         if self._workdir is not None:
             shutil.rmtree(self._workdir, ignore_errors=True)
             self._workdir = None
+
+    def _timeout_message(self) -> str:
+        return (
+            f"AI 回答逾時：{self.name} 超過 {int(self.timeout_s)} 秒仍未完成。"
+            "可降低 effort、換較快的 model，或改用其他 AI。"
+        )
 
     def command(self, system: str, messages: list[dict]) -> tuple[list[str], str | None]:
         """Arguments, and the text to send on stdin (None: nothing)."""
@@ -212,11 +218,11 @@ class CliProvider:
             while True:
                 remaining = deadline - loop.time()
                 if remaining <= 0:
-                    raise LLMError("AI 回答逾時")
+                    raise LLMError(self._timeout_message())
                 try:
                     line = await asyncio.wait_for(process.stdout.readline(), remaining)
                 except TimeoutError as timeout:
-                    raise LLMError("AI 回答逾時") from timeout
+                    raise LLMError(self._timeout_message()) from timeout
                 if not line:
                     break
                 parsed = self.parse(line)
@@ -292,14 +298,29 @@ class AgyProvider(CliProvider):
                         "usage": result.get("usage")}
 
 
+# Run codex clean: only the login is shared with the user's own codex. Their config.toml (model
+# provider / proxy, MCP servers, default effort), exec-policy rules, hooks, plugins and every tool stay
+# off: an answer needs no tools, and each of them slowed answers down (a whole-game scan: 104 s with
+# the user's setup vs 32 s clean). ~/.codex/AGENTS.md is still read by codex; with no tools left it
+# has nothing to act on.
+CODEX_CLEAN = [
+    "--ignore-user-config", "--ignore-rules",
+    *(arg for feature in ("hooks", "plugins", "apps", "shell_tool", "shell_snapshot", "multi_agent",
+                          "browser_use", "computer_use") for arg in ("--disable", feature)),
+]  # fmt: skip
+
+
 class CodexProvider(CliProvider):
-    """`codex exec` (OpenAI Codex): read-only sandbox, no session kept, prompt on stdin. Codex reports
-    the answer as one message when it is complete (no partial text)."""
+    """`codex exec` (OpenAI Codex), run clean (see CODEX_CLEAN): read-only sandbox, no session kept,
+    prompt on stdin. Codex reports the answer as one message when it is complete (no partial text)."""
 
     label = "codex"
 
     def command(self, system: str, messages: list[dict]) -> tuple[list[str], str | None]:
-        args = ["exec", "--json", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "-C", self._cwd()]
+        args = [
+            "exec", "--json", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "-C", self._cwd(),
+            *CODEX_CLEAN,
+        ]  # fmt: skip
         if self.model:
             args += ["-m", self.model]
         if self.effort:

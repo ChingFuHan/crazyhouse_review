@@ -127,7 +127,7 @@ class ProviderPool:
     """The CLIs a viewer may choose: their live catalogs and one provider instance per choice."""
 
     commands: dict[str, str]  # provider id -> executable name or path
-    timeout_s: float = 180
+    timeout_s: float = 600
     _catalog: list[LlmProviderOption] = field(default_factory=list)
     _read_at: float = 0.0
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)

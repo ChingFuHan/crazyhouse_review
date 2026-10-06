@@ -36,7 +36,7 @@ def make_explain_service(settings: LLMSettings) -> ExplainService:
         elif settings.provider == "anthropic":
             provider = AnthropicProvider(settings.model, settings.effort, settings.max_tokens)
         elif settings.provider == "agy":
-            provider = AgyProvider(settings.agy_path, settings.model, None, settings.agy_timeout_s)
+            provider = AgyProvider(settings.agy_path, settings.model, None, settings.cli_timeout_s)
         else:
             return ExplainService(None, "LLM 未設定：請在 .env 設定 ANTHROPIC_API_KEY，或安裝並登入 agy CLI")
     except LLMUnavailable as error:
@@ -59,7 +59,7 @@ def create_app(
         app.state.engine = EngineService(settings or engine_settings())
         llm = llm_settings()
         app.state.explain = explain_service or make_explain_service(llm)
-        app.state.llm_pool = ProviderPool(llm.cli_paths or {}, llm.agy_timeout_s)
+        app.state.llm_pool = ProviderPool(llm.cli_paths or {}, llm.cli_timeout_s)
         review_engine = review_settings or review_engine_settings()
         app.state.review = ReviewService(EngineService(review_engine), review_engine.movetime_ms)
         yield
