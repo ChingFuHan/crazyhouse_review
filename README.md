@@ -9,7 +9,8 @@
 專為 Crazyhouse 對局設計的互動式復盤棋盤：載入 PGN 或 FEN、逐步瀏覽對局、下自己的變化，
 並同時看到 Fairy-Stockfish 分析與說明——一個完全由 engine 與規則計算出的事實面板，以及
 LLM 的自然語言回答；LLM 拿到的正是你眼前的局面、手中棋子（pocket）、變化與 engine 結果。
-本專案不是對弈網站、題庫訓練、積分系統，也不是多變體平台。
+另有「題目」頁：從對局挖出或刻意製造的 crazyhouse 題目（進攻、防守、中局攻防、與 engine 對轟），
+依暱稱帳號的 rating 調整難度。本專案不是對弈網站，也不是多變體平台。
 
 ## 架構
 - `backend/` — FastAPI + python-chess。`app/chess_core.py` 是唯一的 Crazyhouse 規則實作；
@@ -144,6 +145,28 @@ cd backend && uv run python scripts/llm_eval.py --recheck reports/llm-eval-<time
 cd backend && SHOW_ANSWERS=1 uv run python scripts/llm_smoke.py   # a few requests, uses credits
 ```
 
+## 題目（Puzzles）
+頂端分頁「復盤｜題目」（`#/puzzles`）。輸入暱稱即可登入（不需密碼，區網內使用；rating 與作答紀錄存在伺服器）。
+
+| 題型 | 內容 | 判定（engine 搜尋，解題方勝率） |
+|---|---|---|
+| 進攻題 | 找出致勝的著法 | 有將殺（≤ 7 步）或勝率 ≥ 0.6，且第二佳著差 ≥ 0.35（唯一解） |
+| 防守題 | 對手有致命威脅，找出唯一守法 | 若停一手對手勝率 ≥ 0.5；最佳著守住（≥ −0.3）且第二佳著差 ≥ 0.35 |
+| 中局攻防 | 連續多步的唯一好著 | 中局、雙方都有威脅，解答 ≥ 3 步 |
+| 中局對轟 | 與 engine 對下 6 步 | 中局、局勢接近、雙方王都受攻擊且都能打入將軍；結束時勝率比開局好 0.2 以上為勝、差 0.2 以上為負 |
+
+- **解答線**：解題方每步都必須是唯一好著，對手走 engine 最佳，直到將殺或優勢確立；最後一步任何將殺都算對。
+- **題目來源**：(1) 復盤頁「從這盤挖題」掃描整盤主線；(2) 復盤頁「存成題目」把棋盤上的局面存成指定題型（engine 驗證，
+  不適合時說明原因）；(3) 題目頁「製造新題」：engine 從常見開局自我對弈、偶爾走人類會犯的次佳著，再挑出人最容易看漏的
+  局面。所有挖題與製題在第三個 engine process（`PUZZLE_ENGINE_THREADS`，預設 2）上背景執行，不影響復盤分析。
+- **人類難度**：短搜尋（深度 2／6）選的著與正解不同、正解是安靜著（明明有將軍／吃子可走）、棄子、次佳著是誘人的將軍或吃子，
+  合成 0–1 的難度；初始題目 rating = 依步數的基準 + 難度加成。
+- **Rating**：Glicko-2（同 lichess），玩家與題目雙向更新；同一題只有第一次作答計分；用了提示或看解答算失敗。選題以玩家
+  rating ±100 開始逐步放寬。
+- **匯出**：複製 FEN（lichess 格式）、複製 PGN（作答後含解答）、「在 lichess 分析／對戰」開啟 lichess 分析棋盤（可從該局面
+  與電腦或朋友對下）、「在復盤棋盤分析」把題目與解答載入復盤頁（可接著用 AI 解釋）。
+- 資料存在 `DATA_DIR`（預設 `backend/data/crazyhouse.db`，SQLite，已 git-ignore）。
+
 ## 目前功能
 - Crazyhouse 局面狀態（含 pocket 與升變標記的 FEN）、合法著法（含打入）
 - 以 UCI 或 SAN 輸入著法，不合法時顯示易懂的原因
@@ -193,3 +216,5 @@ cd backend && SHOW_ANSWERS=1 uv run python scripts/llm_smoke.py   # a few reques
   （面板顯示「已中斷」並提供「重新分析」按鈕），選很大的 Hash/Threads 也會影響所有人使用的機器。
 - 自動化測試使用假的 LLM；真實回答以 `scripts/llm_smoke.py` 與 `scripts/llm_eval.py` 檢查（已用 agy 驗證）。
   回答的自動檢查只涵蓋著法、評估、將殺與優勢方向。
+- 題目：暱稱帳號沒有密碼（任何人都能用別人的暱稱）；中途走出與解答不同、但同樣好的非將殺著法會被判錯；製題每題約需數分鐘
+  engine 時間。

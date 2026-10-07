@@ -10,7 +10,9 @@ An interactive review board for Crazyhouse games only: load a PGN or FEN, step t
 play your own variations, and see Fairy-Stockfish analysis together with explanations — a
 fact-only panel computed from the engine and the rules, and natural-language answers from an LLM
 that is given exactly the position, pockets, variation and engine result you are looking at.
-It is not a playing site, puzzle trainer, rating system or multi-variant platform.
+A second page offers crazyhouse puzzles mined from games or made on purpose (attack, defense,
+middlegame tactics, battles against the engine), adapted to a nickname account's rating. It is not a
+playing site or a multi-variant platform.
 
 ## Architecture
 - `backend/` — FastAPI + python-chess. `app/chess_core.py` is the single Crazyhouse rules
@@ -165,6 +167,36 @@ cd backend && uv run python scripts/llm_eval.py --recheck reports/llm-eval-<time
 cd backend && SHOW_ANSWERS=1 uv run python scripts/llm_smoke.py   # a few requests, uses credits
 ```
 
+## Puzzles
+Tabs 「復盤｜題目」 (review | puzzles, `#/puzzles`) at the top. Sign in with a nickname (no password, for the
+local network; ratings and attempts are kept on the server).
+
+| Kind | What to do | How it is found (engine searches, solver's winning chances) |
+|---|---|---|
+| 進攻題 attack | find the winning move | mate (≤ 7) or chances ≥ 0.6, the second best ≥ 0.35 worse (one answer) |
+| 防守題 defense | the opponent threatens; find the only defense | passing would give the opponent ≥ 0.5; the best move holds (≥ −0.3), the second best ≥ 0.35 worse |
+| 中局攻防 tactics | several only-moves in a row | middlegame, threats on both sides, ≥ 3 solver moves |
+| 中局對轟 battle | play 6 moves against the engine | middlegame, balanced, both kings attacked and both sides can drop with check; ending ≥ 0.2 better than the start wins, ≥ 0.2 worse loses |
+
+- **Solutions**: every solver move must be the only good one, the opponent plays the engine's best, until
+  mate or a clear win; on the last move any mate counts.
+- **Sources**: (1) 「從這盤挖題」 (mine this game) on the review page scans the main line; (2) 「存成題目」
+  (save as puzzle) stores the board's position as the chosen kind (checked by the engine, with the reason
+  when it does not qualify); (3) 「製造新題」 (make new puzzles) on the puzzle page: engine self-play from
+  common openings, now and then playing a human-like second choice, keeping the positions a human is most
+  likely to miss. Mining and making run in the background on a third engine process
+  (`PUZZLE_ENGINE_THREADS`, default 2), so the review board is never slowed down.
+- **Human difficulty**: a short search (depth 2 / 6) picking another move, a quiet answer while checks or
+  captures are available, a sacrifice, a tempting check or capture as the second choice — combined into a
+  0–1 hardness; a puzzle's first rating = a base by length + a hardness bonus.
+- **Ratings**: Glicko-2 (as on lichess) for players and puzzles; only the first attempt at a puzzle counts;
+  a hint or showing the solution counts as a failure. Puzzles are chosen within ±100 of the player's
+  rating, widened step by step.
+- **Export**: copy the FEN (lichess form), copy the PGN (with the solution after an attempt), open the
+  lichess analysis board (from which one can play the computer or a friend), or open the puzzle and its
+  solution on the review board (where the AI can explain it).
+- Data: `DATA_DIR` (default `backend/data/crazyhouse.db`, SQLite, git-ignored).
+
 ## Current features
 - Crazyhouse position state (FEN with pockets and promoted markers), legal moves incl. drops
 - Move input as UCI or SAN with readable illegal-move reasons
@@ -224,3 +256,6 @@ cd backend && SHOW_ANSWERS=1 uv run python scripts/llm_smoke.py   # a few reques
 - Automated tests use a fake LLM; real answers are checked with `scripts/llm_smoke.py` and
   `scripts/llm_eval.py` (agy verified). The automatic answer check covers moves, evaluations, mates and
   advantage claims only.
+- Puzzles: nickname accounts have no password (anyone can use another nickname); a different but equally
+  good non-mating move in the middle of a solution is judged wrong; making a puzzle takes minutes of engine
+  time.

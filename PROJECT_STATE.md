@@ -20,6 +20,8 @@ Milestone 4（對話 + 候選著重新分析 + 能感知變化的問答）完成
 類 lichess 的 engine 設定 + 串流分析完成（task.md 之後的使用者需求，2026-10-06）。
 防幻覺機制（回答自動檢查、「AI 看到的資料」、真實 LLM 評測）與雙方全局掃描完成（使用者需求，2026-10-07）。
 觀看者可自選 AI 來源（agy／codex／claude CLI 訂閱）、model 與 effort，清單即時從 CLI 讀取，完成（使用者需求，2026-10-07）。
+題目頁完成（使用者需求，2026-10-08）：進攻／防守／中局攻防／中局對轟題，來源為對局挖題、復盤頁存成題目或不完美的自我
+對弈製題；暱稱帳號與 Glicko-2 rating；可匯出 FEN／PGN／lichess。（task.md §35 原把題目與 rating 列為初期非目標，使用者明確要求。）
 
 ## 目前任務狀態
 依 task.md 嚴格驗證（2026-10-06）發現並修正：README/PROJECT_STATE 過時、LLM context 缺
@@ -40,6 +42,7 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
 再之後（使用者回報「AI 回答逾時」）：使用者用 codex 跑全局掃描時逾時（上限 195 秒；codex 沿用了個人設定——
 預設 effort xhigh、caveman proxy、MCP、hooks）。現在 codex 乾淨執行、CLI 上限改為 600 秒（`LLM_CLI_TIMEOUT_S`），
 等待中的回答顯示使用中的 AI 並有取消按鈕。
+再之後：題目頁（見架構）。
 目前沒有進行中的任務。
 
 ## 目前架構
@@ -176,6 +179,19 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
     授權 → 只在本機下載，永不 commit）。`EngineSettings.eval_file`（ENGINE_EVAL_FILE，空 = 傳統評估）；
     engine 名稱以 " NNUE"/" classical" 結尾，讓 analysis_id 與快取不會混用兩者。已透過 python-chess
     確認 NNUE 有啟用（FSF info string）。
+- 題目（`backend/app/puzzles/`）：`store.py` 為 DATA_DIR 中的 SQLite（題目以 (fen, type) 唯一、玩家暱稱唯一（不分大小寫）、
+  作答以 (玩家, 題目) 唯一＝只有第一次作答計分）；`rating.py` Glicko-2（測試對照論文範例；RD 下限 45）；`miner.py` 在「第三個」
+  engine process 上執行（`puzzle_engine_settings`，2 threads、500 ms，所有搜尋 protected）：`unique()`＝最佳與次佳勝率差 ≥ 0.35
+  （整局分析的尺度），一步殺一律算唯一（任何將殺都接受），較長的將殺必須是唯一的將殺；進攻（將殺 ≤ 7 或 ≥ 0.6，且前一步
+  還沒贏定）、防守（空著威脅讓對手 ≥ 0.5、最佳 ≥ −0.3 且 < 0.6）、中局攻防（解題方 ≥ 3 步、ply ≥ 16、對手威脅 ≥ 0.2）、對轟
+  （ply ≥ 16、|勝率| ≤ 0.35、`tense()`：雙方王區受攻擊、雙方 pocket 非空且可打入將軍；6 步）；`solution()` 依序走唯一好著與 engine
+  回應（≤ 6 步，將殺 ≤ 7），以解題方著法結束；`hardness()`：深度 2／6 選的著不同、明明有強制著卻是安靜著、棄子（en prise）、
+  次佳是誘人的將軍或吃子 → 初始 rating 1100 + 150·(步數−1) + 700·難度（對轟 1400 + 600·難度）；`mine_line` 跳過已在解答內的局面。
+  `generator.py`：從 `openings.py`（8 條常見開局、6–14 ply）自我對弈，120 ms 搜尋，在 0.25 以內時依 .7/.2/.1 選最佳／次佳／第三，
+  再挖題並依難度排序。`service.py`：下一題（±100 逐步放寬）、無狀態判定（序列必須是解答的前綴）、提示（算失敗）、看解答、對轟
+  每步（同局面 + root_moves 搜尋評語；結果與開局比 ±0.2）、匯出（`lichess_fen` 把 pocket 當第 9 列；PGN 只在作答後含解答）、
+  手動新增（engine 驗證，不適合時說明原因）、背景挖題／製題工作。路由 `routers/puzzles.py`；測試用自己的 DATA_DIR
+  （`tests/conftest.py`），E2E 每次執行用全新的暫存 DATA_DIR。
 - `frontend/` React 19 + TS + Vite 8 + Chessground 9.2。瀏覽器中「沒有」規則邏輯。
   - `src/tree.ts`：由 backend 局面組成的純對局樹（id = position_id）。每次插入都檢查不變式（子節點
     的著法序列 = 父節點序列 + 1 步）。`variationId` = "main" 或 `v:<第一個節點 id>`；`origin`
@@ -235,6 +251,10 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
     analysis_id（以 position_id + analysis_id 為鍵；新的事實載入時，同一局面先前的事實保持顯示）；
     WhyPanel 標明深度。`src/explain.ts` 把事實轉成只陳述事實的繁體中文句子（直接效果、國王安全、
     應著、PV、pocket、以走子方視角的候選著比較、警示）；`WhyPanel` 顯示它們（對局結束時顯示上一步）。
+  - 頁面：`src/route.ts`（hash：`#/` 復盤、`#/puzzles`），`Root.tsx` 只掛載畫面上的頁面，`components/Nav.tsx`。題目頁
+    `src/puzzles/`（`usePlayer`、`usePuzzle`、`PuzzlePage`、`PuzzleLibrary`）；復盤頁的 `components/PuzzleTools.tsx`（存成題目、
+    從這盤挖題）；`session.openInReview(pgn)` 把題目交給復盤頁；`clipboard.ts` 複製時有 execCommand 備援（區網 http 位址沒有
+    navigator.clipboard）。
   - Vite dev server :5180 把 `/api` 代理到 backend :8820。
   - 區網部署：`scripts/install_service.sh` → systemd user service `crazyhouse-review`（已啟用，
     Linger=yes 所以開機即啟動）執行 `scripts/run_server.sh`，HOST=0.0.0.0、PORT=8820、
@@ -294,6 +314,7 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
 - Engine：只有一個共用的互動 process；兩個分頁分析不同局面時會互相取代對方的搜尋（顯示為 已中斷 +
   重新分析）。Threads/Hash 的選擇會影響整台機器。
 - 寬度 390 px 時 chessground 的檔案座標會超出 2 px（原本就有）。
+- 題目：暱稱帳號沒有密碼；解答中途走出不同但同樣好的非將殺著會被判錯；製題每題需數分鐘 engine 時間。
 - AI 選擇：Codex 一次給出完整回答（思考時沒有逐字顯示）；Claude 的 model 清單是 `--help` 列出的別名
   （CLI 也接受完整 model 名稱，但不會列出）。
 - 回答自動檢查只涵蓋著法、評估、將殺與優勢方向（不含棋子位置等其他敘述）；子句中沒提到某方或著法的中文
@@ -306,7 +327,9 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
   於著法落地前執行時才通過。
 
 ## 驗證狀態
-- `cd backend && uv run pytest -q` → 215 passed（含：真的 uvicorn 伺服器與連線——用戶端中途斷開
+- `cd backend && uv run pytest -q` → 226 passed（含 `tests/test_puzzle_store.py`（Glicko-2 論文範例、儲存、只計分一次）與
+  `tests/test_puzzles.py`（真 engine：找出進攻與防守題、接受其他將殺、重做不計分、提示、走錯、進度不符 422、對轟下到結束、手動新增
+  與拒絕、背景挖真實對局與製題））（含：真的 uvicorn 伺服器與連線——用戶端中途斷開
   `/api/explain/stream` 後數秒內 CLI 程序被結束；codex 乾淨執行參數；逾時訊息）（含 `tests/test_cli_providers.py`：三個 CLI 以重播真實輸出
   的假執行檔測試——argv、stdin、私有目錄、effort 參數、失敗、未登入、逾時與提早關閉時結束程序；
   `tests/test_llm_catalog.py`：以真實 help／清單文字測試解析、CLI 更新新增／移除 model 時即時重讀、拒絕的
@@ -330,7 +353,8 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
   候選著流程、SSE 事件、缺 key 時 503、key 永不出現在錯誤中、以模擬 SDK 串流測試拒答／fallback。
   沒有真實的 Claude 呼叫。
 - `cd frontend && npx vitest run` → 49 passed；`npx tsc -b`、`npm run lint`、`npx vite build` 無誤。
-- `cd frontend && npx playwright test` → 38 passed（含：取消慢速的 codex 回答與全局掃描後再提問）（含：從即時清單選 Codex CLI + model + effort，並取得該 CLI
+- `cd frontend && npx playwright test` → 42 passed（含 `e2e/puzzles.spec.ts`：用另一個將殺打入解出 → rating 上升、解答、複製
+  FEN、lichess 彈出視窗網址、載入復盤頁；防守題的提示與走錯；對轟下到結束；復盤頁存成題目（重複被拒）與挖題）（含：取消慢速的 codex 回答與全局掃描後再提問）（含：從即時清單選 Codex CLI + model + effort，並取得該 CLI
   針對棋盤 FEN 的回答，重新整理後保留；CLI 更新移除所選 model → 提示並改回預設；手機上走棋不再捲動頁面）（含：未分析著法與 +9.9 評估的回答警告、含棋盤 FEN 的
   「AI 看到的資料」、雙方全局掃描且瀏覽時保留）（含：AI 解釋被延遲 4 秒期間仍可送出自由問題與快捷
   問題、連點只送出一次、整次執行 server 沒有 traceback）（storageState 預設 1 秒搜尋；

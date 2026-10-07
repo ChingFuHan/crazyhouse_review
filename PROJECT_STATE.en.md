@@ -22,6 +22,10 @@ Anti-hallucination layer (answer checks, model-input viewer, real-LLM eval) and 
 each side's errors DONE (user requests, 2026-10-07).
 Viewer choice of AI source (agy / codex / claude CLI subscriptions), model and effort from live CLI
 catalogs DONE (user request, 2026-10-07).
+Puzzle page DONE (user request, 2026-10-08): attack / defense / middlegame tactics / battle puzzles,
+mined from games, saved from the review board or made by imperfect self-play; nickname accounts with
+Glicko-2 ratings; export to FEN / PGN / lichess. (task.md §35 listed puzzles and ratings as early
+non-goals; the user asked for them explicitly.)
 
 ## Current task status
 Strict verification against task.md (2026-10-06) found and fixed: stale README/PROJECT_STATE,
@@ -47,6 +51,7 @@ moving the board away mid-interaction (now only the move panel scrolls).
 Then (user report "AI 回答逾時"): the user's codex whole-game scans timed out (195 s limit; codex ran
 with their personal setup — xhigh default effort, caveman proxy, MCP, hooks). Codex now runs clean,
 the CLI limit is 600 s (`LLM_CLI_TIMEOUT_S`), pending answers show the AI and a cancel button.
+Then: the puzzle page (see architecture).
 No task in progress.
 
 ## Current architecture
@@ -202,6 +207,25 @@ No task in progress.
     this 2022 net not stated → downloaded locally, never committed). `EngineSettings.eval_file`
     (ENGINE_EVAL_FILE, empty = classical); engine name ends with " NNUE"/" classical" so analysis_id
     and caches never mix the two. Verified NNUE is active through python-chess (FSF info string).
+- Puzzles (`backend/app/puzzles/`): `store.py` SQLite in DATA_DIR (puzzles unique per (fen, type),
+  players unique nickname (nocase), attempts unique (player, puzzle) = only the first attempt is rated);
+  `rating.py` Glicko-2 (paper example in tests; RD floor 45); `miner.py` on a THIRD engine process
+  (`puzzle_engine_settings`, 2 threads, 500 ms, all searches protected): `unique()` = best vs second ≥ 0.35
+  winning chances (review scale), mate in 1 always unique (any mate accepted), longer mates must be the
+  only mate; attack (mate ≤ 7 or ≥ 0.6, not already won one move earlier), defense (null-move threat ≥ 0.5
+  for the opponent, best ≥ −0.3, < 0.6), tactics (≥ 3 solver moves, ply ≥ 16, opponent threat ≥ 0.2),
+  battle (ply ≥ 16, |chances| ≤ 0.35, `tense()`: both king zones attacked, both pockets non-empty with drop
+  checks; 6 plies); `solution()` follows only-moves + engine replies (≤ 6, mates ≤ 7), ends on a solver move;
+  `hardness()` depth-2/6 disagreement, quiet move with forcing moves available, sacrifice (en prise),
+  tempting check/capture second choice → initial rating 1100 + 150·(moves−1) + 700·hardness (battle
+  1400 + 600·h); `mine_line` skips positions inside a found solution. `generator.py`: self-play from
+  `openings.py` (8 common lines, 6–14 plies), 120 ms searches, best / 2nd / 3rd with weights .7/.2/.1 when
+  within 0.25, mined and sorted by hardness. `service.py`: next puzzle (±100 widening), stateless move
+  judging (line must be a prefix of the solution), hint (counts as failure), give up, battle moves (verdict
+  from same-position searches with root_moves; result vs start ±0.2), export (`lichess_fen` puts the pocket
+  as a 9th rank; PGN with the solution only after an attempt), manual create (engine-checked, reason on
+  refusal), background mine / generate jobs. Router `routers/puzzles.py`; tests use their own DATA_DIR
+  (`tests/conftest.py`), E2E a fresh tmp DATA_DIR per run.
 - `frontend/` React 19 + TS + Vite 8 + Chessground 9.2. NO rules logic in the browser.
   - `src/tree.ts`: pure game tree of backend states (id = position_id). Invariant check on every
     insert (child line = parent line + 1 move). `variationId` = "main" or `v:<first node id>`;
@@ -272,6 +296,11 @@ No task in progress.
     same position stay visible while newer ones load); WhyPanel names the depth. `src/explain.ts` turns facts into fact-only Traditional Chinese
     sentences (direct effect, king safety, replies, PV, pocket, candidate comparison in mover POV,
     alerts); `WhyPanel` renders them (or the last move when the game is over).
+  - Pages: `src/route.ts` (hash: `#/` review, `#/puzzles`), `Root.tsx` mounts only the page on screen,
+    `components/Nav.tsx`. Puzzle page `src/puzzles/` (`usePlayer`, `usePuzzle`, `PuzzlePage`,
+    `PuzzleLibrary`); `components/PuzzleTools.tsx` on the review page (save as puzzle, mine this game);
+    `session.openInReview(pgn)` hands a puzzle to the review page; `clipboard.ts` copies with an
+    execCommand fallback (navigator.clipboard is missing on the plain-http LAN origin).
   - Vite dev server :5180 proxies `/api` → backend :8820.
   - LAN deployment: `scripts/install_service.sh` → systemd user service `crazyhouse-review`
     (enabled, Linger=yes so it starts at boot) running `scripts/run_server.sh` with HOST=0.0.0.0,
@@ -341,6 +370,8 @@ No task in progress.
 - Engine: single shared interactive process; two tabs analysing different positions replace each
   other's searches (shown as 已中斷 "interrupted" + 重新分析 "analyse again"). Threads/Hash choices affect the whole machine.
 - At 390 px width chessground's file coordinates overflow by 2 px (pre-existing).
+- Puzzles: nickname accounts have no password; a different but equally good non-mating move mid-solution
+  is judged wrong; making puzzles takes minutes of engine time per puzzle.
 - AI choice: Codex returns its answer in one piece (no partial text while it thinks); Claude's model list
   is the aliases its `--help` names (full model names are accepted by the CLI but not listed).
 - Answer checks cover moves, evaluations, mates and advantage claims only (not piece placement or other
@@ -353,7 +384,10 @@ No task in progress.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 215 passed (incl. a real uvicorn server + real connection: a client
+- `cd backend && uv run pytest -q` → 226 passed (incl. `tests/test_puzzle_store.py` (Glicko-2 paper example,
+  store, rated-once) and `tests/test_puzzles.py` (real engine: attack and defense found, solving with any
+  mate accepted, replay unrated, hints, wrong move, out-of-step 422, battle to the end, manual create +
+  refusal, mining a real game and generating as background jobs)) (incl. a real uvicorn server + real connection: a client
   that drops `/api/explain/stream` ends the CLI run within seconds; clean codex argv; timeout message)
   (incl. `tests/test_cli_providers.py` for all three CLIs
   against a fake executable replaying recorded real output — argv, stdin, private dir, effort flags,
@@ -383,7 +417,10 @@ No task in progress.
   and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
   503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
 - `cd frontend && npx vitest run` → 49 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 38 passed (incl. cancelling a slow codex answer and a slow scan,
+- `cd frontend && npx playwright test` → 42 passed (incl. `e2e/puzzles.spec.ts`: solve a mate puzzle with
+  another mating drop → rating up, solution, FEN copy, lichess popup URL, open on the review board; hint +
+  wrong move on a defense puzzle; a battle to the end; save as puzzle (+ duplicate refused) and mine a game
+  from the review page) (incl. cancelling a slow codex answer and a slow scan,
   then asking again) (incl. picking Codex CLI + model + effort from the
   live list and getting that CLI's answer about the board FEN, kept after reload; a CLI update dropping
   the chosen model → notice and fallback; on a phone, playing a move no longer scrolls the page) (incl. answer warnings for an unanalysed move and a
