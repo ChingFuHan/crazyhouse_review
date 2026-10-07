@@ -159,6 +159,9 @@ def test_mining_a_game_and_making_puzzles_run_in_the_background(tmp_path, monkey
     with client(tmp_path) as c:
         job = wait(c, c.post("/api/puzzles/mine", json={"moves": node.state.moves, "label": "fixture"}).json())
         assert job["status"] == "done" and job["found"] >= 1 and job["done"] == job["total"]
+        store = c.app.state.puzzles.store
+        battles = sorted(store.get(i).source["ply"] for i in range(1, job["found"] + 1) if store.get(i).type == "battle")
+        assert all(b - a >= 8 for a, b in zip(battles, battles[1:])), "battles from one game are spread out"
         assert c.get("/api/puzzles/stats").json()["total"] == job["found"]
         monkeypatch.setattr(generator, "MAX_PLIES", 24)
         made = wait(c, c.post("/api/puzzles/generate", json={"count": 1, "types": ["battle", "attack"]}).json())

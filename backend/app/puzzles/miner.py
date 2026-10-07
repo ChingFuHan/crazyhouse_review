@@ -27,6 +27,7 @@ MAX_SOLVER_MOVES = 6
 MIDDLEGAME_PLY = 16
 BATTLE_BALANCE = 0.35  # battle: |solver's chances| at the start
 BATTLE_PLIES = 6
+BATTLE_SPACING = 8  # plies between two battles from one game, so they are not near copies
 FIRST_PLY = 4  # the first moves of a game are not puzzle material
 
 
@@ -172,6 +173,7 @@ class Miner:
         """Every puzzle along a line (a game); positions inside a found solution are skipped."""
         found: list[Puzzle] = []
         covered: set[str] = set()
+        last_battle = -BATTLE_SPACING
         board = build_board(root_fen, [])
         previous: dict[str, float] = {}  # fen -> chances of its side to move
         for ply in range(len(moves) + 1):
@@ -191,6 +193,10 @@ class Miner:
             if lines:
                 previous[fen] = chances(lines[0], color_name(board.turn))
             for puzzle in puzzles:
+                if puzzle.type == "battle":
+                    if ply - last_battle < BATTLE_SPACING:
+                        continue
+                    last_battle = ply
                 puzzle.source = {**source, "ply": ply}
                 found.append(puzzle)
                 line_board = board.copy()
