@@ -64,6 +64,25 @@ def review_engine_settings() -> EngineSettings:
     )
 
 
+def puzzle_engine_settings() -> EngineSettings:
+    """A third engine process for puzzles (mining, making and battles), so they never slow the board."""
+    base = engine_settings()
+    return EngineSettings(
+        path=base.path,
+        threads=int(os.environ.get("PUZZLE_ENGINE_THREADS", "2")),
+        hash_mb=int(os.environ.get("PUZZLE_ENGINE_HASH_MB", "64")),
+        movetime_ms=int(os.environ.get("PUZZLE_MOVETIME_MS", "500")),
+        max_movetime_ms=base.max_movetime_ms,
+        multipv=3,
+        eval_file=base.eval_file,
+    )
+
+
+def data_dir() -> Path:
+    """Where the puzzle database lives (players, ratings, puzzles)."""
+    return Path(os.environ.get("DATA_DIR") or REPO_ROOT / "backend" / "data")
+
+
 DEFAULT_MODELS = {"anthropic": "claude-opus-5-5", "agy": "gemini-3.8-flash-high"}
 
 

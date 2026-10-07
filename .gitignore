@@ -20,3 +20,6 @@ engines/
 
 # LLM eval reports (scripts/llm_eval.py)
 backend/reports/
+
+# Puzzle database (players, ratings, puzzles)
+backend/data/

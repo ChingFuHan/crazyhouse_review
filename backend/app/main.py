@@ -16,16 +16,23 @@ from .config import (
     EngineSettings,
     LLMSettings,
     allowed_client_networks,
+    data_dir,
     engine_settings,
     llm_settings,
+    puzzle_engine_settings,
     review_engine_settings,
 )
+from .chess_core import STARTING_FEN
 from .engine import EngineService
 from .llm.catalog import ProviderPool
 from .llm.provider import AgyProvider, AnthropicProvider, FakeProvider, LLMProvider, LLMUnavailable
 from .llm.service import ExplainService
 from .review import ReviewService
-from .routers import engine, explain, game, review
+from .puzzles.miner import Miner
+from .puzzles.openings import OPENINGS
+from .puzzles.service import PuzzleService
+from .puzzles.store import PuzzleStore
+from .routers import engine, explain, game, puzzles, review
 
 
 def make_explain_service(settings: LLMSettings) -> ExplainService:
@@ -50,6 +57,7 @@ def create_app(
     review_settings: EngineSettings | None = None,
     frontend_dist: Path | None = REPO_ROOT / "frontend" / "dist",
     allowed_networks: list[IPNetwork] | None = None,
+    puzzle_db: Path | None = None,
 ) -> FastAPI:
     load_dotenv(REPO_ROOT / ".env", override=False)
     networks = allowed_networks if allowed_networks is not None else allowed_client_networks()
@@ -62,7 +70,14 @@ def create_app(
         app.state.llm_pool = ProviderPool(llm.cli_paths or {}, llm.cli_timeout_s)
         review_engine = review_settings or review_engine_settings()
         app.state.review = ReviewService(EngineService(review_engine), review_engine.movetime_ms)
+        puzzle_engine = puzzle_engine_settings()
+        app.state.puzzles = PuzzleService(
+            PuzzleStore(puzzle_db or data_dir() / "crazyhouse.db"),
+            Miner(EngineService(puzzle_engine), puzzle_engine.movetime_ms),
+            [(STARTING_FEN, line) for line in OPENINGS],
+        )
         yield
+        await app.state.puzzles.close()
         await app.state.engine.close()
         await app.state.review.close()
         app.state.explain.close()
@@ -75,6 +90,7 @@ def create_app(
     app.include_router(engine.router)
     app.include_router(explain.router)
     app.include_router(review.router)
+    app.include_router(puzzles.router)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
