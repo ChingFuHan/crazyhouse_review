@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
-import { FAKE_CLI_ENV } from './e2e/fakeCli'
+import { E2E_DATA_DIR, FAKE_CLI_ENV } from './e2e/fakeCli'
 
 // Real stack: FastAPI backend + Vite dev server. No mocks.
 // Dedicated ports and no server reuse: tests always run against the current code,
@@ -32,14 +32,14 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1400, height: 900 } } }],
   webServer: [
     {
-      command: 'uv run uvicorn app.main:app --host 127.0.0.1 --port 8821',
+      command: `rm -rf ${E2E_DATA_DIR} && uv run uvicorn app.main:app --host 127.0.0.1 --port 8821`,
       cwd: '../backend',
       url: 'http://127.0.0.1:8821/api/health',
       reuseExistingServer: false,
       // UI wiring is tested against a deterministic fake LLM that echoes the context it received.
       // Real Claude calls are verified separately (they need ANTHROPIC_API_KEY).
       // The AI CLIs a viewer can choose are fakes too (no subscription quota spent).
-      env: { LLM_PROVIDER: 'fake', REVIEW_MOVETIME_MS: '100', ...FAKE_CLI_ENV },
+      env: { LLM_PROVIDER: 'fake', REVIEW_MOVETIME_MS: '100', DATA_DIR: E2E_DATA_DIR, PUZZLE_MOVETIME_MS: '300', ...FAKE_CLI_ENV },
       timeout: 60_000,
     },
     {

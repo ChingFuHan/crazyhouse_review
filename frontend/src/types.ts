@@ -303,3 +303,95 @@ export interface ReviewJob {
   plies: ReviewPly[]
   error: string | null
 }
+
+export type PuzzleType = 'attack' | 'defense' | 'tactics' | 'battle'
+
+export const PUZZLE_TYPE_NAMES: Record<PuzzleType, string> = {
+  attack: '進攻題',
+  defense: '防守題',
+  tactics: '中局攻防',
+  battle: '中局對轟',
+}
+
+export interface Player {
+  nickname: string
+  rating: number
+  rd: number
+  vol: number
+  plays: number
+}
+
+/** A puzzle as the solver sees it (never the solution). */
+export interface PuzzleView {
+  id: number
+  type: PuzzleType
+  type_name: string
+  fen: string
+  solver: Color
+  solver_moves: number | null
+  battle_plies: number | null
+  rating: number
+  plays: number
+  themes: string[]
+  rated: boolean
+}
+
+export interface RatingChange {
+  rated: boolean
+  score: number
+  before: number
+  after: number
+  puzzle_before: number
+  puzzle_after: number
+}
+
+export interface PuzzleMoveResult {
+  correct: boolean
+  played: MoveModel | null
+  reply: MoveModel | null
+  done: boolean
+  solution: MoveModel[]
+  rating: RatingChange | null
+}
+
+export interface BattleMoveResult {
+  played: MoveModel
+  verdict: 'best' | 'good' | 'inaccuracy' | 'mistake' | 'blunder'
+  best: MoveModel | null
+  chances_best: number
+  chances_played: number
+  reply: MoveModel | null
+  done: boolean
+  moves_left: number
+  final_chances: number | null
+  result: number | null
+  rating: RatingChange | null
+}
+
+export interface PuzzleHint {
+  square: string | null
+  drop: string | null
+}
+
+export interface PuzzleJob {
+  job_id: string
+  kind: 'mine' | 'generate'
+  status: 'running' | 'done' | 'error'
+  done: number
+  total: number
+  found: number
+  message: string
+}
+
+export interface PuzzleExport {
+  fen: string
+  lichess_fen: string
+  pgn: string
+  lichess_analysis_url: string
+  solution_shown: boolean
+}
+
+export interface PuzzleStats {
+  total: number
+  by_type: Record<PuzzleType, number>
+}

@@ -91,12 +91,12 @@ async function squareCenter(page: Page, square: string): Promise<{ x: number; y:
   return { x: box.x + (file + 0.5) * size, y: box.y + (7 - rank + 0.5) * size }
 }
 
-/** Real mouse drag on the board. */
 /** A user scrolls the board into view before moving pieces (the page itself never jumps to it). */
 async function boardInView(page: Page) {
   await page.locator('cg-board').scrollIntoViewIfNeeded()
 }
 
+/** Real mouse drag on the board. */
 export async function dragMove(page: Page, from: string, to: string) {
   await boardInView(page)
   const a = await squareCenter(page, from)

@@ -63,3 +63,9 @@ export function clearSession() {
     // best-effort
   }
 }
+
+/** Make the review page open this PGN when it loads next (e.g. to analyse a puzzle there). */
+export function openInReview(pgn: string) {
+  clearSession()
+  saveSource({ kind: 'pgn', text: pgn })
+}

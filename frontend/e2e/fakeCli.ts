@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url'
 
 const dir = fileURLToPath(new URL('./fake-cli/', import.meta.url))
 
+/** A fresh puzzle database for every test run (the server start clears it). */
+export const E2E_DATA_DIR = join(tmpdir(), 'crazyhouse-review-e2e-data')
+
 export const FAKE_CLI_ENV = {
   AGY_PATH: join(dir, 'agy'),
   CODEX_PATH: join(dir, 'codex'),

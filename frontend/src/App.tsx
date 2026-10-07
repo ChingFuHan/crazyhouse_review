@@ -7,9 +7,11 @@ import { ChatPanel } from './components/ChatPanel'
 import { EnginePanel } from './components/EnginePanel'
 import { ExportPanel } from './components/ExportPanel'
 import { MoveInput } from './components/MoveInput'
+import { Nav } from './components/Nav'
 import { MoveList } from './components/MoveList'
 import { NavControls } from './components/NavControls'
 import { PgnLoader } from './components/PgnLoader'
+import { PuzzleTools } from './components/PuzzleTools'
 import { ReviewBoard } from './components/ReviewBoard'
 import { ReviewPanel } from './components/ReviewPanel'
 import { WhyPanel } from './components/WhyPanel'
@@ -99,6 +101,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <h1>Crazyhouse Review</h1>
+        <Nav current="review" />
         {tree?.headers.White && (
           <span className="players">
             {tree.headers.White} – {tree.headers.Black} {tree.headers.Result}
@@ -159,6 +162,7 @@ export default function App() {
                 </div>
               )}
               <code className="fen" title="Crazyhouse FEN">{position.fen}</code>
+              <PuzzleTools tree={tree} position={position} />
             </section>
             <section className="panel moves">
               <MoveList

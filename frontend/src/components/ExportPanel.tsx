@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api'
+import { copyText } from '../clipboard'
 import { exportNodes } from '../exportPgn'
 import type { GameTree } from '../tree'
 
@@ -19,12 +20,7 @@ export function ExportPanel({ tree }: { tree: GameTree }) {
   }
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(pgn!)
-      setMessage('已複製')
-    } catch {
-      setMessage('無法存取剪貼簿，請手動選取複製')
-    }
+    setMessage((await copyText(pgn!)) ? '已複製' : '無法存取剪貼簿，請手動選取複製')
   }
 
   const download = () => {

@@ -5,6 +5,15 @@ import type {
   Color,
   LlmCatalog,
   LlmChoice,
+  BattleMoveResult,
+  Player,
+  PuzzleExport,
+  PuzzleHint,
+  PuzzleJob,
+  PuzzleMoveResult,
+  PuzzleStats,
+  PuzzleType,
+  PuzzleView,
   EngineAnalysis,
   ExplainResponse,
   GameTreeDto,
@@ -120,6 +129,9 @@ async function readAnswer(
 
 export const api = {
   startPosition: (rootFen?: string) => post<PositionState>('/api/position', { root_fen: rootFen ?? null, moves: [] }),
+  /** The canonical state of a line (legal moves, pockets…). */
+  position: (rootFen: string, moves: string[], signal?: AbortSignal) =>
+    post<PositionState>('/api/position', { root_fen: rootFen, moves }, signal),
   move: (from: PositionState, move: string) => post<PositionState>('/api/move', { ...lineOf(from), move }),
   loadPgn: (pgn: string) => post<GameTreeDto>('/api/pgn', { pgn }),
   /** Streamed analysis with the viewer's settings: `onSnapshot` gets each deeper result; resolves with
@@ -199,6 +211,25 @@ export const api = {
   /** PGN of the whole tree (main line, PGN and user variations, comments), validated by the backend. */
   exportPgn: (rootFen: string, headers: Record<string, string>, nodes: ExportNode[]) =>
     post<{ pgn: string }>('/api/export', { root_fen: rootFen, headers, nodes }),
+  // --- puzzles ---
+  signIn: (nickname: string) => post<Player>('/api/players', { nickname }),
+  nextPuzzle: (player: string, types: PuzzleType[]) =>
+    request<PuzzleView>(`/api/puzzles/next?player=${encodeURIComponent(player)}&types=${types.join(',')}`, {}),
+  puzzleMove: (id: number, player: string, moves: string[], move: string, hintUsed: boolean) =>
+    post<PuzzleMoveResult>(`/api/puzzles/${id}/move`, { player, moves, move, hint_used: hintUsed }),
+  battleMove: (id: number, player: string, moves: string[], move: string) =>
+    post<BattleMoveResult>(`/api/puzzles/${id}/battle`, { player, moves, move }),
+  giveUp: (id: number, player: string) => post<PuzzleMoveResult>(`/api/puzzles/${id}/giveup`, { player }),
+  puzzleHint: (id: number, moves: string[]) => post<PuzzleHint>(`/api/puzzles/${id}/hint`, { moves }),
+  exportPuzzle: (id: number, player: string) =>
+    request<PuzzleExport>(`/api/puzzles/${id}/export?player=${encodeURIComponent(player)}`, {}),
+  createPuzzle: (position: PositionState, type: PuzzleType) =>
+    post<PuzzleView>('/api/puzzles', { root_fen: position.root_fen, moves: position.moves, type }),
+  minePuzzles: (last: PositionState, label: string) =>
+    post<PuzzleJob>('/api/puzzles/mine', { root_fen: last.root_fen, moves: last.moves, label }),
+  generatePuzzles: (count: number, types: PuzzleType[]) => post<PuzzleJob>('/api/puzzles/generate', { count, types }),
+  puzzleJob: (jobId: string) => request<PuzzleJob>(`/api/puzzle-jobs/${jobId}`, {}),
+  puzzleStats: () => request<PuzzleStats>('/api/puzzles/stats', {}),
   /** Whole-game review of a line (the main line), run on the backend's separate review engine. */
   startReview: (last: PositionState) => post<ReviewJob>('/api/review', { root_fen: last.root_fen, moves: last.moves }),
   getReview: (jobId: string, signal?: AbortSignal) => request<ReviewJob>(`/api/review/${jobId}`, { signal }),
