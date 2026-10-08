@@ -337,7 +337,16 @@ export interface PuzzleView {
   title: string
   /** The agent that made or picked the puzzle ("" for engine-only puzzles). */
   ai: string
+  /** The position before the opponent's last move and that move, when known (shown first). */
+  before_fen: string
+  last_move: string
+  /** Reported as broken: out of the rotation, a link still opens it. */
+  disabled: boolean
+  report: string
 }
+
+/** 0: no hint, 1: the agent's hint in words (half a point), 2: the piece to move (no point). */
+export type HintLevel = 0 | 1 | 2
 
 export interface RatingChange {
   rated: boolean
@@ -350,6 +359,8 @@ export interface RatingChange {
 
 export interface PuzzleMoveResult {
   correct: boolean
+  /** Not the answer but as good by the engine: try again, nothing counted. */
+  alternative: boolean
   played: MoveModel | null
   reply: MoveModel | null
   done: boolean
@@ -416,4 +427,35 @@ export interface PuzzleExport {
 export interface PuzzleStats {
   total: number
   by_type: Record<PuzzleType, number>
+}
+
+export interface PuzzleTexts {
+  title: string
+  hint: string
+  explanation: string
+  ai: string
+  ai_warnings: AnswerWarning[]
+}
+
+export type PuzzleSource = 'game' | 'selfplay' | 'manual' | 'design'
+
+export interface PuzzleSummary {
+  id: number
+  type: PuzzleType
+  type_name: string
+  title: string
+  rating: number
+  plays: number
+  wins: number
+  source: PuzzleSource
+  ai: string
+  disabled: boolean
+  report: string
+}
+
+export interface PlayerHistory {
+  player: Player
+  /** Newest first. */
+  attempts: { puzzle: PuzzleSummary; score: number; before: number; after: number; at: number }[]
+  by_type: Partial<Record<PuzzleType, { plays: number; score: number }>>
 }

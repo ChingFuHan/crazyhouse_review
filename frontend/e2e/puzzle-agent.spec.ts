@@ -6,7 +6,7 @@ import { pocketDrop } from './helpers'
 const DESIGNED_FEN = '6k1/5ppp/8/8/8/8/5PPP/6K1[Q] w - - 0 1'
 
 async function chooseCodex(page: Page) {
-  await page.goto('/#/puzzles')
+  await page.goto('/#/puzzles/library')
   const make = page.getByTestId('puzzle-make')
   // The puzzle page has its own AI choice, separate from the review page's.
   await expect(make.getByTestId('ai-choice')).toHaveText('伺服器預設（fake）')

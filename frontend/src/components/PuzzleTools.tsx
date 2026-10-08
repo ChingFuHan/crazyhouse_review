@@ -68,7 +68,7 @@ export function PuzzleTools({ tree, position }: { tree: GameTree; position: Posi
           {job.status === 'running'
             ? `挖題中：${job.done}/${job.total} 個局面…`
             : job.status === 'done'
-              ? <>挖題完成：{job.message}。<a href="#/puzzles">到題目頁</a></>
+              ? <>挖題完成：{job.message}。<a href="#/puzzles/library">到題庫</a></>
               : `挖題失敗：${job.message}`}
         </div>
       )}

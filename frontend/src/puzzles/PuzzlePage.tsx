@@ -1,13 +1,15 @@
 import type { DrawShape } from 'chessground/draw'
 import type { Key } from 'chessground/types'
 import { useEffect, useMemo, useState } from 'react'
+import { describeChoice, useAiChoice } from '../aiChoice'
 import { api } from '../api'
 import { copyText } from '../clipboard'
 import { Nav } from '../components/Nav'
 import { ReviewBoard } from '../components/ReviewBoard'
-import { goTo, usePuzzleLink } from '../route'
+import { type PuzzleTab, goTo, puzzleTabLink, usePuzzleRoute } from '../route'
 import { openInReview } from '../session'
 import { PUZZLE_TYPE_NAMES, type PuzzleType } from '../types'
+import { PuzzleHistory } from './PuzzleHistory'
 import { PuzzleLibrary } from './PuzzleLibrary'
 import { themeLabel } from './themes'
 import { usePlayer } from './usePlayer'
@@ -18,6 +20,11 @@ const TYPES_KEY = 'crazyhouse-review:puzzle-types'
 const SIDE = { white: '白方', black: '黑方' }
 const VERDICTS = { best: '最佳', good: '好著', inaccuracy: '不精確', mistake: '錯著', blunder: '大錯' }
 const RESULTS: Record<string, string> = { '1': '勝：局勢比開局更好', '0.5': '和：守住了局勢', '0': '負：局勢變差' }
+const TABS: [PuzzleTab, string][] = [
+  ['solve', '解題'],
+  ['library', '題庫與製題'],
+  ['history', '我的紀錄'],
+]
 
 function loadTypes(): PuzzleType[] {
   try {
@@ -50,9 +57,17 @@ export function PuzzlePage() {
   const { player, error: playerError, signIn, signOut, setRating } = usePlayer()
   const [nickname, setNickname] = useState('')
   const [types, setTypes] = useState<PuzzleType[]>(loadTypes)
-  const { state, next, open, play, hint, giveUp, showSolution } = usePuzzle(player?.nickname ?? null, setRating)
-  const linked = usePuzzleLink()
+  const { state, next, open, play, retry, reveal, hint, giveUp, showSolution, explain } = usePuzzle(
+    player?.nickname ?? null,
+    setRating,
+  )
+  const route = usePuzzleRoute()
+  const linked = route.id
+  // One AI choice for the puzzle page: making puzzles and explaining one (kept apart from the review page's).
+  const ai = useAiChoice('crazyhouse-review:puzzle-ai-choice')
   const [copied, setCopied] = useState<string | null>(null)
+  const [reporting, setReporting] = useState<string | null>(null)
+  const [reportError, setReportError] = useState<string | null>(null)
   const { puzzle, position, status } = state
   const over = status === 'solved' || status === 'failed' || status === 'finished'
 
@@ -78,7 +93,19 @@ export function PuzzlePage() {
 
   const nextPuzzle = () => {
     if (linked !== null) window.location.hash = '#/puzzles' // leave the link: a reload gives a new puzzle
+    setReporting(null)
     void next(types)
+  }
+
+  const report = async () => {
+    if (!puzzle || !player || reporting === null) return
+    try {
+      await api.reportPuzzle(puzzle.id, player.nickname, reporting.trim())
+      setReportError(null)
+      nextPuzzle()
+    } catch (e) {
+      setReportError(e instanceof Error ? e.message : String(e))
+    }
   }
 
   const shapes = useMemo<DrawShape[]>(() => {
@@ -133,158 +160,232 @@ export function PuzzlePage() {
         </div>
       </header>
       {playerError && <div className="error">{playerError}</div>}
+      <nav className="puzzle-tabs" aria-label="題目頁分頁">
+        {TABS.map(([tab, label]) => (
+          <a key={tab} href={puzzleTabLink(tab)} className={route.tab === tab ? 'active' : ''} aria-current={route.tab === tab ? 'page' : undefined}>
+            {label}
+          </a>
+        ))}
+      </nav>
 
-      <main className="layout">
-        <section className="board-column">
-          {position && puzzle ? (
-            <ReviewBoard position={position} orientation={puzzle.solver} onPlay={play} shapes={shapes} />
-          ) : (
-            <div className="panel engine-note puzzle-empty">
-              {!player ? '輸入暱稱登入後開始解題；rating 會依你的表現調整題目難度。' : status === 'loading' ? '載入題目中…' : state.message}
-            </div>
-          )}
-        </section>
-
-        <aside className="side-column">
-          <section className="panel puzzle-info" data-testid="puzzle-info">
-            <div className="puzzle-types" role="group" aria-label="題型">
-              {TYPES.map((type) => (
-                <label key={type} className="toggle chip">
-                  <input type="checkbox" checked={types.includes(type)} onChange={() => toggleType(type)} />
-                  {PUZZLE_TYPE_NAMES[type]}
-                </label>
-              ))}
-            </div>
-            {puzzle && (
-              <>
-                <h2>
-                  {puzzle.title ? `${puzzle.title}・` : ''}
-                  {puzzle.type_name}{' '}
-                  <span className="muted">
-                    #{puzzle.id} · 題目 rating {puzzle.rating}
-                    {puzzle.rated ? '' : ' · 已做過（不計分）'}
-                  </span>
-                </h2>
-                {puzzle.ai && (
-                  <div className="muted puzzle-maker" data-testid="puzzle-maker">
-                    由 {puzzle.ai} 挑選／撰寫
-                  </div>
-                )}
-                <p className="puzzle-task" data-testid="puzzle-task">
-                  {instruction(state)}
-                </p>
-                {puzzle.themes.length > 0 && over && (
-                  <div className="tags">
-                    {puzzle.themes.flatMap((t) => {
-                      const label = themeLabel(t)
-                      return label ? [<span key={t} className="tag">{label}</span>] : []
-                    })}
-                  </div>
-                )}
-              </>
-            )}
-            {status === 'thinking' && <div className="engine-note">判定中…</div>}
-            {state.message && puzzle && (
-              <div className={`puzzle-feedback ${status}`} data-testid="puzzle-feedback">
-                {state.message}
-              </div>
-            )}
-            {state.hint && state.hintLevel >= 1 && state.hint.text && (
-              <div className="engine-note" data-testid="puzzle-hint-text">
-                提示：{state.hint.text}
-              </div>
-            )}
-            {state.hint && state.hintLevel >= 2 && (
-              <div className="engine-note" data-testid="puzzle-hint">
-                提示：{state.hint.drop ? `從 pocket 打入${state.hint.drop}` : `移動 ${state.hint.square} 的棋子`}
-              </div>
-            )}
-
-            {puzzle?.type === 'battle' && state.battle.length > 0 && (
-              <ol className="battle-log" data-testid="battle-log">
-                {state.battle.map((b, i) => (
-                  <li key={i} className={b.verdict}>
-                    {b.played.san} <strong>{VERDICTS[b.verdict]}</strong>
-                    {b.verdict !== 'best' && b.best && <span className="muted">（engine：{b.best.san}）</span>}
-                    {b.reply && <span> · engine 回 {b.reply.san}</span>}
-                    <span className="muted"> · 勝率 {percent(b.chances_played)}</span>
-                  </li>
-                ))}
-              </ol>
-            )}
-            {status === 'finished' && state.battle.at(-1)?.result != null && (
-              <div className="puzzle-feedback finished" data-testid="battle-result">
-                {RESULTS[String(state.battle.at(-1)!.result)]}（開局勝率 → 結束 {percent(state.battle.at(-1)!.final_chances ?? 0)}）
-              </div>
-            )}
-
-            {state.rating && (
-              <div className="rating-change" data-testid="rating-change">
-                {state.rating.rated ? (
-                  <>
-                    rating {state.rating.before} → <strong>{state.rating.after}</strong>（
-                    {state.rating.after >= state.rating.before ? '+' : ''}
-                    {state.rating.after - state.rating.before}）· 題目 {state.rating.puzzle_before} → {state.rating.puzzle_after}
-                  </>
-                ) : (
-                  '已做過這一題：不計分'
-                )}
-              </div>
-            )}
-
-            {over && state.explanation && (
-              <div className="puzzle-explanation" data-testid="puzzle-explanation">
-                <strong>說明</strong>（{puzzle?.ai}）：{state.explanation}
-                {state.aiWarnings.length > 0 && (
-                  <ul className="unverified">
-                    {state.aiWarnings.map((w) => (
-                      <li key={`${w.kind}:${w.quote}`}>{w.detail}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
-            {over && state.solution.length > 0 && (
-              <div className="puzzle-solution" data-testid="puzzle-solution">
-                解答：
-                {state.solution.map((m, i) => (
-                  <button key={i} className="link" onClick={() => void showSolution(i + 1)}>
-                    {m.san}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className="puzzle-actions">
-              {puzzle && puzzle.type !== 'battle' && status === 'solving' && (
-                <>
-                  <button onClick={() => void hint()} disabled={state.hintLevel === 2}>
-                    {state.hintLevel === 1 ? '再提示' : '提示'}
-                  </button>
-                  <button onClick={() => void giveUp()}>看解答</button>
-                </>
-              )}
-              {player && (
-                <button className="primary" onClick={nextPuzzle} disabled={status === 'loading' || status === 'thinking'}>
-                  {puzzle && !over ? '跳過，下一題' : '下一題'}
-                </button>
-              )}
-            </div>
-
-            {puzzle && (
-              <div className="puzzle-export" data-testid="puzzle-export">
-                <button onClick={() => void exported('fen')}>複製 FEN</button>
-                <button onClick={() => void exported('pgn')}>複製 PGN</button>
-                <button onClick={() => void exported('lichess')}>在 lichess 分析／對戰</button>
-                <button onClick={() => void exported('review')}>在復盤棋盤分析</button>
-                {copied && <span className="muted">{copied}</span>}
+      {route.tab === 'library' && (
+        <main className="puzzle-tab-main">
+          <PuzzleLibrary ai={ai} />
+        </main>
+      )}
+      {route.tab === 'history' && (
+        <main className="puzzle-tab-main">
+          <PuzzleHistory nickname={player?.nickname ?? null} />
+        </main>
+      )}
+      {route.tab === 'solve' && (
+        <main className="layout">
+          <section className="board-column">
+            {position && puzzle ? (
+              <ReviewBoard position={position} orientation={puzzle.solver} onPlay={play} shapes={shapes} />
+            ) : (
+              <div className="panel engine-note puzzle-empty">
+                {!player ? '輸入暱稱登入後開始解題；rating 會依你的表現調整題目難度。' : status === 'loading' ? '載入題目中…' : state.message}
               </div>
             )}
           </section>
 
-          <PuzzleLibrary />
-        </aside>
-      </main>
+          <aside className="side-column">
+            <section className="panel puzzle-info" data-testid="puzzle-info">
+              <div className="puzzle-types" role="group" aria-label="題型">
+                {TYPES.map((type) => (
+                  <label key={type} className="toggle chip">
+                    <input type="checkbox" checked={types.includes(type)} onChange={() => toggleType(type)} />
+                    {PUZZLE_TYPE_NAMES[type]}
+                  </label>
+                ))}
+              </div>
+              {puzzle && (
+                <>
+                  <h2>
+                    {puzzle.title ? `${puzzle.title}・` : ''}
+                    {puzzle.type_name}{' '}
+                    <span className="muted">
+                      #{puzzle.id} · 題目 rating {puzzle.rating}
+                      {puzzle.rated ? '' : ' · 已做過（不計分）'}
+                    </span>
+                  </h2>
+                  {puzzle.ai && (
+                    <div className="muted puzzle-maker" data-testid="puzzle-maker">
+                      由 {puzzle.ai} 挑選／撰寫
+                    </div>
+                  )}
+                  {puzzle.disabled && (
+                    <div className="engine-error" data-testid="puzzle-disabled">
+                      這題已被回報停用（{puzzle.report}），不會再出現在選題中。
+                    </div>
+                  )}
+                  <p className="puzzle-task" data-testid="puzzle-task">
+                    {instruction(state)}
+                  </p>
+                  {puzzle.last_move && position?.last_move && state.line.length === 0 && (
+                    <div className="muted" data-testid="puzzle-last-move">
+                      對手剛走了 {position.last_move.san}
+                    </div>
+                  )}
+                  {puzzle.themes.length > 0 && over && state.revealed && (
+                    <div className="tags">
+                      {puzzle.themes.flatMap((t) => {
+                        const label = themeLabel(t)
+                        return label ? [<span key={t} className="tag">{label}</span>] : []
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+              {status === 'thinking' && <div className="engine-note">判定中…</div>}
+              {state.message && puzzle && (
+                <div className={`puzzle-feedback ${status}`} data-testid="puzzle-feedback">
+                  {state.message}
+                </div>
+              )}
+              {state.hint && state.hintLevel >= 1 && state.hint.text && (
+                <div className="engine-note" data-testid="puzzle-hint-text">
+                  提示：{state.hint.text}
+                </div>
+              )}
+              {state.hint && state.hintLevel >= 2 && (
+                <div className="engine-note" data-testid="puzzle-hint">
+                  提示：{state.hint.drop ? `從 pocket 打入${state.hint.drop}` : `移動 ${state.hint.square} 的棋子`}
+                </div>
+              )}
+
+              {puzzle?.type === 'battle' && state.battle.length > 0 && (
+                <ol className="battle-log" data-testid="battle-log">
+                  {state.battle.map((b, i) => (
+                    <li key={i} className={b.verdict}>
+                      {b.played.san} <strong>{VERDICTS[b.verdict]}</strong>
+                      {b.verdict !== 'best' && b.best && <span className="muted">（engine：{b.best.san}）</span>}
+                      {b.reply && <span> · engine 回 {b.reply.san}</span>}
+                      <span className="muted"> · 勝率 {percent(b.chances_played)}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {status === 'finished' && state.battle.at(-1)?.result != null && (
+                <div className="puzzle-feedback finished" data-testid="battle-result">
+                  {RESULTS[String(state.battle.at(-1)!.result)]}（開局勝率 → 結束 {percent(state.battle.at(-1)!.final_chances ?? 0)}）
+                </div>
+              )}
+
+              {state.rating && (
+                <div className="rating-change" data-testid="rating-change">
+                  {state.rating.rated ? (
+                    <>
+                      rating {state.rating.before} → <strong>{state.rating.after}</strong>（
+                      {state.rating.after >= state.rating.before ? '+' : ''}
+                      {state.rating.after - state.rating.before}）· 題目 {state.rating.puzzle_before} → {state.rating.puzzle_after}
+                    </>
+                  ) : (
+                    '已做過這一題：不計分'
+                  )}
+                </div>
+              )}
+
+              {status === 'failed' && !state.revealed && (
+                <div className="puzzle-actions" data-testid="puzzle-failed-actions">
+                  <button onClick={() => void retry()}>再試一次</button>
+                  <button onClick={reveal}>看解答</button>
+                </div>
+              )}
+              {over && state.revealed && state.explanation && (
+                <div className="puzzle-explanation" data-testid="puzzle-explanation">
+                  <strong>說明</strong>（{puzzle?.ai}）：{state.explanation}
+                  {state.aiWarnings.length > 0 && (
+                    <ul className="unverified">
+                      {state.aiWarnings.map((w) => (
+                        <li key={`${w.kind}:${w.quote}`}>{w.detail}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+              {over && state.revealed && !state.explanation && (
+                <div className="puzzle-explain" data-testid="puzzle-explain">
+                  {state.explaining ? (
+                    <span className="engine-note">AI 撰寫說明中（{state.explaining}）…</span>
+                  ) : (
+                    <button onClick={() => void explain(ai.choice, describeChoice(ai.choice, ai.catalog))}>
+                      請 AI 解釋這題（{describeChoice(ai.choice, ai.catalog)}）
+                    </button>
+                  )}
+                </div>
+              )}
+              {over && state.revealed && state.solution.length > 0 && (
+                <div className="puzzle-solution" data-testid="puzzle-solution">
+                  解答：
+                  {state.solution.map((m, i) => (
+                    <button key={i} className="link" onClick={() => void showSolution(i + 1)}>
+                      {m.san}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="puzzle-actions">
+                {puzzle && puzzle.type !== 'battle' && status === 'solving' && (
+                  <>
+                    <button onClick={() => void hint()} disabled={state.hintLevel === 2}>
+                      {state.hintLevel === 1 ? '再提示' : '提示'}
+                    </button>
+                    <button onClick={() => void giveUp()}>看解答</button>
+                  </>
+                )}
+                {player && (
+                  <button className="primary" onClick={nextPuzzle} disabled={status === 'loading' || status === 'thinking'}>
+                    {puzzle && !over ? '跳過，下一題' : '下一題'}
+                  </button>
+                )}
+              </div>
+
+              {puzzle && (
+                <div className="puzzle-export" data-testid="puzzle-export">
+                  <button onClick={() => void exported('fen')}>複製 FEN</button>
+                  <button onClick={() => void exported('pgn')}>複製 PGN</button>
+                  <button onClick={() => void exported('lichess')}>在 lichess 分析／對戰</button>
+                  <button onClick={() => void exported('review')}>在復盤棋盤分析</button>
+                  {copied && <span className="muted">{copied}</span>}
+                </div>
+              )}
+
+              {puzzle && player && !puzzle.disabled && (
+                <div className="puzzle-report" data-testid="puzzle-report">
+                  {reporting === null ? (
+                    <button className="link" onClick={() => setReporting('')}>
+                      這題有問題？
+                    </button>
+                  ) : (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault()
+                        void report()
+                      }}
+                    >
+                      <input
+                        aria-label="問題原因"
+                        placeholder="哪裡不對（例如：有其他同樣好的解）"
+                        value={reporting}
+                        maxLength={200}
+                        onChange={(e) => setReporting(e.target.value)}
+                      />
+                      <button type="submit">回報並停用</button>
+                      <button type="button" onClick={() => setReporting(null)}>
+                        取消
+                      </button>
+                    </form>
+                  )}
+                  {reportError && <div className="engine-error">{reportError}</div>}
+                </div>
+              )}
+            </section>
+          </aside>
+        </main>
+      )}
     </div>
   )
 }

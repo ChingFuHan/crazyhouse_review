@@ -7,12 +7,16 @@ import type {
   LlmChoice,
   BattleMoveResult,
   GenerateOptions,
+  HintLevel,
   Player,
+  PlayerHistory,
   PuzzleExport,
   PuzzleHint,
   PuzzleJob,
   PuzzleMoveResult,
   PuzzleStats,
+  PuzzleSummary,
+  PuzzleTexts,
   PuzzleType,
   PuzzleView,
   EngineAnalysis,
@@ -37,6 +41,12 @@ export class ApiError extends Error {
 
 async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
   return request<T>(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal })
+}
+
+/** A POST answered with 204 No Content. */
+async function postOnly(path: string, body: unknown): Promise<void> {
+  const response = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  await throwIfFailed(response)
 }
 
 async function request<T>(path: string, init: RequestInit): Promise<T> {
@@ -219,8 +229,15 @@ export const api = {
   /** A given puzzle (a link #/puzzles/<id>). */
   openPuzzle: (id: number, player: string) =>
     request<PuzzleView>(`/api/puzzles/${id}?player=${encodeURIComponent(player)}`, {}),
-  puzzleMove: (id: number, player: string, moves: string[], move: string, hintUsed: boolean) =>
-    post<PuzzleMoveResult>(`/api/puzzles/${id}/move`, { player, moves, move, hint_used: hintUsed }),
+  puzzleMove: (id: number, player: string, moves: string[], move: string, hintLevel: HintLevel) =>
+    post<PuzzleMoveResult>(`/api/puzzles/${id}/move`, { player, moves, move, hint_level: hintLevel }),
+  /** The agent's explanation of a puzzle this player has attempted (written once, then stored). */
+  explainPuzzle: (id: number, player: string, llm: LlmChoice | null) =>
+    post<PuzzleTexts>(`/api/puzzles/${id}/explain`, { player, llm }),
+  reportPuzzle: (id: number, player: string, reason: string) => postOnly(`/api/puzzles/${id}/report`, { player, reason }),
+  restorePuzzle: (id: number) => postOnly(`/api/puzzles/${id}/restore`, {}),
+  puzzleLibrary: () => request<PuzzleSummary[]>('/api/puzzles', {}),
+  playerHistory: (player: string) => request<PlayerHistory>(`/api/players/${encodeURIComponent(player)}/history`, {}),
   battleMove: (id: number, player: string, moves: string[], move: string) =>
     post<BattleMoveResult>(`/api/puzzles/${id}/battle`, { player, moves, move }),
   giveUp: (id: number, player: string) => post<PuzzleMoveResult>(`/api/puzzles/${id}/giveup`, { player }),

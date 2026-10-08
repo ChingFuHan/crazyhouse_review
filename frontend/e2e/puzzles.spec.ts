@@ -58,15 +58,28 @@ test('solve an attack puzzle: rating goes up, the solution and export are offere
   await expect(page.getByTestId('player-rating')).toHaveText(rating!)
 })
 
-test('a wrong move fails the puzzle and shows the answer; a defense puzzle names the threat', async ({ page }) => {
+test('a wrong move fails the puzzle; the solver may try again (unrated) or see the answer', async ({ page }) => {
   await signIn(page, 'e2e-defense', await addPuzzle(page, DEFENSE, 'defense'))
   await expect(page.getByTestId('puzzle-task')).toContainText('對手有致命威脅，找出唯一能守住的著法')
   await page.getByRole('button', { name: '提示' }).click()
   await expect(page.getByTestId('puzzle-hint')).toContainText('移動 d2 的棋子')
   await dragMove(page, 'a3', 'a4')
-  await expect(page.getByTestId('puzzle-feedback')).toContainText('a4 不是答案')
-  await expect(page.getByTestId('puzzle-solution')).toContainText('Bxc3')
+  await expect(page.getByTestId('puzzle-feedback')).toContainText('a4 不是答案（已記為失敗）')
   expect(Number(await page.getByTestId('player-rating').textContent())).toBeLessThan(1500)
+  // The answer stays hidden: try again from before the wrong move, or ask for it.
+  await expect(page.getByTestId('puzzle-solution')).toHaveCount(0)
+  await page.getByTestId('puzzle-failed-actions').getByRole('button', { name: '再試一次' }).click()
+  await expect(page.getByTestId('puzzle-feedback')).toContainText('再試一次（不計分）')
+  await dragMove(page, 'd2', 'c3')
+  await expect(page.getByTestId('puzzle-feedback')).toContainText('解出來了（重試，不計分）')
+  await expect(page.getByTestId('puzzle-solution')).toContainText('Bxc3')
+})
+
+test('after a wrong move the answer can be shown', async ({ page }) => {
+  await signIn(page, 'e2e-reveal', await addPuzzle(page, DEFENSE, 'defense'))
+  await dragMove(page, 'a3', 'a4')
+  await page.getByTestId('puzzle-failed-actions').getByRole('button', { name: '看解答' }).click()
+  await expect(page.getByTestId('puzzle-solution')).toContainText('Bxc3')
 })
 
 test('a battle against the engine is played to the end and rated', async ({ page }) => {
@@ -99,13 +112,14 @@ test('the review board saves the position as a puzzle and mines the game', async
   await loadPgn(page, '[Variant "Crazyhouse"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. Ng5 d5 5. exd5 Nxd5 6. Nxf7 Kxf7 *')
   await tools.getByRole('button', { name: '從這盤挖題' }).click()
   await expect(page.getByTestId('mine-job')).toContainText('挖題完成', { timeout: 60_000 })
-  await page.getByTestId('mine-job').getByRole('link', { name: '到題目頁' }).click()
+  await page.getByTestId('mine-job').getByRole('link', { name: '到題庫' }).click()
   await expect(page.getByTestId('puzzle-library')).toContainText('共')
+  await expect(page.getByTestId('library-list').locator('li').first()).toBeVisible()
 })
 
 test('the puzzle page adds a pasted position as a puzzle, checked by the engine', async ({ page }) => {
-  await page.goto('/#/puzzles')
-  const library = page.getByTestId('puzzle-library')
+  await page.goto('/#/puzzles/library')
+  const library = page.getByTestId('puzzle-maker-panel')
   // A lichess-style FEN (pocket as a ninth rank) works as well as the bracketed form.
   await library.getByLabel('題目 FEN').fill('5k2/5ppp/8/8/8/8/5PPP/6K1/r b - - 0 1')
   await library.getByLabel('新增的題型').selectOption({ label: '進攻題' })
