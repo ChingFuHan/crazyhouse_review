@@ -5,7 +5,7 @@ import { api } from '../api'
 import { copyText } from '../clipboard'
 import { Nav } from '../components/Nav'
 import { ReviewBoard } from '../components/ReviewBoard'
-import { goTo } from '../route'
+import { goTo, usePuzzleLink } from '../route'
 import { openInReview } from '../session'
 import { PUZZLE_TYPE_NAMES, type PuzzleType } from '../types'
 import { PuzzleLibrary } from './PuzzleLibrary'
@@ -50,7 +50,8 @@ export function PuzzlePage() {
   const { player, error: playerError, signIn, signOut, setRating } = usePlayer()
   const [nickname, setNickname] = useState('')
   const [types, setTypes] = useState<PuzzleType[]>(loadTypes)
-  const { state, next, play, hint, giveUp, showSolution } = usePuzzle(player?.nickname ?? null, setRating)
+  const { state, next, open, play, hint, giveUp, showSolution } = usePuzzle(player?.nickname ?? null, setRating)
+  const linked = usePuzzleLink()
   const [copied, setCopied] = useState<string | null>(null)
   const { puzzle, position, status } = state
   const over = status === 'solved' || status === 'failed' || status === 'finished'
@@ -66,16 +67,24 @@ export function PuzzlePage() {
     }
   }
 
+  const signedIn = player?.nickname ?? null
   useEffect(() => {
-    if (player && status === 'idle') void next(types)
-    // first puzzle once signed in
+    if (!signedIn) return
+    if (linked !== null) void open(linked)
+    else if (status === 'idle') void next(types)
+    // the linked puzzle, or a first one once signed in (not when the rating changes)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [player])
+  }, [signedIn, linked])
+
+  const nextPuzzle = () => {
+    if (linked !== null) window.location.hash = '#/puzzles' // leave the link: a reload gives a new puzzle
+    void next(types)
+  }
 
   const shapes = useMemo<DrawShape[]>(() => {
-    if (!state.hint?.square) return []
+    if (!state.hint?.square || state.hintLevel < 2) return []
     return [{ orig: state.hint.square as Key, brush: 'green' }]
-  }, [state.hint])
+  }, [state.hint, state.hintLevel])
 
   const exported = async (kind: 'fen' | 'pgn' | 'lichess' | 'review') => {
     if (!puzzle || !player) return
@@ -149,8 +158,18 @@ export function PuzzlePage() {
             {puzzle && (
               <>
                 <h2>
-                  {puzzle.type_name} <span className="muted">#{puzzle.id} · 題目 rating {puzzle.rating}{puzzle.rated ? '' : ' · 已做過（不計分）'}</span>
+                  {puzzle.title ? `${puzzle.title}・` : ''}
+                  {puzzle.type_name}{' '}
+                  <span className="muted">
+                    #{puzzle.id} · 題目 rating {puzzle.rating}
+                    {puzzle.rated ? '' : ' · 已做過（不計分）'}
+                  </span>
                 </h2>
+                {puzzle.ai && (
+                  <div className="muted puzzle-maker" data-testid="puzzle-maker">
+                    由 {puzzle.ai} 挑選／撰寫
+                  </div>
+                )}
                 <p className="puzzle-task" data-testid="puzzle-task">
                   {instruction(state)}
                 </p>
@@ -170,7 +189,12 @@ export function PuzzlePage() {
                 {state.message}
               </div>
             )}
-            {state.hint && (
+            {state.hint && state.hintLevel >= 1 && state.hint.text && (
+              <div className="engine-note" data-testid="puzzle-hint-text">
+                提示：{state.hint.text}
+              </div>
+            )}
+            {state.hint && state.hintLevel >= 2 && (
               <div className="engine-note" data-testid="puzzle-hint">
                 提示：{state.hint.drop ? `從 pocket 打入${state.hint.drop}` : `移動 ${state.hint.square} 的棋子`}
               </div>
@@ -208,6 +232,18 @@ export function PuzzlePage() {
               </div>
             )}
 
+            {over && state.explanation && (
+              <div className="puzzle-explanation" data-testid="puzzle-explanation">
+                <strong>說明</strong>（{puzzle?.ai}）：{state.explanation}
+                {state.aiWarnings.length > 0 && (
+                  <ul className="unverified">
+                    {state.aiWarnings.map((w) => (
+                      <li key={`${w.kind}:${w.quote}`}>{w.detail}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
             {over && state.solution.length > 0 && (
               <div className="puzzle-solution" data-testid="puzzle-solution">
                 解答：
@@ -222,14 +258,14 @@ export function PuzzlePage() {
             <div className="puzzle-actions">
               {puzzle && puzzle.type !== 'battle' && status === 'solving' && (
                 <>
-                  <button onClick={() => void hint()} disabled={state.hintUsed}>
-                    提示
+                  <button onClick={() => void hint()} disabled={state.hintLevel === 2}>
+                    {state.hintLevel === 1 ? '再提示' : '提示'}
                   </button>
                   <button onClick={() => void giveUp()}>看解答</button>
                 </>
               )}
               {player && (
-                <button className="primary" onClick={() => void next(types)} disabled={status === 'loading' || status === 'thinking'}>
+                <button className="primary" onClick={nextPuzzle} disabled={status === 'loading' || status === 'thinking'}>
                   {puzzle && !over ? '跳過，下一題' : '下一題'}
                 </button>
               )}

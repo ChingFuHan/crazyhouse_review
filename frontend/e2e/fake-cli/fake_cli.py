@@ -18,7 +18,35 @@ state = json.load(open(state_path)) if state_path and os.path.exists(state_path)
 codex_models = state.get("codex_models", ["gpt-6.1-sol", "gpt-6-luna"])
 
 
+# Puzzle design: the first answer is an impossible position (two white kings), so the engine's reason
+# and the retry are visible; after that, a mate in one with a queen drop, whose texts are then written
+# from the engine's solution.
+BAD_DESIGN = "6k1/5ppp/8/8/8/8/5PPP/5KK1[Q] w - - 0 1"
+GOOD_DESIGN = "6k1/5ppp/8/8/8/8/5PPP/6K1[Q] w - - 0 1"
+
+
+def puzzle_answer(prompt: str) -> str | None:
+    """JSON answers to the puzzle-making prompts (picking candidates, designing a position)."""
+    if "</puzzle_candidates>" in prompt:  # the last block: the rules mention the tag too
+        data = prompt.rsplit("<puzzle_candidates>", 1)[1].split("</puzzle_candidates>")[0]
+        count = re.search(r"最傷腦筋的 (\d+) 題", prompt)
+        designed = "你設計" in prompt
+        picks = [{"id": c["id"], "title": "后的打入" if designed else f"假標題 {c['id']}",
+                  "hint": "黑王還有出路嗎？" if designed else "先看清楚雙方王的安全",
+                  "explanation": f"[FAKE {name.upper()}] 解答 {c['solution'] or ''}", "difficulty": 3}
+                 for c in json.loads(data)[: int(count.group(1)) if count else None]]
+        return json.dumps({"picks": picks}, ensure_ascii=False)
+    if "<puzzle_request>" in prompt:
+        fen = GOOD_DESIGN if "這個局面不合格" in prompt else BAD_DESIGN
+        return json.dumps({"fen": fen, "title": "設計時的標題", "hint": "設計時的提示",
+                           "idea": "黑王被自己的兵困住，后打入底線將殺。"}, ensure_ascii=False)
+    return None
+
+
 def answer(prompt: str, model: str, effort: str) -> str:
+    puzzle = puzzle_answer(prompt)
+    if puzzle is not None:
+        return puzzle
     question = prompt.rsplit("</position_context>", 1)[-1].strip()
     fen = re.search(r'"fen": "([^"]+)"', prompt)
     return f"[FAKE {name.upper()}] model={model} effort={effort} fen={fen.group(1) if fen else None} question={question}"

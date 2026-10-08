@@ -7,19 +7,19 @@ import type { LlmCatalog, LlmChoice, LlmProviderOption } from './types'
 
 const KEY = 'crazyhouse-review:ai-choice'
 
-export function loadChoice(): LlmChoice | null {
+export function loadChoice(key: string = KEY): LlmChoice | null {
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY) ?? 'null') as LlmChoice | null
+    const raw = JSON.parse(localStorage.getItem(key) ?? 'null') as LlmChoice | null
     return raw && typeof raw.provider === 'string' ? { provider: raw.provider, model: raw.model ?? null, effort: raw.effort ?? null } : null
   } catch {
     return null
   }
 }
 
-function saveChoice(choice: LlmChoice | null) {
+function saveChoice(key: string, choice: LlmChoice | null) {
   try {
-    if (choice) localStorage.setItem(KEY, JSON.stringify(choice))
-    else localStorage.removeItem(KEY)
+    if (choice) localStorage.setItem(key, JSON.stringify(choice))
+    else localStorage.removeItem(key)
   } catch {
     // best-effort
   }
@@ -63,8 +63,9 @@ export interface AiChoiceView {
   refresh: () => void
 }
 
-export function useAiChoice(): AiChoiceView {
-  const [choice, setStored] = useState<LlmChoice | null>(loadChoice)
+/** `storageKey`: each place that picks an AI (questions, making puzzles) keeps its own choice. */
+export function useAiChoice(storageKey: string = KEY): AiChoiceView {
+  const [choice, setStored] = useState<LlmChoice | null>(() => loadChoice(storageKey))
   const [catalog, setCatalog] = useState<LlmCatalog | null>(null)
   const [loading, setLoading] = useState(true) // the first catalog is read on mount
   const [error, setError] = useState<string | null>(null)
@@ -75,11 +76,14 @@ export function useAiChoice(): AiChoiceView {
     current.current = choice
   }, [choice])
 
-  const setChoice = useCallback((next: LlmChoice | null) => {
-    saveChoice(next)
-    setStored(next)
-    setDropped(null)
-  }, [])
+  const setChoice = useCallback(
+    (next: LlmChoice | null) => {
+      saveChoice(storageKey, next)
+      setStored(next)
+      setDropped(null)
+    },
+    [storageKey],
+  )
 
   useEffect(() => {
     const controller = new AbortController()
@@ -90,7 +94,7 @@ export function useAiChoice(): AiChoiceView {
         setError(null)
         const result = sanitizeChoice(current.current, fresh)
         if (result.dropped) {
-          saveChoice(result.choice)
+          saveChoice(storageKey, result.choice)
           setStored(result.choice)
           setDropped(result.dropped)
         }
@@ -102,7 +106,7 @@ export function useAiChoice(): AiChoiceView {
         if (!controller.signal.aborted) setLoading(false)
       })
     return () => controller.abort()
-  }, [request])
+  }, [request, storageKey])
 
   const refresh = useCallback(() => {
     setLoading(true)

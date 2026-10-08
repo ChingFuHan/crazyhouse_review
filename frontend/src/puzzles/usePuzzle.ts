@@ -3,7 +3,16 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api'
-import type { BattleMoveResult, MoveModel, PositionState, PuzzleHint, PuzzleType, PuzzleView, RatingChange } from '../types'
+import type {
+  AnswerWarning,
+  BattleMoveResult,
+  MoveModel,
+  PositionState,
+  PuzzleHint,
+  PuzzleType,
+  PuzzleView,
+  RatingChange,
+} from '../types'
 
 export type PuzzleStatus = 'idle' | 'loading' | 'solving' | 'thinking' | 'solved' | 'failed' | 'finished' | 'error'
 
@@ -16,7 +25,12 @@ export interface PuzzleState {
   solution: MoveModel[]
   rating: RatingChange | null
   hint: PuzzleHint | null
+  /** 1: the agent's words only; 2: also the piece to move. */
+  hintLevel: 0 | 1 | 2
   hintUsed: boolean
+  /** The agent's explanation, once the puzzle is over. */
+  explanation: string
+  aiWarnings: AnswerWarning[]
   /** Battle: one entry per solver move. */
   battle: BattleMoveResult[]
 }
@@ -30,7 +44,10 @@ const EMPTY: PuzzleState = {
   solution: [],
   rating: null,
   hint: null,
+  hintLevel: 0,
   hintUsed: false,
+  explanation: '',
+  aiWarnings: [],
   battle: [],
 }
 
@@ -46,13 +63,13 @@ export function usePuzzle(nickname: string | null, onRated: (rating: number) => 
 
   const update = (patch: Partial<PuzzleState>) => setState((s) => ({ ...s, ...patch }))
 
-  const next = useCallback(
-    async (types: PuzzleType[]) => {
+  const load = useCallback(
+    async (fetch: (player: string) => Promise<PuzzleView>) => {
       if (!nickname) return
       const mine = ++generation.current
       setState({ ...EMPTY, status: 'loading' })
       try {
-        const puzzle = await api.nextPuzzle(nickname, types)
+        const puzzle = await fetch(nickname)
         const position = await api.position(puzzle.fen, [])
         if (mine === generation.current) setState({ ...EMPTY, puzzle, position, status: 'solving' })
       } catch (e) {
@@ -61,6 +78,10 @@ export function usePuzzle(nickname: string | null, onRated: (rating: number) => 
     },
     [nickname],
   )
+  /** A puzzle of `types` close to the player's rating. */
+  const next = useCallback((types: PuzzleType[]) => load((player) => api.nextPuzzle(player, types)), [load])
+  /** A given puzzle (a link to it). */
+  const open = useCallback((id: number) => load((player) => api.openPuzzle(id, player)), [load])
 
   const finish = useCallback(
     (rating: RatingChange | null) => {
@@ -75,7 +96,7 @@ export function usePuzzle(nickname: string | null, onRated: (rating: number) => 
       const s = current.current
       if (!nickname || !s.puzzle || s.status !== 'solving') return false
       const mine = generation.current
-      update({ status: 'thinking', hint: null })
+      update({ status: 'thinking', hint: null, hintLevel: 0 })
       try {
         if (s.puzzle.type === 'battle') {
           const result = await api.battleMove(s.puzzle.id, nickname, s.line, uci)
@@ -89,6 +110,8 @@ export function usePuzzle(nickname: string | null, onRated: (rating: number) => 
             battle: [...s.battle, result],
             status: result.done ? 'finished' : 'solving',
             rating: result.rating,
+            explanation: result.explanation,
+            aiWarnings: result.ai_warnings,
             message: result.done ? null : `還有 ${result.moves_left} 步`,
           })
           return true
@@ -105,6 +128,8 @@ export function usePuzzle(nickname: string | null, onRated: (rating: number) => 
           position,
           solution: result.solution,
           rating: result.rating,
+          explanation: result.explanation,
+          aiWarnings: result.ai_warnings,
           status: result.done ? (result.correct ? 'solved' : 'failed') : 'solving',
           message: result.done
             ? result.correct
@@ -127,7 +152,12 @@ export function usePuzzle(nickname: string | null, onRated: (rating: number) => 
     const s = current.current
     if (!s.puzzle || s.puzzle.type === 'battle' || s.status !== 'solving') return
     try {
-      update({ hint: await api.puzzleHint(s.puzzle.id, s.line), hintUsed: true })
+      if (s.hint && s.hintLevel === 1) {
+        update({ hintLevel: 2 })
+        return
+      }
+      const hint = await api.puzzleHint(s.puzzle.id, s.line)
+      update({ hint, hintLevel: hint.text ? 1 : 2, hintUsed: true })
     } catch (e) {
       update({ message: errorText(e) })
     }
@@ -139,7 +169,14 @@ export function usePuzzle(nickname: string | null, onRated: (rating: number) => 
     try {
       const result = await api.giveUp(s.puzzle.id, nickname)
       finish(result.rating)
-      update({ status: 'failed', solution: result.solution, rating: result.rating, message: '看了解答' })
+      update({
+        status: 'failed',
+        solution: result.solution,
+        rating: result.rating,
+        explanation: result.explanation,
+        aiWarnings: result.ai_warnings,
+        message: '看了解答',
+      })
     } catch (e) {
       update({ message: errorText(e) })
     }
@@ -156,5 +193,5 @@ export function usePuzzle(nickname: string | null, onRated: (rating: number) => 
     [],
   )
 
-  return { state, next, play, hint, giveUp, showSolution }
+  return { state, next, open, play, hint, giveUp, showSolution }
 }

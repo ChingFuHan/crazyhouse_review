@@ -6,6 +6,7 @@ import type {
   LlmCatalog,
   LlmChoice,
   BattleMoveResult,
+  GenerateOptions,
   Player,
   PuzzleExport,
   PuzzleHint,
@@ -215,6 +216,9 @@ export const api = {
   signIn: (nickname: string) => post<Player>('/api/players', { nickname }),
   nextPuzzle: (player: string, types: PuzzleType[]) =>
     request<PuzzleView>(`/api/puzzles/next?player=${encodeURIComponent(player)}&types=${types.join(',')}`, {}),
+  /** A given puzzle (a link #/puzzles/<id>). */
+  openPuzzle: (id: number, player: string) =>
+    request<PuzzleView>(`/api/puzzles/${id}?player=${encodeURIComponent(player)}`, {}),
   puzzleMove: (id: number, player: string, moves: string[], move: string, hintUsed: boolean) =>
     post<PuzzleMoveResult>(`/api/puzzles/${id}/move`, { player, moves, move, hint_used: hintUsed }),
   battleMove: (id: number, player: string, moves: string[], move: string) =>
@@ -228,7 +232,8 @@ export const api = {
     post<PuzzleView>('/api/puzzles', { root_fen: rootFen, moves, type }),
   minePuzzles: (last: PositionState, label: string) =>
     post<PuzzleJob>('/api/puzzles/mine', { root_fen: last.root_fen, moves: last.moves, label }),
-  generatePuzzles: (count: number, types: PuzzleType[]) => post<PuzzleJob>('/api/puzzles/generate', { count, types }),
+  /** Make puzzles with an agent: `curate` picks and writes from engine candidates, `design` invents positions. */
+  generatePuzzles: (options: GenerateOptions) => post<PuzzleJob>('/api/puzzles/generate', options),
   puzzleJob: (jobId: string) => request<PuzzleJob>(`/api/puzzle-jobs/${jobId}`, {}),
   puzzleStats: () => request<PuzzleStats>('/api/puzzles/stats', {}),
   /** Whole-game review of a line (the main line), run on the backend's separate review engine. */

@@ -334,6 +334,9 @@ export interface PuzzleView {
   plays: number
   themes: string[]
   rated: boolean
+  title: string
+  /** The agent that made or picked the puzzle ("" for engine-only puzzles). */
+  ai: string
 }
 
 export interface RatingChange {
@@ -352,6 +355,8 @@ export interface PuzzleMoveResult {
   done: boolean
   solution: MoveModel[]
   rating: RatingChange | null
+  explanation: string
+  ai_warnings: AnswerWarning[]
 }
 
 export interface BattleMoveResult {
@@ -366,11 +371,15 @@ export interface BattleMoveResult {
   final_chances: number | null
   result: number | null
   rating: RatingChange | null
+  explanation: string
+  ai_warnings: AnswerWarning[]
 }
 
 export interface PuzzleHint {
   square: string | null
   drop: string | null
+  /** The agent's hint in words (never the move itself). */
+  text: string
 }
 
 export interface PuzzleJob {
@@ -381,6 +390,19 @@ export interface PuzzleJob {
   total: number
   found: number
   message: string
+  log: string[]
+  ai: string
+  /** The puzzles stored when the job is done, to open directly. */
+  made: { id: number; type: PuzzleType; type_name: string; title: string }[]
+}
+
+export interface GenerateOptions {
+  mode: 'curate' | 'design'
+  count: number
+  types: PuzzleType[]
+  type: PuzzleType
+  description: string
+  llm: LlmChoice | null
 }
 
 export interface PuzzleExport {

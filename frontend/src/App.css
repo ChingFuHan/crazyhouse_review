@@ -1149,3 +1149,48 @@ cg-board square.kb-cursor {
   flex: 1 1 260px;
   min-width: 0;
 }
+
+.puzzle-make {
+  margin: 8px 0;
+  padding: 8px;
+  background: var(--panel-2);
+  border-radius: 4px;
+}
+
+.puzzle-make h3 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+
+.puzzle-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 6px 0;
+}
+
+.puzzle-generate input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.job-log {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 0.8rem;
+}
+
+.puzzle-maker {
+  font-size: 0.8rem;
+  margin-bottom: 4px;
+}
+
+.puzzle-explanation {
+  margin: 6px 0;
+  line-height: 1.5;
+}
+
+.made-puzzles {
+  margin: 4px 0;
+  padding-left: 18px;
+}
