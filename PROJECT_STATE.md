@@ -25,6 +25,8 @@ Milestone 4（對話 + 候選著重新分析 + 能感知變化的問答）完成
 AI 製題完成（使用者需求，2026-10-08）：題目頁獨立的 AI 選單（agy／codex／claude、model、effort），兩種方式——agent 從 engine
 候選中挑題並寫標題／提示／說明，或 agent 設計局面、engine 驗證並回饋原因重試。
 Tailscale 存取完成（使用者需求，2026-10-09）：在 tailnet 上時，安裝腳本把 `100.64.0.0/10` 加入允許清單。
+題目頁改進完成（使用者需求，2026-10-09）：對手上一步與延遲回應、走錯可重試、等價好著不判錯、請 AI 解釋並存回、文字提示半分、
+選題先抽題型、我的紀錄、題庫瀏覽與回報停用、分頁。
 
 ## 目前任務狀態
 依 task.md 嚴格驗證（2026-10-06）發現並修正：README/PROJECT_STATE 過時、LLM context 缺
@@ -53,6 +55,9 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
 原本是 `<Status.TOO_MANY_KINGS: 4>`，現在以文字說明哪裡不合法；設計時的構想可能與 engine 解答不符（實測），改為通過後依解答
 撰寫文字；剛製造的題目可能永遠輪不到（選題只取 rating 最接近的區間——E2E 因此失敗而發現），新增題目連結 `#/puzzles/<id>`，
 工作完成後列出新題目。
+再之後（使用者問「題目頁哪裡可以改進」，我依程式與正式資料列出八項，使用者全選）：依據是正式題庫 46 題沒有一題有說明、
+rating 1436 的玩家最近的 rating 區間 8 題裡 5 題是對轟、題目從 FEN 直接開始、走錯立刻亮出解答、製題表單排在解題區下方。
+做完後在正式資料庫的副本上截圖檢查，修正 rating 圖上下刻度被裁到、題庫列表太長（改為可捲動）。
 目前沒有進行中的任務。
 
 ## 目前架構
@@ -211,7 +216,13 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
   手動新增（engine 驗證，不適合時說明原因）、背景挖題／製題工作（製題帶 `mode`、題型、描述與 `llm`；`chosen_provider` 驗證
   所選 AI（422），沒選則用伺服器預設；設計模式沒有 AI 時 422；工作紀錄 `log` 與使用的 `ai`）；提示回傳 agent 的文字提示（只在
   第一步），解題結束時回傳說明與警告；`GET /api/puzzles/{id}` 開啟指定題目（題目連結），工作完成時 `made` 列出存入的題目，
-  重複新增的訊息附上既有題目編號（`store.find`）。路由 `routers/puzzles.py`；測試用自己的 DATA_DIR
+  重複新增的訊息附上既有題目編號（`store.find`）。題目頁改進：`Puzzle.before_fen`／`last_move`（挖題與從一條線存成題目時寫入，
+  舊題留空）；`move` 改 async——任何將殺都算解出，非答案著先用 `miner.lines(root_moves=…)` 比較，勝率差 ≤ `EQUIVALENT_GAP`（0.1）
+  回 `alternative`（不結束、不計分），否則失敗；失敗後重試走同一個 API，`store.record` 只記第一次所以不計分；`hint_level` 0／1／2
+  → `HINT_SCORES` 1／0.5／0；`explain`（`POST /api/puzzles/{id}/explain`）只限已作答的玩家、已有說明就直接回傳，否則以
+  `agent.explain`（單一候選的挑題 prompt，保留既有標題提示）撰寫並 `store.set_texts` 存回，每題一把 `asyncio.Lock`；
+  `store.next_for` 先 `random.sample` 題型再依 rating 視窗找、排除停用；`disabled`／`report` 欄位與 report／restore 端點，
+  `counts` 不含停用；`GET /api/puzzles`（全部摘要）、`GET /api/players/{nickname}/history`（最近 100 筆與各題型平均）。路由 `routers/puzzles.py`；測試用自己的 DATA_DIR
   （`tests/conftest.py`），E2E 每次執行用全新的暫存 DATA_DIR。
 - `frontend/` React 19 + TS + Vite 8 + Chessground 9.2。瀏覽器中「沒有」規則邏輯。
   - `src/tree.ts`：由 backend 局面組成的純對局樹（id = position_id）。每次插入都檢查不變式（子節點
@@ -277,8 +288,12 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
     從這盤挖題）；`session.openInReview(pgn)` 把題目交給復盤頁；`clipboard.ts` 複製時有 execCommand 備援（區網 http 位址沒有
     navigator.clipboard）。`PuzzleLibrary` 的「AI 製題」用 `useAiChoice('crazyhouse-review:puzzle-ai-choice')`（與復盤頁分開記住）
     與共用的 `AiSettings`，選方式、題型、描述與題數，輪詢工作並顯示最後幾行紀錄；`usePuzzle` 的提示分兩段（`hintLevel`
-    1＝agent 文字、2＝要動的棋子），結束時存下說明與警告；`route.usePuzzleLink` 讀 `#/puzzles/<id>`，登入後開啟該題
-    （effect 依暱稱而非 player 物件，rating 更新時不會重載題目），「下一題」離開連結。
+    1＝agent 文字、2＝要動的棋子），結束時存下說明與警告；`route.usePuzzleRoute` 讀 `#/puzzles/<id>`，登入後開啟該題
+    （effect 依暱稱而非 player 物件，rating 更新時不會重載題目），「下一題」離開連結。分頁：`route.usePuzzleRoute()` →
+    `{tab: solve|library|history, id}`；`PuzzlePage` 持有題目頁唯一的 AI 選擇（製題與請 AI 解釋共用）；`usePuzzle` 以
+    `positionAfter`（有上一步時從 `before_fen` + `last_move` 走）建棋盤，`INTRO_MS` 600／`REPLY_MS` 500，狀態 `intro`、`revealed`、
+    `retrying`、`hintUsed`（決定分數）、`explaining`；`PuzzleLibrary`（列表、篩選、恢復）+ `PuzzleMaker`（AI 製題、貼 FEN）；
+    `PuzzleHistory`（`ratingGraph.ts` 算刻度與座標，單一數列 SVG、十字線與提示框、方向鍵）。
   - Vite dev server :5180 把 `/api` 代理到 backend :8820。
   - 區網部署：`scripts/install_service.sh` → systemd user service `crazyhouse-review`（已啟用，
     Linger=yes 所以開機即啟動）執行 `scripts/run_server.sh`，HOST=0.0.0.0、PORT=8820、
@@ -340,7 +355,8 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
 - Engine：只有一個共用的互動 process；兩個分頁分析不同局面時會互相取代對方的搜尋（顯示為 已中斷 +
   重新分析）。Threads/Hash 的選擇會影響整台機器。
 - 寬度 390 px 時 chessground 的檔案座標會超出 2 px（原本就有）。
-- 題目：暱稱帳號沒有密碼；解答中途走出不同但同樣好的非將殺著會被判錯；製題每題需數分鐘 engine 時間。
+- 題目：暱稱帳號沒有密碼；任何登入者都能回報停用或恢復題目；與答案一樣好的著法只提示「也是好著」並退回（不沿著該著繼續）；
+  只有之後挖到或存成的題目有對手上一步（舊題沒有存那一步）；製題每題需數分鐘 engine 時間。
 - AI 製題：agent 的提示只檢查是否寫出第一步的著法或格子（不檢查較隱晦的洩題）；agent 設計的局面常需多次嘗試，4 次都不合格
   就略過該題（工作紀錄列出每次原因）。實測（2026-10-08，各 CLI 預設 model）：挑題 agy 244 秒、codex 32 秒、claude 24 秒，三者
   的說明都與資料一致、沒有警告、提示沒有洩題；設計進攻題三者都在 1–3 次內通過（多為悶殺類），設計防守題 codex 與 claude 4 次都
@@ -357,7 +373,9 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
   於著法落地前執行時才通過。
 
 ## 驗證狀態
-- `cd backend && uv run pytest -q` → 233 passed（含：允許清單含 tailnet 範圍時 tailnet 裝置可連、Docker／其他網段與冒用
+- `cd backend && uv run pytest -q` → 240 passed（含：上一步存入（挖題、從一條線存成題目）；等價好著不結束不計分、走錯失敗後
+  重試不計分；提示 0／1／2 分數；請 AI 解釋未作答 422、產生後存回且第二次不再呼叫 agent、兩人同時請求只呼叫一次；題型 1 題對 10 題
+  時仍約各半；停用／恢復與選題排除；列表與紀錄內容）（含：允許清單含 tailnet 範圍時 tailnet 裝置可連、Docker／其他網段與冒用
   X-Forwarded-For 仍 403）（含 `tests/test_puzzle_agent.py`：擷取 JSON、洩題判定、挑題只接受清單內 id
   （不重複）且丟掉洩題的標題與提示、說明的警告被保存、無法使用的回覆退回難度排序；設計模式依序收到「沒有 JSON」「局面不合法：
   too_many_kings」「沒有唯一解」的原因並重試，通過後依 engine 解答（而非設計構想）撰寫文字、寫不出來時保留設計的標題與提示；
@@ -386,8 +404,10 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
   互動分析；LLM context == 棋盤／engine／analyzer、變化與觀看方、prompt injection 邊界、快取鍵、
   候選著流程、SSE 事件、缺 key 時 503、key 永不出現在錯誤中、以模擬 SDK 串流測試拒答／fallback。
   沒有真實的 Claude 呼叫。
-- `cd frontend && npx vitest run` → 50 passed；`npx tsc -b`、`npm run lint`、`npx vite build` 無誤。
-- `cd frontend && npx playwright test` → 46 passed（含 `e2e/puzzle-agent.spec.ts`（假 CLI 依 prompt 回 JSON）：題目頁獨立選
+- `cd frontend && npx vitest run` → 52 passed（含 rating 圖刻度與座標）；`npx tsc -b`、`npm run lint`、`npx vite build` 無誤。
+- `cd frontend && npx playwright test` → 50 passed（含 `e2e/puzzle-page.spec.ts`：先顯示對手上一步並高亮；選 Codex 請 AI 解釋
+  並存回、下一位玩家看到標題與文字提示、解出算半分、回報停用、我的紀錄（列表、圖、各題型）、題庫篩選與恢復；手機寬度分頁不溢出；
+  防守題走錯 → 再試一次解出不計分、或看解答）（含 `e2e/puzzle-agent.spec.ts`（假 CLI 依 prompt 回 JSON）：題目頁獨立選
   Codex CLI → 設計進攻題，第一次兩個王被拒、看到原因與重試、通過後依解答撰寫，從工作列出的連結開題，標題、製作的 agent、兩段式
   提示、解出後的說明，「下一題」離開連結；挑題產生題目並顯示 agent 寫的標題；題目測試改用連結開啟指定題）（含 `e2e/puzzles.spec.ts`：貼上 lichess 寫法 FEN 新增題目（含拒絕原因）、
   主題以文字顯示、重新整理後 rating 保留、手機寬度不溢出；用另一個將殺打入解出 → rating 上升、解答、複製

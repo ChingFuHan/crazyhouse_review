@@ -31,6 +31,9 @@ model, effort) and two modes — the agent picks among engine candidates and wri
 explanation, or the agent designs positions that the engine checks, retrying with the reason.
 Tailscale access DONE (user request, 2026-10-09): on a tailnet, the installer adds `100.64.0.0/10` to the
 allowlist.
+Puzzle page improvements DONE (user request, 2026-10-09): the opponent's last move and delayed replies,
+retry after a wrong move, equally good moves not failed, ask the AI to explain (stored), half a point
+for the hint in words, kinds drawn first, my record, library browsing with reporting, tabs.
 
 ## Current task status
 Strict verification against task.md (2026-10-06) found and fixed: stale README/PROJECT_STATE,
@@ -68,6 +71,12 @@ and is now spelled out; a design idea can disagree with the engine's solution (s
 the texts are now written from the solution once accepted; freshly made puzzles might never come up
 (the next puzzle comes from the nearest non-empty rating window — found through a failing E2E), so
 puzzle links `#/puzzles/<id>` were added and finished jobs list their new puzzles.
+Then (the user asked where the puzzle page could improve; I listed eight items from the code and the
+production data and the user chose all): no puzzle of the 46 in production had an explanation, for a
+1436 player 5 of the 8 puzzles in the nearest rating window were battles, puzzles started from a bare
+FEN, a wrong move showed the answer at once, and the making forms sat under the solving panel. Checked
+with screenshots on a copy of the production database afterwards, fixing the rating chart's cut-off top
+and bottom ticks and the overlong library list (now scrolls).
 No task in progress.
 
 ## Current architecture
@@ -262,7 +271,18 @@ No task in progress.
   a 422; the job keeps a `log` and the `ai` used); a hint returns the agent's words (first move only), and
   the end of a puzzle returns the explanation and its warnings; `GET /api/puzzles/{id}` opens a given
   puzzle (puzzle links), a finished job's `made` lists the stored puzzles, and a duplicate's refusal names
-  the existing puzzle (`store.find`). Router `routers/puzzles.py`; tests use their own DATA_DIR
+  the existing puzzle (`store.find`). Puzzle page improvements: `Puzzle.before_fen` / `last_move` (written
+  when mining and when saving from a line; empty for older puzzles); `move` is async — any mate solves,
+  a non-answer is first compared with `miner.lines(root_moves=…)` and within `EQUIVALENT_GAP` (0.1) of the
+  answer returns `alternative` (not over, not rated), otherwise it fails; a retry after a failure uses
+  the same API and `store.record` keeps only the first attempt, so it is unrated; `hint_level` 0 / 1 / 2 →
+  `HINT_SCORES` 1 / 0.5 / 0; `explain` (`POST /api/puzzles/{id}/explain`) only for players who attempted
+  it, returns a stored explanation as is, otherwise `agent.explain` (the picking prompt with one
+  candidate, keeping an existing title and hint) writes it and `store.set_texts` stores it, one
+  `asyncio.Lock` per puzzle; `store.next_for` draws the kinds with `random.sample` before the rating
+  windows and skips disabled puzzles; `disabled` / `report` columns with report / restore endpoints,
+  `counts` without disabled ones; `GET /api/puzzles` (all summaries), `GET /api/players/{nickname}/history`
+  (latest 100 attempts and averages by kind). Router `routers/puzzles.py`; tests use their own DATA_DIR
   (`tests/conftest.py`), E2E a fresh tmp DATA_DIR per run.
 - `frontend/` React 19 + TS + Vite 8 + Chessground 9.2. NO rules logic in the browser.
   - `src/tree.ts`: pure game tree of backend states (id = position_id). Invariant check on every
@@ -343,9 +363,14 @@ No task in progress.
     from the review page) with the shared `AiSettings`, picks mode, kind, description and count, polls the
     job and shows its last log lines; `usePuzzle` gives hints in two stages (`hintLevel` 1 = the agent's
     words, 2 = the piece to move) and keeps the explanation and its warnings at the end;
-    `route.usePuzzleLink` reads `#/puzzles/<id>` and the page opens it once signed in (the effect keys on
+    `#/puzzles/<id>` (read by `route.usePuzzleRoute`) and the page opens it once signed in (the effect keys on
     the nickname, not the player object, so a rating update never reloads the puzzle); 「下一題」 leaves
-    the link.
+    the link. Tabs: `route.usePuzzleRoute()` → `{tab: solve|library|history, id}`; `PuzzlePage` holds the
+    page's one AI choice (making and explaining); `usePuzzle` builds boards with `positionAfter` (from
+    `before_fen` + `last_move` when known), `INTRO_MS` 600 / `REPLY_MS` 500, states `intro`, `revealed`,
+    `retrying`, `hintUsed` (decides the score), `explaining`; `PuzzleLibrary` (list, filters, restore) +
+    `PuzzleMaker` (AI making, paste a FEN); `PuzzleHistory` (`ratingGraph.ts` computes ticks and points; a
+    single-series SVG with crosshair, tooltip and arrow keys).
   - Vite dev server :5180 proxies `/api` → backend :8820.
   - LAN deployment: `scripts/install_service.sh` → systemd user service `crazyhouse-review`
     (enabled, Linger=yes so it starts at boot) running `scripts/run_server.sh` with HOST=0.0.0.0,
@@ -419,8 +444,10 @@ No task in progress.
 - Engine: single shared interactive process; two tabs analysing different positions replace each
   other's searches (shown as 已中斷 "interrupted" + 重新分析 "analyse again"). Threads/Hash choices affect the whole machine.
 - At 390 px width chessground's file coordinates overflow by 2 px (pre-existing).
-- Puzzles: nickname accounts have no password; a different but equally good non-mating move mid-solution
-  is judged wrong; making puzzles takes minutes of engine time per puzzle.
+- Puzzles: nickname accounts have no password; anyone signed in can report or restore a puzzle; a move as
+  good as the answer only gets "also a good move" and snaps back (the line does not continue from it);
+  only puzzles mined or saved from now on know the opponent's last move (older ones never stored it);
+  making puzzles takes minutes of engine time per puzzle.
 - AI puzzle making: an agent's hint is checked only for the first move or its squares (not for subtler
   give-aways); designed positions often need several attempts, and after 4 failures the puzzle is skipped
   (the job log lists each reason). Measured (2026-10-08, each CLI's default model): picking took agy
@@ -440,7 +467,11 @@ No task in progress.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 233 passed (incl. tailnet devices allowed with the tailnet range,
+- `cd backend && uv run pytest -q` → 240 passed (incl. the last move stored when mining and when saving
+  from a line; an equally good move neither ends nor rates, a retry after failing is unrated; hint scores
+  for levels 0 / 1 / 2; explaining before an attempt 422, written once and stored, two viewers at once run
+  the agent once; one puzzle of a kind against ten of another still comes up about half the time;
+  reporting / restoring and skipping disabled puzzles; library and history contents) (incl. tailnet devices allowed with the tailnet range,
   Docker / other networks and a spoofed X-Forwarded-For still 403) (incl. `tests/test_puzzle_agent.py`: JSON extraction,
   give-away detection, picks only listed ids (no repeats) and drops titles / hints that give the answer
   away, explanation warnings kept, unusable answers fall back to hardness; a design hears "no JSON",
@@ -479,8 +510,11 @@ No task in progress.
   a real-game job not disturbing interactive analysis; LLM context == board/engine/analyzer, variation
   and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
   503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
-- `cd frontend && npx vitest run` → 50 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 46 passed (incl. `e2e/puzzle-agent.spec.ts` (fake CLIs answer
+- `cd frontend && npx vitest run` → 52 passed (incl. the rating chart's ticks and points); `npx tsc -b`, `npm run lint`, `npx vite build` clean.
+- `cd frontend && npx playwright test` → 50 passed (incl. `e2e/puzzle-page.spec.ts`: the opponent's last
+  move shown first and highlighted; Codex asked to explain and the text stored, the next player seeing the
+  title and the hint in words and scoring half, reporting, my record (list, chart, kinds), library filters
+  and restoring; tabs fit a phone; a wrong defense move → try again solved unrated, or show the answer) (incl. `e2e/puzzle-agent.spec.ts` (fake CLIs answer
   the prompts with JSON): Codex CLI chosen in the puzzle page's own menu → design an attack, two kings
   refused first with the reason and a retry, texts written from the solution once accepted, the puzzle
   opened from the job's link with its title, maker, two-stage hint and explanation after solving,

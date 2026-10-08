@@ -177,7 +177,9 @@ cd backend && SHOW_ANSWERS=1 uv run python scripts/llm_smoke.py   # a few reques
 
 ## Puzzles
 Tabs 「復盤｜題目」 (review | puzzles, `#/puzzles`) at the top. Sign in with a nickname (no password, for the
-local network; ratings and attempts are kept on the server).
+local network; ratings and attempts are kept on the server). The puzzle page has three tabs: 「解題」 (solve,
+`#/puzzles`), 「題庫與製題」 (library and making, `#/puzzles/library`) and 「我的紀錄」 (my record,
+`#/puzzles/history`).
 
 | Kind | What to do | How it is found (engine searches, solver's winning chances) |
 |---|---|---|
@@ -187,7 +189,23 @@ local network; ratings and attempts are kept on the server).
 | 中局對轟 battle | play 6 moves against the engine | middlegame, balanced, both kings attacked and both sides can drop with check; ending ≥ 0.2 better than the start wins, ≥ 0.2 worse loses |
 
 - **Solutions**: every solver move must be the only good one, the opponent plays the engine's best, until
-  mate or a clear win; on the last move any mate counts.
+  mate or a clear win; a mate at any step solves the puzzle.
+- **Solving**: a puzzle that knows the opponent's last move (mined, self-play, or saved from the review
+  board) first shows the position before it and plays that move 0.6 s later, keeping it highlighted
+  (「對手剛走了 …」, "the opponent just played …"); the opponent's replies come 0.5 s after the solver's move.
+  A move the engine finds as good as the answer (chances within 0.1) snaps back with "also a good move, but
+  not the answer" and is not a failure. A wrong move counts as a failure but the answer stays hidden:
+  「再試一次」 (try again, from before the wrong move, unrated) or 「看解答」 (show the answer). A puzzle
+  without an explanation offers 「請 AI 解釋這題」 (ask the AI to explain) when it is over: the puzzle page's
+  agent writes it from the engine's solution (only for players who attempted it, with the usual give-away
+  and answer checks) and it is stored for everyone. 「這題有問題？」 (something wrong?) reports a broken
+  puzzle, which leaves the rotation.
+- **Library and making**: the library lists every puzzle, filtered by kind, source (game / self-play /
+  manual / AI design) and AI-written, sorted, each opening by its number; reported puzzles show the reason
+  and can be restored. AI puzzle making and pasting a position are below.
+- **My record**: current rating, rated attempts, share fully solved, a rating chart (hover or arrow keys
+  for each attempt), attempts and average score by kind, and the latest attempts (open them to replay or
+  see the answer).
 - **Sources**: (1) 「從這盤挖題」 (mine this game) on the review page scans the main line; (2) by hand: paste
   a FEN on the puzzle page (pockets as `[..]` or lichess's `/..`) and choose the kind, or 「存成題目」 (save
   as puzzle) on the review page for the board's position (checked by the engine, with the reason when it
@@ -221,9 +239,11 @@ local network; ratings and attempts are kept on the server).
 - **Human difficulty**: a short search (depth 2 / 6) picking another move, a quiet answer while checks or
   captures are available, a sacrifice, a tempting check or capture as the second choice — combined into a
   0–1 hardness; a puzzle's first rating = a base by length + a hardness bonus.
-- **Ratings**: Glicko-2 (as on lichess) for players and puzzles; only the first attempt at a puzzle counts;
-  a hint (either stage) or showing the solution counts as a failure. Puzzles are chosen within ±100 of the player's
-  rating, widened step by step.
+- **Ratings**: Glicko-2 (as on lichess) for players and puzzles; only the first attempt at a puzzle counts.
+  Solving after only the agent's hint in words scores half (0.5); seeing the piece to move or the solution
+  counts as a failure. The next puzzle's kind is drawn first among the chosen ones (each as likely, however
+  many puzzles it has), then an unplayed puzzle of that kind within ±100 of the player's rating, widened
+  step by step.
 - **Export**: copy the FEN (the common `[..]` pocket form, which lichess and other tools read), copy the PGN (with the solution after an attempt), open the
   lichess analysis board (from which one can play the computer or a friend), or open the puzzle and its
   solution on the review board (where the AI can explain it).
