@@ -9,6 +9,7 @@ import { goTo } from '../route'
 import { openInReview } from '../session'
 import { PUZZLE_TYPE_NAMES, type PuzzleType } from '../types'
 import { PuzzleLibrary } from './PuzzleLibrary'
+import { themeLabel } from './themes'
 import { usePlayer } from './usePlayer'
 import { type PuzzleState, usePuzzle } from './usePuzzle'
 
@@ -17,21 +18,6 @@ const TYPES_KEY = 'crazyhouse-review:puzzle-types'
 const SIDE = { white: '白方', black: '黑方' }
 const VERDICTS = { best: '最佳', good: '好著', inaccuracy: '不精確', mistake: '錯著', blunder: '大錯' }
 const RESULTS: Record<string, string> = { '1': '勝：局勢比開局更好', '0.5': '和：守住了局勢', '0': '負：局勢變差' }
-const THEMES: Record<string, string> = {
-  quiet_move: '安靜著',
-  sacrifice: '棄子',
-  tempting_alternative: '誘人的陷阱',
-  drop: '打入',
-  drop_check: '打入將軍',
-  drop_mate: '打入將殺',
-  queen_drop: '打入后',
-  knight_fork: '馬雙抽',
-  double_attack: '雙重攻擊',
-  discovered_attack: '閃擊',
-  escape_square_reduction: '封鎖逃生格',
-  interposition_drop: '打入擋將',
-  battle: '對轟',
-}
 
 function loadTypes(): PuzzleType[] {
   try {
@@ -103,7 +89,8 @@ export function PuzzlePage() {
       goTo('review')
       return
     }
-    const ok = await copyText(kind === 'fen' ? data.lichess_fen : data.pgn)
+    // The bracketed pocket FEN is the common form: lichess reads it too.
+    const ok = await copyText(kind === 'fen' ? data.fen : data.pgn)
     setCopied(ok ? `已複製 ${kind.toUpperCase()}${kind === 'pgn' && data.solution_shown ? '（含解答）' : ''}` : '無法存取剪貼簿')
   }
 
@@ -169,11 +156,10 @@ export function PuzzlePage() {
                 </p>
                 {puzzle.themes.length > 0 && over && (
                   <div className="tags">
-                    {puzzle.themes.map((t) => (
-                      <span key={t} className="tag">
-                        {THEMES[t] ?? t}
-                      </span>
-                    ))}
+                    {puzzle.themes.flatMap((t) => {
+                      const label = themeLabel(t)
+                      return label ? [<span key={t} className="tag">{label}</span>] : []
+                    })}
                   </div>
                 )}
               </>

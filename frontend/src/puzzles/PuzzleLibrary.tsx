@@ -5,9 +5,13 @@ import { PUZZLE_TYPE_NAMES, type PuzzleJob, type PuzzleStats, type PuzzleType } 
 const TYPES: PuzzleType[] = ['attack', 'defense', 'tactics', 'battle']
 const POLL_MS = 1500
 
-/** How many puzzles there are, and making new ones from imperfect engine self-play. */
+/** How many puzzles there are; adding a position as a puzzle; making new ones from self-play. */
 export function PuzzleLibrary() {
   const [stats, setStats] = useState<PuzzleStats | null>(null)
+  const [fen, setFen] = useState('')
+  const [type, setType] = useState<PuzzleType>('attack')
+  const [added, setAdded] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false)
   const [count, setCount] = useState(5)
   const [job, setJob] = useState<PuzzleJob | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -40,6 +44,21 @@ export function PuzzleLibrary() {
     }
   }
 
+  const add = async () => {
+    setAdding(true)
+    setAdded('engine 檢查中…')
+    try {
+      const puzzle = await api.createPuzzle(fen.trim(), [], type)
+      setAdded(`已新增${puzzle.type_name} #${puzzle.id}（${puzzle.solver_moves ? `${puzzle.solver_moves} 步，` : ''}題目 rating ${puzzle.rating}）`)
+      setFen('')
+      refresh()
+    } catch (e) {
+      setAdded(e instanceof Error ? e.message : String(e))
+    } finally {
+      setAdding(false)
+    }
+  }
+
   const running = job?.status === 'running'
   return (
     <section className="panel puzzle-library" data-testid="puzzle-library">
@@ -49,6 +68,35 @@ export function PuzzleLibrary() {
           共 {stats.total} 題：
           {TYPES.map((t) => `${PUZZLE_TYPE_NAMES[t]} ${stats.by_type[t]}`).join('、')}
         </p>
+      )}
+      <form
+        className="puzzle-add"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (fen.trim()) void add()
+        }}
+      >
+        <input
+          aria-label="題目 FEN"
+          placeholder="貼上局面 FEN（pocket 用 [..] 或 lichess 的 /.. 寫法皆可）"
+          value={fen}
+          onChange={(e) => setFen(e.target.value)}
+        />
+        <select aria-label="新增的題型" value={type} onChange={(e) => setType(e.target.value as PuzzleType)}>
+          {TYPES.map((t) => (
+            <option key={t} value={t}>
+              {PUZZLE_TYPE_NAMES[t]}
+            </option>
+          ))}
+        </select>
+        <button type="submit" disabled={adding || !fen.trim()}>
+          新增題目
+        </button>
+      </form>
+      {added && (
+        <div className="engine-note" data-testid="puzzle-added">
+          {added}
+        </div>
       )}
       <div className="puzzle-generate">
         <label>
@@ -66,7 +114,7 @@ export function PuzzleLibrary() {
         </button>
       </div>
       <p className="muted">
-        製造：engine 從常見開局自我對弈、偶爾犯人類會犯的錯，再挑出人最容易看漏的局面（每題約需數分鐘）。挖題：在「復盤」頁載入對局後，按「整局分析」旁的「從這盤挖題」。
+        新增：engine 會檢查局面是否符合題型（不符合時說明原因）。製造：engine 從常見開局自我對弈、偶爾犯人類會犯的錯，再挑出人最容易看漏的局面（每題約需數分鐘）。挖題：在「復盤」頁載入對局後，按 FEN 下方的「從這盤挖題」。
       </p>
       {job && (
         <div className="engine-note" data-testid="puzzle-job">

@@ -1137,3 +1137,15 @@ cg-board square.kb-cursor {
 .battle-log li.inaccuracy strong {
   color: var(--status-warning);
 }
+
+.puzzle-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+
+.puzzle-add input {
+  flex: 1 1 260px;
+  min-width: 0;
+}

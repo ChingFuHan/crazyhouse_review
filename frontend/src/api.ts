@@ -223,8 +223,9 @@ export const api = {
   puzzleHint: (id: number, moves: string[]) => post<PuzzleHint>(`/api/puzzles/${id}/hint`, { moves }),
   exportPuzzle: (id: number, player: string) =>
     request<PuzzleExport>(`/api/puzzles/${id}/export?player=${encodeURIComponent(player)}`, {}),
-  createPuzzle: (position: PositionState, type: PuzzleType) =>
-    post<PuzzleView>('/api/puzzles', { root_fen: position.root_fen, moves: position.moves, type }),
+  /** Make a puzzle of `type` from a line or a pasted FEN; the engine checks that it is one. */
+  createPuzzle: (rootFen: string, moves: string[], type: PuzzleType) =>
+    post<PuzzleView>('/api/puzzles', { root_fen: rootFen, moves, type }),
   minePuzzles: (last: PositionState, label: string) =>
     post<PuzzleJob>('/api/puzzles/mine', { root_fen: last.root_fen, moves: last.moves, label }),
   generatePuzzles: (count: number, types: PuzzleType[]) => post<PuzzleJob>('/api/puzzles/generate', { count, types }),

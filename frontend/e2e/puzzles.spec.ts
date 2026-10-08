@@ -31,6 +31,13 @@ test('solve an attack puzzle: rating goes up, the solution and export are offere
   await expect(page.getByTestId('rating-change')).toContainText('rating 1500 →')
   expect(Number(await page.getByTestId('player-rating').textContent())).toBeGreaterThan(1500)
   await expect(page.getByTestId('puzzle-solution')).toContainText('R@')
+  // Themes are named in words, never as codes.
+  await expect(page.getByTestId('puzzle-info').locator('.tag').first()).toHaveText('1 步殺')
+  expect(await page.getByTestId('puzzle-info').locator('.tag').allTextContents()).not.toContainEqual(expect.stringMatching(/_/))
+  // The rating lives on the server: it is still there after a reload.
+  const rating = await page.getByTestId('player-rating').textContent()
+  await page.reload()
+  await expect(page.getByTestId('player-rating')).toHaveText(rating!)
 
   // Export: the FEN in lichess form, and the lichess analysis board in a new tab.
   const exportBox = page.getByTestId('puzzle-export')
@@ -91,4 +98,26 @@ test('the review board saves the position as a puzzle and mines the game', async
   await expect(page.getByTestId('mine-job')).toContainText('挖題完成', { timeout: 60_000 })
   await page.getByTestId('mine-job').getByRole('link', { name: '到題目頁' }).click()
   await expect(page.getByTestId('puzzle-library')).toContainText('共')
+})
+
+test('the puzzle page adds a pasted position as a puzzle, checked by the engine', async ({ page }) => {
+  await page.goto('/#/puzzles')
+  const library = page.getByTestId('puzzle-library')
+  // A lichess-style FEN (pocket as a ninth rank) works as well as the bracketed form.
+  await library.getByLabel('題目 FEN').fill('5k2/5ppp/8/8/8/8/5PPP/6K1/r b - - 0 1')
+  await library.getByLabel('新增的題型').selectOption({ label: '進攻題' })
+  await library.getByRole('button', { name: '新增題目' }).click()
+  await expect(library.getByTestId('puzzle-added')).toContainText(/已新增進攻題 #\d+（1 步/, { timeout: 20_000 })
+  await library.getByLabel('題目 FEN').fill('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR[] w KQkq - 0 1')
+  await library.getByRole('button', { name: '新增題目' }).click()
+  await expect(library.getByTestId('puzzle-added')).toContainText('不適合當進攻題', { timeout: 20_000 })
+})
+
+test('on a phone the puzzle page fits the screen with the board visible', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await addPuzzle(page, MATE_IN_ONE, 'attack')
+  await signIn(page, 'e2e-phone', ['attack'])
+  await expect(page.locator('cg-board')).toBeVisible()
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+  expect(overflow).toBeLessThanOrEqual(2) // chessground's file coordinates may stick out by 2 px
 })

@@ -25,7 +25,7 @@ export function PuzzleTools({ tree, position }: { tree: GameTree; position: Posi
     setSaving(true)
     setMessage('engine 檢查中…')
     try {
-      const puzzle = await api.createPuzzle(position, type)
+      const puzzle = await api.createPuzzle(position.root_fen, position.moves, type)
       setMessage(`已存成${puzzle.type_name} #${puzzle.id}（${puzzle.solver_moves ? `${puzzle.solver_moves} 步，` : ''}題目 rating ${puzzle.rating}）`)
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e))
