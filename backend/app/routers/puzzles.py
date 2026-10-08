@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Path, Query, Request
 
 from ..puzzles.models import (
     PUZZLE_TYPES,
     BattleMoveResult,
     CreatePuzzleRequest,
+    ExplainPuzzleRequest,
     GenerateRequest,
     GiveUpRequest,
     Hint,
@@ -16,12 +17,16 @@ from ..puzzles.models import (
     MoveAttempt,
     MoveResult,
     Player,
+    PlayerHistory,
     PlayerRequest,
     PuzzleExport,
     PuzzleJob,
     PuzzleStats,
+    PuzzleSummary,
+    PuzzleTexts,
     PuzzleType,
     PuzzleView,
+    ReportRequest,
 )
 from ..puzzles.service import PuzzleError, PuzzleService
 from .explain import chosen_provider
@@ -53,6 +58,21 @@ async def next_puzzle(request: Request, player: str = Query(max_length=24), type
         return puzzles(request).next(player, wanted)
     except PuzzleError as error:
         raise _error(error) from error
+
+
+@router.get("/players/{nickname}/history", response_model=PlayerHistory)
+async def history(request: Request, nickname: str = Path(max_length=24)) -> PlayerHistory:
+    """The player's attempts (newest first) and results by puzzle kind."""
+    try:
+        return puzzles(request).history(nickname)
+    except PuzzleError as error:
+        raise _error(error) from error
+
+
+@router.get("/puzzles", response_model=list[PuzzleSummary])
+async def library(request: Request) -> list[PuzzleSummary]:
+    """Every puzzle, reported ones included (the library is small: filtering is the client's)."""
+    return puzzles(request).library()
 
 
 @router.get("/puzzles/stats", response_model=PuzzleStats)
@@ -112,7 +132,7 @@ async def job(job_id: str, request: Request) -> PuzzleJob:
 @router.post("/puzzles/{puzzle_id}/move", response_model=MoveResult)
 async def move(puzzle_id: int, body: MoveAttempt, request: Request) -> MoveResult:
     try:
-        return puzzles(request).move(puzzle_id, body.player, body.moves, body.move, body.hint_used)
+        return await puzzles(request).move(puzzle_id, body.player, body.moves, body.move, body.hint_level)
     except PuzzleError as error:
         raise _error(error) from error
 
@@ -129,6 +149,33 @@ async def give_up(puzzle_id: int, body: GiveUpRequest, request: Request) -> Move
 async def hint(puzzle_id: int, body: HintRequest, request: Request) -> Hint:
     try:
         return puzzles(request).hint(puzzle_id, body.moves)
+    except PuzzleError as error:
+        raise _error(error) from error
+
+
+@router.post("/puzzles/{puzzle_id}/explain", response_model=PuzzleTexts)
+async def explain(puzzle_id: int, body: ExplainPuzzleRequest, request: Request) -> PuzzleTexts:
+    """The agent's explanation of a puzzle the player has attempted (written once, then stored)."""
+    provider = await chosen_provider(body.llm, request) or request.app.state.explain.provider
+    try:
+        return await puzzles(request).explain(puzzle_id, body.player, provider)
+    except PuzzleError as error:
+        raise _error(error) from error
+
+
+@router.post("/puzzles/{puzzle_id}/report", status_code=204)
+async def report(puzzle_id: int, body: ReportRequest, request: Request) -> None:
+    """Take a broken puzzle out of the rotation."""
+    try:
+        puzzles(request).report(puzzle_id, body.player, body.reason)
+    except PuzzleError as error:
+        raise _error(error) from error
+
+
+@router.post("/puzzles/{puzzle_id}/restore", status_code=204)
+async def restore(puzzle_id: int, request: Request) -> None:
+    try:
+        puzzles(request).restore(puzzle_id)
     except PuzzleError as error:
         raise _error(error) from error
 

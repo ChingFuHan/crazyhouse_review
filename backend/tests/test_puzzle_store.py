@@ -67,6 +67,44 @@ def test_next_puzzle_prefers_ratings_close_to_the_player(tmp_path):
     store.close()
 
 
+def test_each_chosen_kind_is_as_likely_however_many_puzzles_it_has(tmp_path):
+    store = PuzzleStore(tmp_path / "db.sqlite")
+    for i in range(10):
+        store.add(puzzle(type="battle", fen=f"6k1/5ppp/8/8/8/8/5PPP/5K2[R] w - - 0 {i + 1}", rating=1500))
+    store.add(puzzle(rating=1500))
+    player_id, _ = store.player("Cy", create=True)
+    kinds = [store.next_for(player_id, 1500, ["attack", "battle"]).type for _ in range(60)]
+    assert kinds.count("attack") >= 15, "1 attack among 10 battles still comes up about half the time"
+    store.close()
+
+
+def test_a_reported_puzzle_leaves_the_rotation_until_restored(tmp_path):
+    store = PuzzleStore(tmp_path / "db.sqlite")
+    broken = store.add(puzzle(rating=1500))
+    player_id, _ = store.player("Di", create=True)
+    assert store.set_disabled(broken.id, True, "Di：解答不對")
+    assert store.next_for(player_id, 1500, ["attack"]) is None and store.counts() == {}
+    assert store.get(broken.id).disabled and store.get(broken.id).report == "Di：解答不對"
+    assert store.set_disabled(broken.id, False, "") and store.next_for(player_id, 1500, ["attack"]).id == broken.id
+    assert not store.set_disabled(999, True, "")
+    store.close()
+
+
+def test_history_lists_attempts_newest_first(tmp_path):
+    store = PuzzleStore(tmp_path / "db.sqlite")
+    first = store.add(puzzle(rating=1400))
+    second = store.add(puzzle(fen="6k1/5ppp/8/8/8/8/5PPP/5K2[R] w - - 0 1", rating=1600))
+    player_id, _ = store.player("Ed", create=True)
+    for stored, score in ((first, 1.0), (second, 0.0)):
+        before = Rating()
+        new_player, new_puzzle = play(before, Rating(stored.rating, stored.rd, stored.vol), score)
+        store.record(player_id, before, stored, new_player, new_puzzle, score)
+    history = store.history(player_id)
+    assert [(p.id, row["attempt_score"]) for p, row in history] == [(second.id, 0.0), (first.id, 1.0)]
+    assert history[1][1]["player_after"] > history[1][1]["player_before"]
+    store.close()
+
+
 def test_an_older_database_gets_the_new_columns_and_keeps_its_puzzles(tmp_path):
     import sqlite3
 
@@ -86,6 +124,7 @@ def test_an_older_database_gets_the_new_columns_and_keeps_its_puzzles(tmp_path):
     store = PuzzleStore(path)
     kept = store.get(1)
     assert kept.solution == ["R@d8"] and kept.title == "" and kept.ai_warnings == []
+    assert kept.before_fen == "" and kept.last_move == "" and not kept.disabled
     written = store.add(puzzle(fen="6k1/5ppp/8/8/8/8/5PPP/5K2[R] w - - 0 1", title="打入底線", hint="看看底線",
                                explanation="R@d8 將殺", ai="codex:gpt-6.1-sol (low)"))
     assert (written.title, written.hint, written.ai) == ("打入底線", "看看底線", "codex:gpt-6.1-sol (low)")

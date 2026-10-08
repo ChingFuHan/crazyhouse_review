@@ -159,6 +159,19 @@ async def curate(provider: LLMProvider | None, miner: Miner, candidates: list[Pu
     return picked
 
 
+async def explain(provider: LLMProvider, miner: Miner, puzzle: Puzzle, log: Log) -> Puzzle | None:
+    """Texts for a puzzle already in the library, written from the engine's solution; a title or hint it
+    already has stays. None when the agent fails or its answer cannot be used."""
+    request = "id 0 是題庫中的題目，玩家已經作答：請依資料中的解答線為它撰寫文字。"
+    written = await _written(provider, miner, [puzzle], 1, request, log)
+    if not written:
+        return None
+    texts = written[0]
+    texts.title = puzzle.title or texts.title
+    texts.hint = puzzle.hint or texts.hint
+    return texts
+
+
 async def design(provider: LLMProvider, miner: Miner, kind: PuzzleType, description: str, reference: str,
                  log: Log) -> Puzzle | None:
     """One puzzle of `kind` designed by the agent, verified by the engine; None after the attempts."""

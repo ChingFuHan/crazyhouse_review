@@ -39,6 +39,11 @@ class Puzzle(BaseModel):
     explanation: str = ""
     ai: str = Field(default="", description="The agent (cli:model (effort)) that wrote the texts.")
     ai_warnings: list[AnswerWarning] = []
+    # The opponent's move that led here, when known (mined lines, positions saved from a line).
+    before_fen: str = ""
+    last_move: str = ""
+    disabled: bool = Field(default=False, description="Reported as broken: never chosen as a next puzzle.")
+    report: str = ""
 
 
 class Player(BaseModel):
@@ -69,13 +74,19 @@ class PuzzleView(BaseModel):
     rated: bool = Field(description="False when this player already had a rated attempt at it.")
     title: str = ""
     ai: str = ""
+    before_fen: str = Field(default="", description="The position before the opponent's last move, if known.")
+    last_move: str = Field(default="", description="The opponent's move (UCI) from before_fen to fen.")
+    disabled: bool = False
+    report: str = ""
 
 
 class MoveAttempt(BaseModel):
     player: str = Field(min_length=1, max_length=24, pattern=NICKNAME)
     moves: list[str] = Field(default=[], max_length=40, description="The puzzle line so far (UCI).")
     move: str = Field(max_length=10)
-    hint_used: bool = False
+    hint_level: Literal[0, 1, 2] = Field(
+        default=0, description="1: saw the agent's hint in words (half a point), 2: saw the piece to move (none)."
+    )
 
 
 class RatingChange(BaseModel):
@@ -89,6 +100,9 @@ class RatingChange(BaseModel):
 
 class MoveResult(BaseModel):
     correct: bool
+    alternative: bool = Field(
+        default=False, description="Not the answer but as good by the engine: try again, nothing counted."
+    )
     played: MoveModel | None = Field(description="The solver's move (None when they gave up).")
     reply: MoveModel | None = Field(default=None, description="The opponent's answer when the puzzle goes on.")
     done: bool
@@ -126,6 +140,57 @@ class Hint(BaseModel):
     square: str | None = Field(description="The square of the piece to move, or None for a drop.")
     drop: str | None = Field(description="The pocket piece to drop, if the move is a drop.")
     text: str = Field(default="", description="The agent's hint in words (never the move itself).")
+
+
+class ExplainPuzzleRequest(BaseModel):
+    player: str = Field(min_length=1, max_length=24, pattern=NICKNAME)
+    llm: LlmChoice | None = None
+
+
+class PuzzleTexts(BaseModel):
+    title: str
+    hint: str
+    explanation: str
+    ai: str
+    ai_warnings: list[AnswerWarning]
+
+
+class ReportRequest(BaseModel):
+    player: str = Field(min_length=1, max_length=24, pattern=NICKNAME)
+    reason: str = Field(default="", max_length=200)
+
+
+class PuzzleSummary(BaseModel):
+    id: int
+    type: PuzzleType
+    type_name: str
+    title: str
+    rating: int
+    plays: int
+    wins: float
+    source: str = Field(description="game / selfplay / manual / design")
+    ai: str
+    disabled: bool
+    report: str
+
+
+class HistoryEntry(BaseModel):
+    puzzle: PuzzleSummary
+    score: float
+    before: int
+    after: int
+    at: float = Field(description="Unix time of the attempt.")
+
+
+class TypeRecord(BaseModel):
+    plays: int
+    score: float = Field(description="Average score (1 solved, 0.5 half, 0 failed).")
+
+
+class PlayerHistory(BaseModel):
+    player: Player
+    attempts: list[HistoryEntry] = Field(description="Newest first.")
+    by_type: dict[PuzzleType, TypeRecord]
 
 
 class CreatePuzzleRequest(LineRequest):

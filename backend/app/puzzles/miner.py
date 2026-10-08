@@ -200,6 +200,7 @@ class Miner:
                         continue
                     last_battle = ply
                 puzzle.source = {**source, "ply": ply}
+                puzzle.before_fen, puzzle.last_move = before_fen, moves[ply - 1]
                 found.append(puzzle)
                 line_board = board.copy()
                 for move in puzzle.solution:

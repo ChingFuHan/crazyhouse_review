@@ -125,3 +125,46 @@ def test_designing_needs_an_agent_and_a_valid_choice(tmp_path):
     with TestClient(create_app(SETTINGS, ExplainService(FakeProvider()), puzzle_db=tmp_path / "q.db")) as c:
         job = c.post("/api/puzzles/generate", json={"mode": "curate", "count": 1, "types": ["attack"]}).json()
         assert job["ai"] == "fake" and job["status"] == "running"
+
+
+@needs_engine
+def test_an_attempted_puzzle_gets_its_explanation_written_once(tmp_path):
+    answer = ('{"picks": [{"id": 0, "title": "底線", "hint": "黑王無路可逃",'
+              ' "explanation": "車打入底線將殺：黑王被自己的兵困住。"}]}')
+    agent = Scripted([answer])
+    with TestClient(create_app(SETTINGS, ExplainService(agent), puzzle_db=tmp_path / "p.db")) as c:
+        store = c.app.state.puzzles.store
+        mate = store.add(Puzzle(type="attack", fen=MATE_IN_ONE, solver="white", solution=["R@d8"], title="自己的標題")).id
+        c.post("/api/players", json={"nickname": "Gus"})
+        early = c.post(f"/api/puzzles/{mate}/explain", json={"player": "Gus"})
+        assert early.status_code == 422 and "先作答" in early.json()["detail"]["message"], "never before an attempt"
+        c.post(f"/api/puzzles/{mate}/giveup", json={"player": "Gus"})
+        texts = c.post(f"/api/puzzles/{mate}/explain", json={"player": "Gus"}).json()
+        assert texts["explanation"] == "車打入底線將殺：黑王被自己的兵困住。" and texts["ai"] == "scripted:agent"
+        assert texts["title"] == "自己的標題" and texts["hint"] == "黑王無路可逃", "a title it had stays"
+        assert c.post(f"/api/puzzles/{mate}/explain", json={"player": "Gus"}).json() == texts and len(agent.calls) == 1
+        # Stored: the next solver gets it at the end like any agent-written puzzle.
+        c.post("/api/players", json={"nickname": "Hal"})
+        solved = c.post(f"/api/puzzles/{mate}/move", json={"player": "Hal", "moves": [], "move": "R@d8"}).json()
+        assert solved["explanation"] == texts["explanation"]
+
+
+@needs_engine
+def test_two_viewers_asking_at_once_run_the_agent_once(tmp_path):
+    from app.puzzles.service import PuzzleService
+    from app.puzzles.store import PuzzleStore
+
+    async def run():
+        service = PuzzleService(PuzzleStore(tmp_path / "p.db"),
+                                Miner(EngineService(replace(puzzle_engine_settings(), threads=2)), 300), [])
+        mate = service.store.add(Puzzle(type="attack", fen=MATE_IN_ONE, solver="white", solution=["R@d8"])).id
+        for nickname in ("Ivy", "Jo"):
+            service.player(nickname, create=True)
+            service.give_up(mate, nickname)
+        agent = Scripted(['{"picks": [{"id": 0, "title": "底線", "explanation": "車打入底線將殺。"}]}'])
+        both = await asyncio.gather(service.explain(mate, "Ivy", agent), service.explain(mate, "Jo", agent))
+        await service.close()
+        return agent, both
+
+    agent, both = asyncio.run(run())
+    assert len(agent.calls) == 1 and both[0] == both[1] and both[0].explanation == "車打入底線將殺。"

@@ -23,7 +23,7 @@ from ..chess_core import (
 from ..models import ExportNode, MoveModel
 from ..pgn_import import export_pgn
 from ..llm.provider import LLMProvider
-from .agent import curate, design
+from .agent import curate, design, explain
 from .generator import generate
 from .miner import MIDDLEGAME_PLY, Miner, chances
 from .models import (
@@ -31,15 +31,20 @@ from .models import (
     TYPE_NAMES,
     BattleMoveResult,
     Hint,
+    HistoryEntry,
     MadePuzzle,
     MoveResult,
     Player,
+    PlayerHistory,
     Puzzle,
     PuzzleExport,
     PuzzleJob,
+    PuzzleSummary,
+    PuzzleTexts,
     PuzzleType,
     PuzzleView,
     RatingChange,
+    TypeRecord,
 )
 from .rating import Rating, play
 from .store import PuzzleStore
@@ -50,6 +55,8 @@ MAX_JOBS = 20
 # Battle verdicts on the solver's drop in winning chances (the whole-game review's thresholds).
 VERDICTS = ((0.3, "blunder"), (0.2, "mistake"), (0.1, "inaccuracy"), (0.02, "good"))
 BATTLE_MARGIN = 0.2  # final chances vs start: beyond = won / lost, within = held
+EQUIVALENT_GAP = 0.1  # a move this close (winning chances) to the answer is "as good": try again
+HINT_SCORES = {0: 1.0, 1: 0.5, 2: 0.0}  # solved after no hint / the agent's words / the piece to move
 
 
 class PuzzleError(ValueError):
@@ -72,6 +79,7 @@ class PuzzleService:
         self.openings = openings
         self._jobs: OrderedDict[str, PuzzleJob] = OrderedDict()
         self._tasks: dict[str, asyncio.Task] = {}
+        self._explaining: dict[int, asyncio.Lock] = {}
 
     async def close(self) -> None:
         for task in self._tasks.values():
@@ -102,7 +110,68 @@ class PuzzleService:
             rated=player_id is None or not self.store.attempted(player_id, puzzle.id),
             title=puzzle.title,
             ai=puzzle.ai,
+            before_fen=puzzle.before_fen,
+            last_move=puzzle.last_move,
+            disabled=puzzle.disabled,
+            report=puzzle.report,
         )
+
+    @staticmethod
+    def summary(puzzle: Puzzle) -> PuzzleSummary:
+        return PuzzleSummary(
+            id=puzzle.id, type=puzzle.type, type_name=TYPE_NAMES[puzzle.type], title=puzzle.title,
+            rating=round(puzzle.rating), plays=puzzle.plays, wins=puzzle.wins,
+            source=str(puzzle.source.get("kind", "manual")), ai=puzzle.ai, disabled=puzzle.disabled,
+            report=puzzle.report,
+        )  # fmt: skip
+
+    def library(self) -> list[PuzzleSummary]:
+        return [self.summary(p) for p in self.store.all()]
+
+    def history(self, nickname: str) -> PlayerHistory:
+        player_id, player = self.player(nickname)
+        attempts = [
+            HistoryEntry(puzzle=self.summary(puzzle), score=row["attempt_score"], before=round(row["player_before"]),
+                         after=round(row["player_after"]), at=row["attempt_at"])
+            for puzzle, row in self.store.history(player_id)
+        ]  # fmt: skip
+        by_type: dict[PuzzleType, TypeRecord] = {}
+        for kind in PUZZLE_TYPES:
+            scores = [a.score for a in attempts if a.puzzle.type == kind]
+            if scores:
+                by_type[kind] = TypeRecord(plays=len(scores), score=sum(scores) / len(scores))
+        return PlayerHistory(player=player, attempts=attempts, by_type=by_type)
+
+    def report(self, puzzle_id: int, nickname: str, reason: str) -> None:
+        """Take a broken puzzle out of the rotation (it can be restored from the library)."""
+        self.player(nickname)
+        if not self.store.set_disabled(puzzle_id, True, f"{nickname.strip()}：{reason.strip() or '沒有說明原因'}"):
+            raise PuzzleError("找不到這一題")
+
+    def restore(self, puzzle_id: int) -> None:
+        if not self.store.set_disabled(puzzle_id, False, ""):
+            raise PuzzleError("找不到這一題")
+
+    async def explain(self, puzzle_id: int, nickname: str, provider: LLMProvider | None) -> PuzzleTexts:
+        """The puzzle's explanation, written by the agent (from the engine's solution) when it has none;
+        only after the player's attempt, so it never gives the answer away. Stored for everyone."""
+        player_id, _ = self.player(nickname)
+        if not self.store.attempted(player_id, puzzle_id):
+            self._puzzle(puzzle_id)
+            raise PuzzleError("先作答這一題（解出、走錯或看解答），才能請 AI 解釋")
+        async with self._explaining.setdefault(puzzle_id, asyncio.Lock()):
+            puzzle = self._puzzle(puzzle_id)
+            if not puzzle.explanation:
+                if provider is None:
+                    raise PuzzleError("沒有可用的 AI：請在題目頁的 AI 設定選一個 agent")
+                notes: list[str] = []
+                written = await explain(provider, self.miner, puzzle, notes.append)
+                if written is None:
+                    raise PuzzleError("AI 沒有寫出可用的說明" + (f"（{notes[-1]}）" if notes else ""))
+                self.store.set_texts(written)
+                puzzle = written
+        return PuzzleTexts(title=puzzle.title, hint=puzzle.hint, explanation=puzzle.explanation, ai=puzzle.ai,
+                           ai_warnings=puzzle.ai_warnings)
 
     def next(self, nickname: str, types: list[PuzzleType]) -> PuzzleView:
         player_id, player = self.player(nickname)
@@ -150,8 +219,10 @@ class PuzzleService:
             board.push(move)
         return out
 
-    def move(self, puzzle_id: int, nickname: str, moves: list[str], answer: str, hint_used: bool) -> MoveResult:
-        """Judge one solver move: the solution's move, or on the last step any move that mates."""
+    async def move(self, puzzle_id: int, nickname: str, moves: list[str], answer: str, hint_level: int) -> MoveResult:
+        """Judge one solver move: the solution's move or any mate is right; a move the engine finds as
+        good as the answer is neither (try again); anything else fails the puzzle. Solving after a hint
+        scores less (HINT_SCORES); only the first attempt is rated, so a retry after a failure is not."""
         puzzle = self._puzzle(puzzle_id)
         if puzzle.type == "battle":
             raise PuzzleError("對轟題請用對下模式")
@@ -166,9 +237,12 @@ class PuzzleService:
         last = len(moves) + 1 == len(puzzle.solution)
         after = board.copy()
         after.push(move)
-        correct = move.uci() == expected or (last and after.is_checkmate())
-        if not correct or last:
-            score = 1.0 if correct and not hint_used else 0.0
+        mate = after.is_checkmate()
+        correct = move.uci() == expected or mate
+        if not correct and await self._as_good(puzzle, board, move.uci(), expected):
+            return MoveResult(correct=False, alternative=True, played=played, done=False)
+        if not correct or last or mate:
+            score = HINT_SCORES[hint_level] if correct else 0.0
             return MoveResult(
                 correct=correct, played=played, done=True,
                 solution=self._models(puzzle.fen, puzzle.solution), rating=self._rate(player_id, player, puzzle, score),
@@ -176,6 +250,16 @@ class PuzzleService:
             )  # fmt: skip
         reply = chess.Move.from_uci(puzzle.solution[len(moves) + 1])
         return MoveResult(correct=True, played=played, reply=move_model(after, reply), done=False)
+
+    async def _as_good(self, puzzle: Puzzle, board: chess.Board, played: str, expected: str) -> bool:
+        """Whether the engine finds `played` about as good for the solver as the answer here."""
+        fen = board.fen()
+        mine, answer = await asyncio.gather(
+            self.miner.lines(fen, 1, root_moves=(played,)), self.miner.lines(fen, 1, root_moves=(expected,))
+        )
+        if not mine or not answer:
+            return False
+        return chances(answer[0], puzzle.solver) - chances(mine[0], puzzle.solver) <= EQUIVALENT_GAP
 
     def give_up(self, puzzle_id: int, nickname: str) -> MoveResult:
         puzzle = self._puzzle(puzzle_id)
@@ -269,7 +353,8 @@ class PuzzleService:
     async def create(self, root_fen: str | None, moves: list[str], kind: PuzzleType) -> Puzzle:
         """A puzzle of `kind` from this position, if the engine confirms it is one."""
         try:
-            fen = build_board(normalize_root_fen(root_fen), moves).fen()
+            root = normalize_root_fen(root_fen)
+            fen = build_board(root, moves).fen()
         except LineError as error:
             raise PuzzleError(str(error)) from error
         # The viewer chose the kind: a set-up position counts as a middlegame when they say so.
@@ -283,6 +368,8 @@ class PuzzleService:
             found = "、".join(TYPE_NAMES[p.type] for p in candidates) or "沒有任何題型"
             raise PuzzleError(f"engine 判定這個局面不適合當{TYPE_NAMES[kind]}（{found}）：{reason(kind)}")
         match.source = {"kind": "manual"}
+        if moves:  # saved from a line: the opponent's move that led here is known
+            match.before_fen, match.last_move = build_board(root, moves[:-1]).fen(), moves[-1]
         stored = self.store.add(match)
         if stored is None:
             existing = self.store.find(fen, kind)
