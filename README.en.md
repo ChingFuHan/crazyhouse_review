@@ -180,9 +180,11 @@ local network; ratings and attempts are kept on the server).
 
 - **Solutions**: every solver move must be the only good one, the opponent plays the engine's best, until
   mate or a clear win; on the last move any mate counts.
-- **Sources**: (1) 「從這盤挖題」 (mine this game) on the review page scans the main line; (2) 「存成題目」
-  (save as puzzle) stores the board's position as the chosen kind (checked by the engine, with the reason
-  when it does not qualify); (3) 「製造新題」 (make new puzzles) on the puzzle page: engine self-play from
+- **Sources**: (1) 「從這盤挖題」 (mine this game) on the review page scans the main line; (2) by hand: paste
+  a FEN on the puzzle page (pockets as `[..]` or lichess's `/..`) and choose the kind, or 「存成題目」 (save
+  as puzzle) on the review page for the board's position (checked by the engine, with the reason when it
+  does not qualify); (3) 「製造新題」 (make new puzzles) on the puzzle page (one batch at a time, so the
+  machine is never swamped): engine self-play from
   common openings, now and then playing a human-like second choice, keeping the positions a human is most
   likely to miss. Mining and making run in the background on a third engine process
   (`PUZZLE_ENGINE_THREADS`, default 2), so the review board is never slowed down.
@@ -192,7 +194,7 @@ local network; ratings and attempts are kept on the server).
 - **Ratings**: Glicko-2 (as on lichess) for players and puzzles; only the first attempt at a puzzle counts;
   a hint or showing the solution counts as a failure. Puzzles are chosen within ±100 of the player's
   rating, widened step by step.
-- **Export**: copy the FEN (lichess form), copy the PGN (with the solution after an attempt), open the
+- **Export**: copy the FEN (the common `[..]` pocket form, which lichess and other tools read), copy the PGN (with the solution after an attempt), open the
   lichess analysis board (from which one can play the computer or a friend), or open the puzzle and its
   solution on the review board (where the AI can explain it).
 - Data: `DATA_DIR` (default `backend/data/crazyhouse.db`, SQLite, git-ignored).

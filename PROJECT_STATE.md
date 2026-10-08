@@ -42,7 +42,9 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
 再之後（使用者回報「AI 回答逾時」）：使用者用 codex 跑全局掃描時逾時（上限 195 秒；codex 沿用了個人設定——
 預設 effort xhigh、caveman proxy、MCP、hooks）。現在 codex 乾淨執行、CLI 上限改為 600 秒（`LLM_CLI_TIMEOUT_S`），
 等待中的回答顯示使用中的 AI 並有取消按鈕。
-再之後：題目頁（見架構）。
+再之後：題目頁（見架構），並依需求嚴格檢查後補上：題目頁本身可貼 FEN 新增題目、主題標籤改為文字（不顯示代碼）、
+複製的 FEN 改為通用的中括號寫法（lichess 兩種都接受——已查 chessops 原始碼並以實際 lichess 網址確認）、同一時間只跑一批製題、
+重新整理後 rating 保留與手機寬度的 E2E。
 目前沒有進行中的任務。
 
 ## 目前架構
@@ -327,7 +329,7 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
   於著法落地前執行時才通過。
 
 ## 驗證狀態
-- `cd backend && uv run pytest -q` → 226 passed（含 `tests/test_puzzle_store.py`（Glicko-2 論文範例、儲存、只計分一次）與
+- `cd backend && uv run pytest -q` → 226 passed（含 test_puzzles 檢查同一時間只跑一批製題；含 `tests/test_puzzle_store.py`（Glicko-2 論文範例、儲存、只計分一次）與
   `tests/test_puzzles.py`（真 engine：找出進攻與防守題、接受其他將殺、重做不計分、提示、走錯、進度不符 422、對轟下到結束、手動新增
   與拒絕、背景挖真實對局與製題））（含：真的 uvicorn 伺服器與連線——用戶端中途斷開
   `/api/explain/stream` 後數秒內 CLI 程序被結束；codex 乾淨執行參數；逾時訊息）（含 `tests/test_cli_providers.py`：三個 CLI 以重播真實輸出
@@ -352,8 +354,9 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
   互動分析；LLM context == 棋盤／engine／analyzer、變化與觀看方、prompt injection 邊界、快取鍵、
   候選著流程、SSE 事件、缺 key 時 503、key 永不出現在錯誤中、以模擬 SDK 串流測試拒答／fallback。
   沒有真實的 Claude 呼叫。
-- `cd frontend && npx vitest run` → 49 passed；`npx tsc -b`、`npm run lint`、`npx vite build` 無誤。
-- `cd frontend && npx playwright test` → 42 passed（含 `e2e/puzzles.spec.ts`：用另一個將殺打入解出 → rating 上升、解答、複製
+- `cd frontend && npx vitest run` → 50 passed；`npx tsc -b`、`npm run lint`、`npx vite build` 無誤。
+- `cd frontend && npx playwright test` → 44 passed（含 `e2e/puzzles.spec.ts`：貼上 lichess 寫法 FEN 新增題目（含拒絕原因）、
+  主題以文字顯示、重新整理後 rating 保留、手機寬度不溢出；用另一個將殺打入解出 → rating 上升、解答、複製
   FEN、lichess 彈出視窗網址、載入復盤頁；防守題的提示與走錯；對轟下到結束；復盤頁存成題目（重複被拒）與挖題）（含：取消慢速的 codex 回答與全局掃描後再提問）（含：從即時清單選 Codex CLI + model + effort，並取得該 CLI
   針對棋盤 FEN 的回答，重新整理後保留；CLI 更新移除所選 model → 提示並改回預設；手機上走棋不再捲動頁面）（含：未分析著法與 +9.9 評估的回答警告、含棋盤 FEN 的
   「AI 看到的資料」、雙方全局掃描且瀏覽時保留）（含：AI 解釋被延遲 4 秒期間仍可送出自由問題與快捷

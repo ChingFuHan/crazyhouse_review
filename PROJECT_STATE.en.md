@@ -51,7 +51,10 @@ moving the board away mid-interaction (now only the move panel scrolls).
 Then (user report "AI 回答逾時"): the user's codex whole-game scans timed out (195 s limit; codex ran
 with their personal setup — xhigh default effort, caveman proxy, MCP, hooks). Codex now runs clean,
 the CLI limit is 600 s (`LLM_CLI_TIMEOUT_S`), pending answers show the AI and a cancel button.
-Then: the puzzle page (see architecture).
+Then: the puzzle page (see architecture), and a strict check against the request: added a paste-FEN
+form on the puzzle page itself, theme labels in words (no codes), the copied FEN in the common bracket
+form (lichess reads both — checked in chessops and with a live lichess URL), one make-puzzles batch at a
+time, E2E for reload persistence and phone width.
 No task in progress.
 
 ## Current architecture
@@ -384,7 +387,7 @@ No task in progress.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 226 passed (incl. `tests/test_puzzle_store.py` (Glicko-2 paper example,
+- `cd backend && uv run pytest -q` → 226 passed (one generate batch at a time checked in test_puzzles) (incl. `tests/test_puzzle_store.py` (Glicko-2 paper example,
   store, rated-once) and `tests/test_puzzles.py` (real engine: attack and defense found, solving with any
   mate accepted, replay unrated, hints, wrong move, out-of-step 422, battle to the end, manual create +
   refusal, mining a real game and generating as background jobs)) (incl. a real uvicorn server + real connection: a client
@@ -416,8 +419,9 @@ No task in progress.
   a real-game job not disturbing interactive analysis; LLM context == board/engine/analyzer, variation
   and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
   503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
-- `cd frontend && npx vitest run` → 49 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 42 passed (incl. `e2e/puzzles.spec.ts`: solve a mate puzzle with
+- `cd frontend && npx vitest run` → 50 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
+- `cd frontend && npx playwright test` → 44 passed (incl. `e2e/puzzles.spec.ts`: paste a lichess-style FEN
+  as a puzzle (+ refusal reason), themes in words, rating kept after reload, phone width fits; solve a mate puzzle with
   another mating drop → rating up, solution, FEN copy, lichess popup URL, open on the review board; hint +
   wrong move on a defense puzzle; a battle to the end; save as puzzle (+ duplicate refused) and mine a game
   from the review page) (incl. cancelling a slow codex answer and a slow scan,
