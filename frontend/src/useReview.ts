@@ -3,8 +3,18 @@
 
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { api } from './api'
-import { type Source, type StoredSession, clearSession, loadSession, saveSource, saveState, snapshot } from './session'
-import { type GameTree, addChild, deleteSubtree, fromDto, fromRoot, navigation } from './tree'
+import {
+  type RecentGame,
+  type Source,
+  type StoredSession,
+  clearSession,
+  loadSession,
+  rememberGame,
+  saveSource,
+  saveState,
+  snapshot,
+} from './session'
+import { type GameTree, addChild, deleteSubtree, fromDto, fromRoot, makeMainline, navigation } from './tree'
 import type { PositionState } from './types'
 
 export interface ReviewState {
@@ -20,6 +30,7 @@ type Action =
   | { type: 'select'; id: string }
   | { type: 'added'; parentId: string; state: PositionState }
   | { type: 'deleted'; id: string }
+  | { type: 'promoted'; id: string }
   | { type: 'error'; message: string | null }
 
 function reducer(s: ReviewState, action: Action): ReviewState {
@@ -47,9 +58,20 @@ function reducer(s: ReviewState, action: Action): ReviewState {
       const activeId = s.activeId && tree.nodes[s.activeId] ? s.activeId : (node?.parentId ?? tree.rootId)
       return { ...s, tree, activeId }
     }
+    case 'promoted':
+      return s.tree?.nodes[action.id] ? { ...s, tree: makeMainline(s.tree, action.id) } : s
     case 'error':
       return { ...s, error: action.message }
   }
+}
+
+/** How a game is listed among the recent games. */
+export function gameLabel(tree: GameTree, source: Source): string {
+  const h = tree.headers
+  const date = [h.UTCDate, h.Date].find((d) => d && !d.includes('?'))
+  if (h.White || h.Black) return `${h.White ?? '?'} – ${h.Black ?? '?'}${h.Result ? ` ${h.Result}` : ''}${date ? ` · ${date}` : ''}`
+  if (source.kind === 'fen') return source.fen ? `FEN 局面 ${source.fen.split(' ')[0]}` : '新局面'
+  return 'PGN 對局'
 }
 
 export type NavKind = keyof typeof navigation
@@ -129,6 +151,8 @@ export function useReview() {
         ;({ tree } = addChild(tree, parentId, child))
         byLine.set(child.moves.join(' '), child.position_id)
       }
+      const mainEnd = session.mainMoves && byLine.get(session.mainMoves.join(' '))
+      if (mainEnd) tree = makeMainline(tree, mainEnd)
       if (generation !== loadGeneration.current) return 'superseded'
       const activeId = byLine.get(session.activeMoves.join(' ')) ?? tree.rootId
       dispatch({ type: 'loaded', tree, variantAssumed, source: session.source, activeId })
@@ -168,6 +192,17 @@ export function useReview() {
   }, [])
 
   const deleteVariation = useCallback((id: string) => dispatch({ type: 'deleted', id }), [])
+  /** Make the line through `id` the game's main line (review, export and 「回到主線」 follow it). */
+  const promoteToMain = useCallback((id: string) => dispatch({ type: 'promoted', id }), [])
+  /** Switch to a game opened earlier, with its variations and position. */
+  const openRecent = useCallback(
+    async (game: RecentGame): Promise<boolean> => {
+      const outcome = await restore(game.session)
+      if (outcome === 'failed') fail(new Error('無法重新開啟這一盤'))
+      return outcome === 'restored'
+    },
+    [restore],
+  )
   const clearError = useCallback(() => dispatch({ type: 'error', message: null }), [])
 
   const { tree, activeId } = state
@@ -195,9 +230,29 @@ export function useReview() {
     if (source) saveSource(source)
   }, [source])
   useEffect(() => {
-    if (tree && activeId) saveState(snapshot(tree, activeId))
-  }, [tree, activeId])
+    if (!tree || !activeId) return
+    const stored = snapshot(tree, activeId)
+    saveState(stored)
+    // A bare new position without moves is not worth listing.
+    if (source && (source.kind === 'pgn' || Object.keys(tree.nodes).length > 1)) {
+      rememberGame({ source, ...stored }, gameLabel(tree, source))
+    }
+  }, [tree, activeId, source])
 
   const active = tree && activeId ? tree.nodes[activeId] : null
-  return { ...state, active, newGame, loadPgn, loadText, select, play, playLine, navigate, deleteVariation, clearError }
+  return {
+    ...state,
+    active,
+    newGame,
+    loadPgn,
+    loadText,
+    select,
+    play,
+    playLine,
+    navigate,
+    deleteVariation,
+    promoteToMain,
+    openRecent,
+    clearError,
+  }
 }

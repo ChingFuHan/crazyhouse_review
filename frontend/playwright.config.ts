@@ -14,6 +14,8 @@ export default defineConfig({
     baseURL: 'http://127.0.0.1:5181',
     trace: 'retain-on-failure',
     // Shortest offered search time (UI default is 3 s) keeps the suite fast; settings tests change it.
+    // The automatic whole-game review is off (it annotates moves while tests read them); the review
+    // tests turn it on.
     storageState: {
       cookies: [],
       origins: [
@@ -24,6 +26,7 @@ export default defineConfig({
               name: 'crazyhouse-review:engine-settings',
               value: JSON.stringify({ multipv: 3, depth: null, movetime_ms: 1000, threads: 4, hash_mb: 256 }),
             },
+            { name: 'crazyhouse-review:auto-review', value: 'off' },
           ],
         },
       ],

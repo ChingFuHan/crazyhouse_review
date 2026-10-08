@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
-import { activePly, dragMove, loadPgn } from './helpers'
+import { activePly, dragMove, loadPgn, sideTab } from './helpers'
 
 const GAME = `[Variant "Crazyhouse"]
 [White "W"]
@@ -18,6 +18,7 @@ test('export the analysis as PGN and import it back unchanged', async ({ page })
   const ucis = () => page.locator('.move').evaluateAll((els) => els.map((el) => el.getAttribute('data-uci')))
   const before = await ucis()
 
+  await sideTab(page, '對局與工具')
   const panel = page.getByTestId('export')
   await panel.getByRole('button', { name: '匯出 PGN' }).click()
   const pgn = await panel.getByLabel('匯出的 PGN').inputValue()

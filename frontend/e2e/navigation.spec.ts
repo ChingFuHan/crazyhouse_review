@@ -78,7 +78,7 @@ test('PGN load, navigation and pockets stay consistent with the backend', async 
 test('invalid PGN shows the backend reason and keeps the current game', async ({ page }) => {
   await page.goto('/')
   await loadPgn(page, GAME)
-  await page.getByRole('button', { name: '載入 PGN / FEN' }).click()
+  await page.getByRole('button', { name: '載入對局' }).click()
   await page.getByLabel('PGN').fill('[Variant "Atomic"]\n\n1. e4 *')
   await page.getByRole('button', { name: '載入', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText('only crazyhouse')

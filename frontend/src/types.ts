@@ -293,6 +293,16 @@ export interface ReviewPly {
   classification: MoveClassification | null
 }
 
+/** A move tried in a position (learning from mistakes), judged like the whole-game review. */
+export interface JudgedMove {
+  played: MoveModel
+  best: MoveModel | null
+  chances_best: number
+  chances_played: number
+  /** null: a good move (the best, or within an inaccuracy of it). */
+  verdict: MoveClassification | null
+}
+
 export interface ReviewJob {
   job_id: string
   root_fen: string

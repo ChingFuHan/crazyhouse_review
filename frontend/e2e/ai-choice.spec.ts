@@ -1,5 +1,6 @@
 import { rmSync, writeFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
+import { sideTab } from './helpers'
 import { FAKE_CLI_ENV } from './fakeCli'
 
 test.afterEach(() => rmSync(FAKE_CLI_ENV.FAKE_CLI_STATE, { force: true }))
@@ -7,6 +8,7 @@ test.afterEach(() => rmSync(FAKE_CLI_ENV.FAKE_CLI_STATE, { force: true }))
 test('the viewer picks the AI CLI, model and effort from live CLI lists', async ({ page }) => {
   rmSync(FAKE_CLI_ENV.FAKE_CLI_STATE, { force: true })
   await page.goto('/')
+  await sideTab(page, '問 AI')
   const settings = page.getByTestId('ai-settings')
   await expect(settings.getByTestId('ai-choice')).toHaveText('伺服器預設（fake）')
   await settings.getByLabel('AI 設定').click()
@@ -33,6 +35,7 @@ test('the viewer picks the AI CLI, model and effort from live CLI lists', async 
 test('a model a CLI update removed falls back to the default instead of failing', async ({ page }) => {
   rmSync(FAKE_CLI_ENV.FAKE_CLI_STATE, { force: true })
   await page.goto('/')
+  await sideTab(page, '問 AI')
   const settings = page.getByTestId('ai-settings')
   await settings.getByLabel('AI 設定').click()
   await settings.getByLabel('AI 來源').selectOption({ label: 'Codex CLI' })
@@ -50,6 +53,7 @@ test('a model a CLI update removed falls back to the default instead of failing'
 test('a slow answer can be cancelled, and asking again works', async ({ page }) => {
   writeFileSync(FAKE_CLI_ENV.FAKE_CLI_STATE, JSON.stringify({ slow_seconds: 60 }))
   await page.goto('/')
+  await sideTab(page, '問 AI')
   const settings = page.getByTestId('ai-settings')
   await settings.getByLabel('AI 設定').click()
   await settings.getByLabel('AI 來源').selectOption({ label: 'Codex CLI' })

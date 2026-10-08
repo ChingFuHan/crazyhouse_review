@@ -13,7 +13,7 @@ test('a crazyhouse FEN can be loaded directly (both pocket notations)', async ({
   expect(await expectBoardConsistent(page)).toBe('6k1/5ppp/8/8/8/8/5PPP/6K1[R] w - - 0 1')
 
   // An invalid FEN reports the backend's reason and keeps the current position.
-  await page.getByRole('button', { name: '載入 PGN / FEN' }).click()
+  await page.getByRole('button', { name: '載入對局' }).click()
   await page.getByLabel('PGN').fill('8/8/8/8/8/8/8/8[] w - - 0 1')
   await page.getByRole('button', { name: '載入', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText('invalid crazyhouse position')

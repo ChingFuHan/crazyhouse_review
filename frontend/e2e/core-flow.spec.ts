@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { activePly, dragMove, expectBoardConsistent, loadPgn } from './helpers'
+import { activePly, dragMove, expectBoardConsistent, loadPgn, sideTab } from './helpers'
 
 // task.md §55 core acceptance flow. LLM_PROVIDER=fake: answers echo the context they were built from,
 // which proves UI board == engine board == LLM context board at every step.
@@ -45,6 +45,7 @@ test('PGN → position → engine → why → ask → play variation → re-anal
   await expect(page.getByTestId('ai-explain').locator('.answer')).toContainText(`best=${best}`)
 
   // 6-7. "Why not Qh5?" → Qh5 is checked by rules and engine before the LLM answers.
+  await sideTab(page, '問 AI')
   const chat = page.getByTestId('chat')
   await chat.getByLabel('提問').fill('為什麼不是 Qh5？')
   await chat.getByLabel('提問').press('Enter')
@@ -86,6 +87,7 @@ test('illegal candidate is rejected by the rules without engine or LLM; quick qu
   await loadPgn(page, GAME)
   await page.locator('.move.main', { hasText: /e6$/ }).click()
   await activePly(page, 6)
+  await sideTab(page, '問 AI')
   const chat = page.getByTestId('chat')
   await chat.getByLabel('提問').fill('為什麼不能 Qxf7？')
   await chat.getByRole('button', { name: 'Send' }).click()
@@ -105,6 +107,7 @@ test('statements in an answer that nothing backs are flagged, and the model inpu
   await loadPgn(page, GAME)
   await page.locator('.move.main', { hasText: /e6$/ }).click()
   await activePly(page, 6)
+  await sideTab(page, '問 AI')
   const chat = page.getByTestId('chat')
   // Every named move is legality-checked, but only three get a fresh engine search: the fourth (N@a6)
   // is marked as not analysed. The fake LLM echoes the question, so its answer "claims" N@a6 and an

@@ -8,6 +8,8 @@ export interface MoveListProps {
   activeId: string
   onSelect: (id: string) => void
   onDelete: (id: string) => void
+  /** Make the line through this node the game's main line. */
+  onPromote: (id: string) => void
   /** Whole-game review results keyed by position_id (the position after the move). */
   review?: Map<string, ReviewPly>
 }
@@ -25,7 +27,7 @@ function revealInPanel(el: HTMLElement) {
 }
 
 /** Lichess-style move list: main line with inline (variations). */
-export function MoveList({ tree, activeId, onSelect, onDelete, review }: MoveListProps) {
+export function MoveList({ tree, activeId, onSelect, onDelete, onPromote, review }: MoveListProps) {
   const activeRef = useRef<HTMLSpanElement | null>(null)
 
   useEffect(() => {
@@ -69,6 +71,17 @@ export function MoveList({ tree, activeId, onSelect, onDelete, review }: MoveLis
     ids.map((id) => (
       <span key={`${id}-var`} className={`variation depth-${Math.min(depth, 3)}`}>
         {line(id, depth + 1)}
+        <button
+          className="promote-variation"
+          title="設為主線"
+          aria-label="設為主線"
+          onClick={(e) => {
+            e.stopPropagation()
+            onPromote(id)
+          }}
+        >
+          ↑
+        </button>
         {tree.nodes[id].origin === 'user' && (
           <button
             className="delete-variation"

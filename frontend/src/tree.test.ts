@@ -8,8 +8,10 @@ import {
   fromRoot,
   mainline,
   mainlineAncestor,
+  makeMainline,
   navigation,
   pathTo,
+  promote,
 } from './tree'
 import type { GameNodeDto, PositionState } from './types'
 
@@ -140,5 +142,36 @@ describe('navigation', () => {
     expect(navigation.prev(tree, tree.rootId)).toBe(tree.rootId)
     expect(navigation.last(tree, 'id:e2e4,c7c5')).toBe('id:e2e4,c7c5,g1f3')
     expect(navigation.first(tree)).toBe(tree.rootId)
+  })
+})
+
+describe('promote', () => {
+  it('swaps a variation with the line it left, one level at a time', () => {
+    const tree = pgnTree()
+    const promoted = promote(tree, 'id:e2e4,c7c5,g1f3')
+    expect(mainline(promoted)).toEqual(['id:', 'id:e2e4', 'id:e2e4,c7c5', 'id:e2e4,c7c5,g1f3'])
+    expect(promoted.nodes['id:e2e4'].children).toEqual(['id:e2e4,c7c5', 'id:e2e4,e7e5'])
+    expect(promoted.nodes['id:e2e4,e7e5'].variationId).toBe('v:id:e2e4,e7e5')
+    expect(promoted.nodes['id:e2e4,e7e5,g1f3'].variationId).toBe('v:id:e2e4,e7e5')
+    expect(promote(promoted, 'id:e2e4')).toBe(promoted) // already main: nothing to do
+    expect(tree.nodes['id:e2e4'].children[0]).toBe('id:e2e4,e7e5') // immutable
+  })
+
+  it('makes a nested user line the main line, past the end of the game', () => {
+    let tree = pgnTree()
+    // A variation inside the side line, and a user line after the last main-line move.
+    ;({ tree } = addChild(tree, 'id:e2e4,c7c5', state(['e2e4', 'c7c5', 'd2d4'])))
+    ;({ tree } = addChild(tree, 'id:e2e4,c7c5,d2d4', state(['e2e4', 'c7c5', 'd2d4', 'c5d4'])))
+    const deep = 'id:e2e4,c7c5,d2d4,c5d4'
+    expect(tree.nodes[deep].variationId).toBe('v:id:e2e4,c7c5,d2d4')
+    const main = makeMainline(tree, deep)
+    expect(mainline(main)).toEqual(['id:', 'id:e2e4', 'id:e2e4,c7c5', 'id:e2e4,c7c5,d2d4', deep])
+    expect(main.nodes['id:e2e4,c7c5,g1f3'].variationId).toBe('v:id:e2e4,c7c5,g1f3')
+    expect(main.nodes['id:e2e4,e7e5'].variationId).toBe('v:id:e2e4,e7e5')
+
+    let extended = pgnTree()
+    ;({ tree: extended } = addChild(extended, 'id:e2e4,e7e5,g1f3', state(['e2e4', 'e7e5', 'g1f3', 'b8c6'])))
+    const after = makeMainline(extended, 'id:e2e4,e7e5,g1f3,b8c6')
+    expect(mainline(after).at(-1)).toBe('id:e2e4,e7e5,g1f3,b8c6')
   })
 })

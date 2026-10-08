@@ -326,7 +326,8 @@ cg-board square.drop-dest {
   color: var(--text);
 }
 
-.delete-variation {
+.delete-variation,
+.promote-variation {
   padding: 0 4px;
   font-size: 0.75rem;
   line-height: 1.2;
@@ -1403,4 +1404,157 @@ cg-board square.kb-cursor {
 .replay-note {
   font-size: 0.8rem;
   margin-top: 4px;
+}
+
+/* Review page: board, status and the whole-game review on the left; engine, moves and tabs on the
+   right. On a phone: board, then the side column, then the review. */
+.review-layout {
+  display: grid;
+  grid-template-columns: var(--board) minmax(320px, 1fr);
+  grid-template-areas:
+    'board side'
+    'under side';
+  grid-template-rows: auto 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.review-layout > .board-column {
+  grid-area: board;
+}
+
+.review-layout > .side-column {
+  grid-area: side;
+}
+
+.review-layout > .under-board {
+  grid-area: under;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .review-layout {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'board'
+      'side'
+      'under';
+  }
+}
+
+.side-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.side-tabs button {
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--muted);
+  padding: 6px 12px;
+}
+
+.side-tabs button.active {
+  color: var(--text-strong);
+  border-bottom-color: var(--accent);
+}
+
+.side-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.side-tab[hidden] {
+  display: none;
+}
+
+.game-info dl {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 6px;
+}
+
+.game-info dl div {
+  display: flex;
+  gap: 10px;
+}
+
+.game-info dt {
+  color: var(--muted);
+  min-width: 3em;
+}
+
+.game-info dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.pgn-loader h3 {
+  margin: 6px 0 2px;
+  font-size: 0.9rem;
+}
+
+.pgn-loader .row input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.loader-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.loader-list li {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.review-summary {
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.review-summary th,
+.review-summary td {
+  padding: 2px 10px 2px 0;
+  text-align: left;
+}
+
+.review-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0;
+}
+
+.critical li.current {
+  background: var(--panel-2);
+}
+
+.learn-start {
+  display: grid;
+  gap: 6px;
+}
+
+.learn-item {
+  display: grid;
+  gap: 6px;
+}
+
+.learn-feedback.good,
+.learn-feedback.answer {
+  color: var(--accent);
 }

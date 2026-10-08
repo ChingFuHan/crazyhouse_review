@@ -1,5 +1,5 @@
 import { type Page, expect, test } from '@playwright/test'
-import { dragMove, loadPgn, pocketDrop } from './helpers'
+import { dragMove, loadPgn, pocketDrop, sideTab } from './helpers'
 
 // Puzzles are added through the API (the engine checks each one), so the tests know the answers.
 const MATE_IN_ONE = '6k1/5ppp/8/8/8/8/5PPP/6K1[R] w - - 0 1'
@@ -109,6 +109,7 @@ test('a battle against the engine is played to the end and rated', async ({ page
 test('the review board saves the position as a puzzle and mines the game', async ({ page }) => {
   await page.goto('/')
   await loadPgn(page, BLACK_MATE_IN_ONE)
+  await sideTab(page, '對局與工具')
   const tools = page.getByTestId('puzzle-tools')
   await tools.getByLabel('題型').selectOption({ label: '進攻題' })
   await tools.getByRole('button', { name: '存成題目' }).click()

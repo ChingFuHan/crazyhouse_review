@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { isTyping } from '../typing'
 import type { NavKind } from '../useReview'
 
 export interface NavControlsProps {
@@ -7,15 +8,6 @@ export interface NavControlsProps {
 }
 
 const KEYS: Record<string, NavKind> = { ArrowLeft: 'prev', ArrowRight: 'next', Home: 'first', End: 'last', ArrowUp: 'first', ArrowDown: 'last' }
-
-const NON_TEXT_INPUTS = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color'])
-
-/** Arrow keys belong to the focused control only when it edits text (or is a select). */
-function isTyping(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  if (target.isContentEditable || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') return true
-  return target instanceof HTMLInputElement && !NON_TEXT_INPUTS.has(target.type)
-}
 
 export function NavControls({ onNavigate, onFlip }: NavControlsProps) {
   useEffect(() => {

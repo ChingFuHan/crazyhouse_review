@@ -1,5 +1,6 @@
-// Whole-game review of the main line: start a backend job and poll it.
-// Results are keyed by position_id, so they can only ever annotate the exact positions analysed.
+// Whole-game review of the main line: start a backend job and poll it (by itself when `auto`, once
+// the main line has moves and has no review yet). Results are keyed by position_id, so they can only
+// ever annotate the exact positions analysed.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
@@ -15,7 +16,7 @@ export interface GameReview {
   start: () => void
 }
 
-export function useGameReview(tree: GameTree | null): GameReview {
+export function useGameReview(tree: GameTree | null, auto = false): GameReview {
   const [job, setJob] = useState<ReviewJob | null>(null)
   const [error, setError] = useState<string | null>(null)
   const generation = useRef(0)
@@ -58,5 +59,18 @@ export function useGameReview(tree: GameTree | null): GameReview {
   const last = tree ? tree.nodes[mainline(tree).at(-1)!].state : null
   const visible = job && last && job.root_fen === last.root_fen && job.moves.join(' ') === last.moves.join(' ') ? job : null
   const byPosition = useMemo(() => new Map((visible?.plies ?? []).map((p) => [p.position_id, p])), [visible])
+
+  const startLatest = useRef(start)
+  useEffect(() => {
+    startLatest.current = start
+  }, [start])
+  const mainKey = last ? `${last.root_fen}|${last.moves.join(' ')}` : ''
+  const hasMoves = (last?.moves.length ?? 0) > 0
+  const reviewed = visible !== null
+  useEffect(() => {
+    if (auto && hasMoves && !reviewed) startLatest.current()
+    // a new main line (a game loaded, a line promoted) or turning auto on
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto, mainKey])
   return { job: visible, error, byPosition, start }
 }

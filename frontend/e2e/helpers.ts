@@ -72,7 +72,7 @@ export async function expectBoardConsistent(page: Page): Promise<string> {
 }
 
 export async function loadPgn(page: Page, pgn: string) {
-  await page.getByRole('button', { name: '載入 PGN / FEN' }).click()
+  await page.getByRole('button', { name: '載入對局' }).click()
   await page.getByLabel('PGN').fill(pgn)
   await page.getByRole('button', { name: '載入', exact: true }).click()
   await expect(page.getByLabel('PGN')).toHaveCount(0)
@@ -125,4 +125,9 @@ export async function pocketDrop(page: Page, color: string, letter: string, to: 
 
 export async function activePly(page: Page, ply: number) {
   await expect(page.getByTestId('status')).toContainText(`ply ${ply}`)
+}
+
+/** The review page's side column shows one tab at a time (kept in localStorage across reloads). */
+export async function sideTab(page: Page, name: '為什麼' | '問 AI' | '對局與工具') {
+  await page.locator('.side-tabs').getByRole('button', { name, exact: true }).click()
 }

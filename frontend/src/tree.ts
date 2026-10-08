@@ -4,7 +4,8 @@
 // - node id === state.position_id
 // - child.state.moves === parent.state.moves + [child.state.last_move.uci], same root_fen
 // - children[0] is the main continuation of a node
-// - nodes imported from the PGN are never modified by user moves
+// - nodes imported from the PGN are never modified by user moves (only an explicit promotion
+//   reorders lines)
 
 import type { GameNodeDto, GameTreeDto, PositionState } from './types'
 
@@ -114,6 +115,44 @@ export function deleteSubtree(tree: GameTree, id: string): GameTree {
   const parent = nodes[node.parentId]
   nodes[parent.id] = { ...parent, children: parent.children.filter((c) => c !== id) }
   return { ...tree, nodes }
+}
+
+/** Swap the variation holding `id` with the line it branched from (one level up): its first node
+ * becomes the branch point's main continuation and takes that line's id; the old continuation
+ * becomes a variation of its own. */
+export function promote(tree: GameTree, id: string): GameTree {
+  const node = tree.nodes[id]
+  if (!node || !node.variationId.startsWith('v:')) return tree
+  const variation = node.variationId
+  const firstId = variation.slice(2)
+  const first = tree.nodes[firstId]
+  if (!first || first.parentId === null) return tree
+  const branch = tree.nodes[first.parentId]
+  const nodes = { ...tree.nodes }
+  // Relabel a line: from `start`, following children on the same variation.
+  const relabel = (start: string, from: string, to: string) => {
+    for (let at: string | undefined = start; at !== undefined && nodes[at].variationId === from; ) {
+      const current: TreeNode = nodes[at]
+      nodes[at] = { ...current, variationId: to }
+      at = current.children.find((c) => nodes[c].variationId === from)
+    }
+  }
+  const oldFirst = branch.children.find((c) => c !== firstId && nodes[c].variationId === branch.variationId)
+  if (oldFirst !== undefined) relabel(oldFirst, branch.variationId, `v:${oldFirst}`)
+  relabel(firstId, variation, branch.variationId)
+  nodes[branch.id] = { ...nodes[branch.id], children: [firstId, ...branch.children.filter((c) => c !== firstId)] }
+  return { ...tree, nodes }
+}
+
+/** Promote the line through `id` until it is the game's main line. */
+export function makeMainline(tree: GameTree, id: string): GameTree {
+  let current = tree
+  for (let guard = 0; current.nodes[id] && current.nodes[id].variationId !== MAIN && guard < 100; guard++) {
+    const next = promote(current, id)
+    if (next === current) break
+    current = next
+  }
+  return current
 }
 
 export function pathTo(tree: GameTree, id: string): string[] {

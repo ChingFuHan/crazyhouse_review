@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
-import { loadPgn } from './helpers'
+import { loadPgn, sideTab } from './helpers'
 
 const games = JSON.parse(
   readFileSync(new URL('../../backend/tests/fixtures/lichess_finished_games.json', import.meta.url), 'utf8'),
@@ -10,6 +10,7 @@ test("whole-game scans explain each side's errors from the review, independent o
   test.setTimeout(120_000)
   await page.goto('/')
   await loadPgn(page, games[2].pgn)
+  await sideTab(page, '問 AI')
   const scan = page.getByTestId('game-scan')
   await scan.getByRole('button', { name: '全局掃描：白方 miss 的錯誤' }).click()
   await scan.getByRole('button', { name: '全局掃描：黑方 miss 的錯誤' }).click()

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { activePly, dragMove, loadPgn } from './helpers'
+import { activePly, dragMove, loadPgn, sideTab } from './helpers'
 
 // Backend runs with LLM_PROVIDER=fake: answers echo the position the LLM context was built for.
 const GAME = `[Variant "Crazyhouse"]
@@ -83,6 +83,7 @@ test('the board orientation tells the LLM whose "我的" it is', async ({ page }
   page.on('request', (r) => {
     if (r.url().includes('/api/explain')) sides.push(JSON.parse(r.postData() ?? '{}').viewer_side)
   })
+  await sideTab(page, '問 AI')
   const chat = page.getByTestId('chat')
   await chat.getByLabel('提問').fill('我的后安全嗎？')
   await chat.getByLabel('提問').press('Enter')
@@ -134,6 +135,7 @@ test('questions can be sent while the AI explanation is still being written', as
   await ai.getByRole('button', { name: 'AI 解釋' }).click()
   await expect(ai.getByTestId('ai-waiting')).toBeVisible()
 
+  await sideTab(page, '問 AI')
   const chat = page.getByTestId('chat')
   await chat.getByLabel('提問').fill('這裡真正的威脅是什麼？')
   await chat.getByRole('button', { name: 'Send' }).click()
@@ -142,7 +144,9 @@ test('questions can be sent while the AI explanation is still being written', as
   await chat.locator('.chip').first().dblclick()
   await expect(chat.locator('.chat-turn')).toHaveCount(2)
   await expect(chat.locator('.chat-turn .answer')).toHaveCount(2)
-  await expect(ai.getByTestId('ai-waiting')).toBeVisible() // the explanation is still on its way
+  // The explanation is still on its way (in the 為什麼 tab, which stays mounted).
+  await sideTab(page, '為什麼')
+  await expect(ai.getByTestId('ai-waiting')).toBeVisible()
   await expect(ai.locator('.answer')).toContainText('[FAKE LLM]', { timeout: 15_000 })
   await expect(chat.locator('.chat-turn')).toHaveCount(2)
 })

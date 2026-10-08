@@ -22,6 +22,7 @@ import type {
   EngineAnalysis,
   ExplainResponse,
   GameTreeDto,
+  JudgedMove,
   Insights,
   PositionState,
   ReviewJob,
@@ -256,4 +257,6 @@ export const api = {
   /** Whole-game review of a line (the main line), run on the backend's separate review engine. */
   startReview: (last: PositionState) => post<ReviewJob>('/api/review', { root_fen: last.root_fen, moves: last.moves }),
   getReview: (jobId: string, signal?: AbortSignal) => request<ReviewJob>(`/api/review/${jobId}`, { signal }),
+  /** A move tried in this position, compared with the engine's best there (review engine). */
+  judgeMove: (from: PositionState, move: string) => post<JudgedMove>('/api/review/judge', { ...lineOf(from), move }),
 }
