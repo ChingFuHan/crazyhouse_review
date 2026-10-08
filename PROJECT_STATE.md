@@ -25,6 +25,7 @@ Milestone 4（對話 + 候選著重新分析 + 能感知變化的問答）完成
 AI 製題完成（使用者需求，2026-10-08）：題目頁獨立的 AI 選單（agy／codex／claude、model、effort），兩種方式——agent 從 engine
 候選中挑題並寫標題／提示／說明，或 agent 設計局面、engine 驗證並回饋原因重試。
 Tailscale 存取完成（使用者需求，2026-10-09）：在 tailnet 上時，安裝腳本把 `100.64.0.0/10` 加入允許清單。
+復盤頁「到 lichess」完成（使用者需求，2026-10-09）：目前局面開 lichess 分析棋盤、整盤上傳為 lichess 匯入對局。
 分析頁改進完成（使用者需求，2026-10-09）：整局摘要與跳失誤、從錯誤中學習、自動整局分析、對局資訊、版面重排、lichess 匯入、
 最近的對局、變化設為主線。
 解題頁前後挪動與完整回放完成（使用者需求，2026-10-09）：棋盤下方 ⏮ ◀ ▶ ⏭ ⇅，走錯按 ◀ 重試。
@@ -67,6 +68,8 @@ rating 1436 的玩家最近的 rating 區間 8 題裡 5 題是對轟、題目從
 再之後（使用者問「分析頁哪裡可以改進」，列出八項後全選）：依據是整局分析要手動按、結果只有一長串失誤沒有摘要、右側七個面板疊成
 一長條（桌機上「問 AI」約在 2000px 下方）、只能貼 PGN、只記得最後一盤、變化不能設為主線。用固定的 lichess 測試對局截圖
 檢查桌機與手機版面，修正 PGN 標頭為「?」時顯示成名字的問題（頂端、摘要、對局資訊）。
+再之後（使用者以為復盤頁「到 lichess 分析」的按鈕不見了——其實只有題目頁有，復盤頁從來沒有）：棋盤下方狀態列加上
+「在 lichess 分析這個局面」與「上傳整盤到 lichess…」。
 目前沒有進行中的任務。
 
 ## 目前架構
@@ -320,7 +323,9 @@ rating 1436 的玩家最近的 rating 區間 8 題裡 5 題是對轟、題目從
     `lichess.ts`：解析對局網址／ID，瀏覽器直接 `fetch` lichess（`/game/export/{id}`、`/api/games/user/{name}` ndjson；
     lichess API 回 `Access-Control-Allow-Origin: *`），404／429／網路錯誤以中文說明。`session.ts`：最近 10 盤
     （`sourceKey` 去重）與主線終點著法；`tree.promote`／`makeMainline` 互換 variationId 與 `children` 順序，`useReview`
-    的 `promoteToMain`、`openRecent`，重建時套用 `makeMainline`。
+    的 `promoteToMain`、`openRecent`，重建時套用 `makeMainline`。`LichessLinks`（狀態列）：`lichessAnalysisUrl`（pocket 寫成
+    第 9 列，與後端 `lichess_fen` 同規則；黑方視角 `?color=black`）；上傳先確認，點擊當下先開分頁（避免被擋），`exportPgn` 後
+    `importToLichess`（`POST /api/import` form `pgn`），成功導向對局網址並留下連結，失敗關掉分頁顯示原因。
   - Vite dev server :5180 把 `/api` 代理到 backend :8820。
   - 區網部署：`scripts/install_service.sh` → systemd user service `crazyhouse-review`（已啟用，
     Linger=yes 所以開機即啟動）執行 `scripts/run_server.sh`，HOST=0.0.0.0、PORT=8820、
@@ -381,6 +386,7 @@ rating 1436 的玩家最近的 rating 區間 8 題裡 5 題是對轟、題目從
 - 整局分析的判定來自 300 ms 搜尋：快棋對局的分類每次執行會略有差異。
 - 準確度是每步準確度的簡單平均（lichess 另外用依波動加權與調和平均），數字會與 lichess 略有不同。
 - lichess 匯入由觀看者的瀏覽器連 lichess，需要該裝置能上網；最近的對局只存在該瀏覽器。
+- 「上傳整盤到 lichess」建立的是公開的匯入對局，lichess 只保留主線（變化與註解會被移除）；未登入的匯入有 lichess 的頻率限制。
 - Engine：只有一個共用的互動 process；兩個分頁分析不同局面時會互相取代對方的搜尋（顯示為 已中斷 +
   重新分析）。Threads/Hash 的選擇會影響整台機器。
 - 寬度 390 px 時 chessground 的檔案座標會超出 2 px（原本就有）。
@@ -434,9 +440,10 @@ rating 1436 的玩家最近的 rating 區間 8 題裡 5 題是對轟、題目從
   互動分析；LLM context == 棋盤／engine／analyzer、變化與觀看方、prompt injection 邊界、快取鍵、
   候選著流程、SSE 事件、缺 key 時 503、key 永不出現在錯誤中、以模擬 SDK 串流測試拒答／fallback。
   沒有真實的 Claude 呼叫。
-- `cd frontend && npx vitest run` → 63 passed（含 rating 圖刻度與座標；準確度與摘要、lichess 網址與 ndjson 解析、時限與日期、
+- `cd frontend && npx vitest run` → 64 passed（含 lichess 分析網址；含 rating 圖刻度與座標；準確度與摘要、lichess 網址與 ndjson 解析、時限與日期、
   變化提升與設為主線（多層、使用者線延伸到棋譜之後）、最近對局的去重與上限）；`npx tsc -b`、`npm run lint`、`npx vite build` 無誤。
-- `cd frontend && npx playwright test` → 55 passed（含 `e2e/review-tools.spec.ts`：載入後自動整局分析與摘要、只看黑方、n 跳到失誤、
+- `cd frontend && npx playwright test` → 56 passed（含 `e2e/review-tools.spec.ts`：lichess 分析連結與翻轉後的黑方視角、上傳先確認、
+  取消不送出、攔截的匯入回應開啟新分頁並留下連結、429 顯示原因；載入後自動整局分析與摘要、只看黑方、n 跳到失誤、
   從錯誤中學習（壞著回分類、好著、不加進棋譜、練習時隱藏 engine）；以攔截的 lichess 回應載入對局網址與使用者列表、對局資訊與原局
   連結、最近對局切回；變化設為主線後重新整理仍保留；手機寬度三個分頁不溢出。E2E 預設關閉自動整局分析，需要時由測試打開）（含：解出後 ⏮▶⏭ 從對手上一步之前完整回放、側欄目前步高亮；多步題
   （Philidor 悶殺）解題中 ◀◀▶▶ 前後挪動、在走過的地方走同一步只前進、解出後回放；防守題走錯按 ← 回到原局面再解出不計分；

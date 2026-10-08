@@ -265,6 +265,10 @@ local network; ratings and attempts are kept on the server). The puzzle page has
   review and 「從錯誤中學習」 (learn from mistakes); on the right the engine, the move list and the tabs
   「為什麼｜問 AI｜對局與工具」 (why | ask the AI | game and tools: game info, export, save as puzzle); on a
   phone: board, right column, then the review
+- To lichess: 「在 lichess 分析這個局面」 (analyse this position on lichess) under the board opens lichess's
+  analysis board on the current position and board orientation (nothing is uploaded); 「上傳整盤到
+  lichess…」 (upload the whole game), once confirmed, creates a public imported game through lichess's
+  import API and opens it (lichess keeps the main line only; variations and comments are dropped)
 - Game info: players and ratings, result and how it ended, time control (e.g. 3+2), date, event, opening
   from the PGN headers; a lichess game links to the original
 - 「↑」 next to a variation makes it the main line (the review, PGN export and back-to-main follow it,

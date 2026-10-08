@@ -31,6 +31,8 @@ model, effort) and two modes — the agent picks among engine candidates and wri
 explanation, or the agent designs positions that the engine checks, retrying with the reason.
 Tailscale access DONE (user request, 2026-10-09): on a tailnet, the installer adds `100.64.0.0/10` to the
 allowlist.
+Review page "to lichess" DONE (user request, 2026-10-09): the current position on lichess's analysis board, the
+whole game uploaded as a lichess imported game.
 Review page improvements DONE (user request, 2026-10-09): review summary and mistake jumps, learn from
 mistakes, automatic review, game info, new layout, lichess import, recent games, promote a variation.
 Moving back and forth while solving and full replays DONE (user request, 2026-10-09): ⏮ ◀ ▶ ⏭ ⇅
@@ -92,6 +94,8 @@ stacked seven panels (「問 AI」 about 2000 px down on a desktop), only pastin
 last game was remembered, and a variation could not become the main line. Desktop and phone layouts
 were checked with screenshots of a fixed lichess test game, fixing "?" PGN headers shown as names (top
 bar, summary, game info).
+Then (the user thought the review page's "to lichess analysis" button had gone — only the puzzle page
+ever had one): the status bar under the board got 「在 lichess 分析這個局面」 and 「上傳整盤到 lichess…」.
 No task in progress.
 
 ## Current architecture
@@ -412,7 +416,11 @@ No task in progress.
     `/api/games/user/{name}` ndjson; lichess's API sends `Access-Control-Allow-Origin: *`), 404 / 429 /
     network errors in words. `session.ts`: the 10 recent games (deduped by `sourceKey`) and the main line's
     last moves; `tree.promote` / `makeMainline` swap variationIds and `children` order, `useReview` has
-    `promoteToMain` and `openRecent`, and a restore applies `makeMainline`.
+    `promoteToMain` and `openRecent`, and a restore applies `makeMainline`. `LichessLinks` (status bar):
+    `lichessAnalysisUrl` (the pocket as a ninth rank, the backend `lichess_fen` rule; `?color=black` from
+    Black's side); the upload asks first, opens a tab during the click (so no popup blocker stops it),
+    `exportPgn` then `importToLichess` (`POST /api/import`, form `pgn`), points the tab at the game and
+    keeps a link, or closes the tab and says why.
   - Vite dev server :5180 proxies `/api` → backend :8820.
   - LAN deployment: `scripts/install_service.sh` → systemd user service `crazyhouse-review`
     (enabled, Linger=yes so it starts at boot) running `scripts/run_server.sh` with HOST=0.0.0.0,
@@ -487,6 +495,8 @@ No task in progress.
   mean), so it differs a little from lichess's numbers.
 - The lichess import runs in the viewer's browser, which needs internet access; recent games live only in
   that browser.
+- 「上傳整盤到 lichess」 creates a public imported game and lichess keeps the main line only (variations
+  and comments are dropped); anonymous imports are rate-limited by lichess.
 - Engine: single shared interactive process; two tabs analysing different positions replace each
   other's searches (shown as 已中斷 "interrupted" + 重新分析 "analyse again"). Threads/Hash choices affect the whole machine.
 - At 390 px width chessground's file coordinates overflow by 2 px (pre-existing).
@@ -558,10 +568,12 @@ No task in progress.
   a real-game job not disturbing interactive analysis; LLM context == board/engine/analyzer, variation
   and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
   503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
-- `cd frontend && npx vitest run` → 63 passed (incl. the rating chart's ticks and points; accuracy and the
+- `cd frontend && npx vitest run` → 64 passed (incl. the lichess analysis URL; incl. the rating chart's ticks and points; accuracy and the
   summary, lichess link and ndjson parsing, time control and date, promoting and making a main line
   (nested, a user line past the game's end), recent games deduped and capped); `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 55 passed (incl. `e2e/review-tools.spec.ts`: the review starts by
+- `cd frontend && npx playwright test` → 56 passed (incl. `e2e/review-tools.spec.ts`: the lichess analysis
+  link and Black's side after flipping, the upload asked first, cancelling sending nothing, an intercepted
+  import opening a new tab and leaving a link, a 429 explained; the review starts by
   itself with its summary, Black only, n to a mistake, learning from it (a bad try named, a good one, nothing
   added to the game, the engine hidden while practising); intercepted lichess answers for a game link and a
   player's list, game info and the original game link, switching back to a recent game; a promoted
