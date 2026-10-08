@@ -141,3 +141,48 @@ test('on a phone the review page fits the screen', async ({ page }) => {
     expect(overflow, tab).toBeLessThanOrEqual(2)
   }
 })
+
+test('the position opens on lichess’s analysis board; the whole game can be imported there', async ({ page, context }) => {
+  const cors = { 'Access-Control-Allow-Origin': '*' }
+  let posted: string | null = null
+  let status = 200
+  await context.route('https://lichess.org/api/import', async (route) => {
+    posted = new URLSearchParams(route.request().postData() ?? '').get('pgn')
+    await route.fulfill(
+      status === 200
+        ? { json: { id: 'impAbcde', url: 'https://lichess.org/impAbcde' }, headers: cors }
+        : { status, body: '{}', headers: cors },
+    )
+  })
+  await context.route('https://lichess.org/impAbcde', (route) => route.fulfill({ contentType: 'text/html', body: '<p>imported</p>' }))
+  await page.goto('/')
+  await loadPgn(page, SCHOLAR)
+  await page.keyboard.press('End')
+  const links = page.getByTestId('lichess-links')
+  const analysis = links.getByRole('link', { name: '在 lichess 分析這個局面' })
+  const fen = (await page.locator('.board').getAttribute('data-fen'))!
+  const [board, ...rest] = fen.split(' ')
+  const lichessFen = [board.replace(/\[(.*)\]$/, '/$1'), ...rest].join('_')
+  await expect(analysis).toHaveAttribute('href', `https://lichess.org/analysis/crazyhouse/${lichessFen}`)
+  await page.keyboard.press('f') // seen from Black
+  await expect(analysis).toHaveAttribute('href', `https://lichess.org/analysis/crazyhouse/${lichessFen}?color=black`)
+
+  // Importing asks first; cancelling sends nothing.
+  await links.getByRole('button', { name: '上傳整盤到 lichess…' }).click()
+  await expect(links).toContainText('會在 lichess 建立一盤公開的匯入對局')
+  await links.getByRole('button', { name: '取消' }).click()
+  expect(posted).toBeNull()
+
+  await links.getByRole('button', { name: '上傳整盤到 lichess…' }).click()
+  const popup = page.waitForEvent('popup')
+  await links.getByRole('button', { name: '確定上傳' }).click()
+  await expect(await popup).toHaveURL('https://lichess.org/impAbcde')
+  await expect(links.getByTestId('lichess-imported')).toHaveAttribute('href', 'https://lichess.org/impAbcde')
+  expect(posted).toContain('[Variant "Crazyhouse"]')
+  expect(posted).toContain('4. Qxf7#')
+
+  status = 429
+  await links.getByRole('button', { name: '上傳整盤到 lichess…' }).click()
+  await links.getByRole('button', { name: '確定上傳' }).click()
+  await expect(links).toContainText('上傳失敗：lichess 請求太頻繁')
+})

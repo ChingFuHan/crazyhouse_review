@@ -1,4 +1,6 @@
-// Games from lichess, fetched by the browser (lichess's public API answers any origin, needs no key).
+// Games from and to lichess, by the browser (lichess's public API answers any origin, needs no key).
+
+import type { Color } from './types'
 
 export const LICHESS = 'https://lichess.org'
 export const USERNAME = /^[A-Za-z0-9_-]{2,30}$/
@@ -66,10 +68,18 @@ export function parseGames(ndjson: string): LichessGame[] {
     })
 }
 
-async function get(url: string, accept: string): Promise<string> {
+/** lichess's analysis board on a crazyhouse position (pockets written as a ninth rank, as lichess does). */
+export function lichessAnalysisUrl(fen: string, orientation: Color): string {
+  const [board, ...rest] = fen.trim().split(/\s+/)
+  const match = /^(.*)\[(.*)\]$/.exec(board)
+  const lichessBoard = match ? `${match[1]}/${match[2]}` : board
+  return `${LICHESS}/analysis/crazyhouse/${[lichessBoard, ...rest].join('_')}${orientation === 'black' ? '?color=black' : ''}`
+}
+
+async function get(url: string, accept: string, init: RequestInit = {}): Promise<string> {
   let response: Response
   try {
-    response = await fetch(url, { headers: { Accept: accept } })
+    response = await fetch(url, { ...init, headers: { Accept: accept } })
   } catch {
     throw new Error('無法連到 lichess（請確認網路）')
   }
@@ -81,6 +91,14 @@ async function get(url: string, accept: string): Promise<string> {
 
 export function fetchGamePgn(id: string): Promise<string> {
   return get(`${LICHESS}/game/export/${id}?clocks=false&evals=false`, 'application/x-chess-pgn')
+}
+
+/** Import a PGN as a lichess game (public; lichess keeps the main line only): the game's url. */
+export async function importToLichess(pgn: string): Promise<string> {
+  const text = await get(`${LICHESS}/api/import`, 'application/json', { method: 'POST', body: new URLSearchParams({ pgn }) })
+  const url = (JSON.parse(text) as { url?: unknown }).url
+  if (typeof url !== 'string' || !url.startsWith(LICHESS)) throw new Error('lichess 沒有回傳對局網址')
+  return url
 }
 
 export async function fetchUserGames(username: string): Promise<LichessGame[]> {

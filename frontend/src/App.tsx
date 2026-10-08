@@ -8,6 +8,7 @@ import { EnginePanel } from './components/EnginePanel'
 import { ExportPanel } from './components/ExportPanel'
 import { GameInfo } from './components/GameInfo'
 import { LearnPanel } from './components/LearnPanel'
+import { LichessLinks } from './components/LichessLinks'
 import { MoveInput } from './components/MoveInput'
 import { Nav } from './components/Nav'
 import { MoveList } from './components/MoveList'
@@ -186,6 +187,7 @@ export default function App() {
                 </div>
               )}
               <code className="fen" title="Crazyhouse FEN">{position.fen}</code>
+              <LichessLinks tree={tree} position={position} orientation={orientation} />
             </section>
             <MoveInput onPlay={playHere} disabled={position.outcome !== null} />
           </section>

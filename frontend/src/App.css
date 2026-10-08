@@ -1558,3 +1558,27 @@ cg-board square.kb-cursor {
 .learn-feedback.answer {
   color: var(--accent);
 }
+
+.lichess-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.lichess-links a.button {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-2);
+  color: var(--text-strong);
+  text-decoration: none;
+}
+
+.lichess-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
