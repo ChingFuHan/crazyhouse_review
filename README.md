@@ -69,15 +69,21 @@ cd frontend && npx vite --host 127.0.0.1 --port 5180
 ```
 開啟 http://127.0.0.1:5180。
 
-## 區網存取（開機自動啟動）
-以開機自動啟動的 systemd user service 將 app 提供給區域網路：
+## 區網與 Tailscale 存取（開機自動啟動）
+以開機自動啟動的 systemd user service 將 app 提供給區域網路（這台機器在 Tailscale 上時也提供給 tailnet）：
 ```bash
 ./scripts/install_service.sh          # LAN_NETWORK=192.168.0.0/24 PORT=8820 by default; re-run after updates
 sudo ufw allow from 192.168.0.0/24 to any port 8820 proto tcp comment 'crazyhouse-review'   # once
 ```
 之後開啟 `http://<本機的區網 IP>:8820`（腳本會印出網址；IP 由 DHCP 分配，可能會變）。
-Service 監聽所有網路介面，但 app 只回應 `ALLOWED_CLIENT_NETWORKS` 內的連線（loopback 與區網）；
-其他來源（例如 Tailscale 或 Docker）一律回 403。區網內每個人都能使用 AI 功能，消耗的是這台
+Service 監聽所有網路介面（IPv4），但 app 只回應 `ALLOWED_CLIENT_NETWORKS` 內的連線：loopback、區網，以及
+（`tailscale ip` 可用時）Tailscale 的 `100.64.0.0/10`；其他來源（例如 Docker）一律回 403。
+- **Tailscale**：tailnet 上的裝置開 `http://<本機 tailnet IP>:8820` 或 MagicDNS 名稱 `http://<機器名稱>:8820`
+  （腳本會印出兩者）。tailnet 裡哪些裝置能連到這台由 Tailscale 的 ACL 決定。若連不上，執行一次
+  `sudo ufw allow in on tailscale0 to any port 8820 proto tcp comment 'crazyhouse-review tailscale'`。
+  不想開放給 tailnet 時以 `TAILSCALE=0 ./scripts/install_service.sh` 安裝。
+
+區網（與 tailnet）內每個人都能使用 AI 功能，消耗的是這台
 機器的 agy 額度（或觀看者所選 CLI 的額度）。服務的 PATH 會加入安裝時找到的 agy／codex／claude（與 node）所在目錄，
 安裝或更新這些 CLI 的位置後請重新執行安裝腳本。管理指令：`systemctl --user status|restart|stop crazyhouse-review`，
 日誌：`journalctl --user -u crazyhouse-review`。

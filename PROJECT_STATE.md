@@ -24,6 +24,7 @@ Milestone 4（對話 + 候選著重新分析 + 能感知變化的問答）完成
 對弈製題；暱稱帳號與 Glicko-2 rating；可匯出 FEN／PGN／lichess。（task.md §35 原把題目與 rating 列為初期非目標，使用者明確要求。）
 AI 製題完成（使用者需求，2026-10-08）：題目頁獨立的 AI 選單（agy／codex／claude、model、effort），兩種方式——agent 從 engine
 候選中挑題並寫標題／提示／說明，或 agent 設計局面、engine 驗證並回饋原因重試。
+Tailscale 存取完成（使用者需求，2026-10-09）：在 tailnet 上時，安裝腳本把 `100.64.0.0/10` 加入允許清單。
 
 ## 目前任務狀態
 依 task.md 嚴格驗證（2026-10-06）發現並修正：README/PROJECT_STATE 過時、LLM context 缺
@@ -281,11 +282,13 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
   - Vite dev server :5180 把 `/api` 代理到 backend :8820。
   - 區網部署：`scripts/install_service.sh` → systemd user service `crazyhouse-review`（已啟用，
     Linger=yes 所以開機即啟動）執行 `scripts/run_server.sh`，HOST=0.0.0.0、PORT=8820、
-    ALLOWED_CLIENT_NETWORKS=127.0.0.0/8,::1/128,192.168.0.0/24。`app/access.py`（純 ASGI）對其他來源
-    位址一律回 403（忽略 X-Forwarded-For）：已驗證 Tailscale 來源 100.70.168.53 → 403、Docker
-    container（172.17.0.3）→ 403——Docker bridge 流量會繞過 ufw 到達該 port，所以 app 層的允許清單
-    是必要的。ufw（預設 DROP）需要 `sudo ufw allow from 192.168.0.0/24 to any port 8820 proto tcp`
-    （由使用者執行；這裡沒有 sudo）。`scripts/serve.sh` 建置 UI，backend 在 `/` 提供
+    ALLOWED_CLIENT_NETWORKS=127.0.0.0/8,::1/128,192.168.0.0/24，`tailscale ip -4` 可用時（且沒有 `TAILSCALE=0`）
+    再加上 Tailscale 的 IPv4 範圍 `100.64.0.0/10`（服務只聽 IPv4，所以不加 IPv6 範圍；tailnet 內誰能連由 ACL 決定），
+    並印出 tailnet IP 與 MagicDNS 網址。`app/access.py`（純 ASGI）對其他來源位址一律回 403（忽略 X-Forwarded-For）：
+    已驗證 tailnet IP 100.70.168.53 與 MagicDNS 名稱 → 200（原本 403）、區網 → 200、Docker container → 403——Docker
+    bridge 流量會繞過 ufw 到達該 port，所以 app 層的允許清單是必要的。ufw（預設 DROP）需要
+    `sudo ufw allow from 192.168.0.0/24 to any port 8820 proto tcp`；tailnet 若被擋，另需
+    `sudo ufw allow in on tailscale0 to any port 8820 proto tcp`（由使用者執行；這裡沒有 sudo）。`scripts/serve.sh` 建置 UI，backend 在 `/` 提供
     `frontend/dist`（StaticFiles 掛在 API 路由之後）。
   - 點擊打入：點 pocket 會切換選取並同步到 chessground 的打入模式；每次選取只接受一次棋盤點擊，之後
     重新同步（否則點到有子的格子會留下 chessground 的棋盤外佔位）；Esc 取消。
@@ -354,7 +357,8 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
   於著法落地前執行時才通過。
 
 ## 驗證狀態
-- `cd backend && uv run pytest -q` → 232 passed（含 `tests/test_puzzle_agent.py`：擷取 JSON、洩題判定、挑題只接受清單內 id
+- `cd backend && uv run pytest -q` → 233 passed（含：允許清單含 tailnet 範圍時 tailnet 裝置可連、Docker／其他網段與冒用
+  X-Forwarded-For 仍 403）（含 `tests/test_puzzle_agent.py`：擷取 JSON、洩題判定、挑題只接受清單內 id
   （不重複）且丟掉洩題的標題與提示、說明的警告被保存、無法使用的回覆退回難度排序；設計模式依序收到「沒有 JSON」「局面不合法：
   too_many_kings」「沒有唯一解」的原因並重試，通過後依 engine 解答（而非設計構想）撰寫文字、寫不出來時保留設計的標題與提示；
   沒有 AI 時設計 422、不合法的選擇 422；舊資料庫補欄位；題目連結、重複新增附編號、工作的 `made`）（含 test_puzzles 檢查同一時間只跑一批製題；含 `tests/test_puzzle_store.py`（Glicko-2 論文範例、儲存、只計分一次）與

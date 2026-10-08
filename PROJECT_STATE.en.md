@@ -29,6 +29,8 @@ non-goals; the user asked for them explicitly.)
 AI puzzle making DONE (user request, 2026-10-08): the puzzle page's own AI choice (agy / codex / claude,
 model, effort) and two modes — the agent picks among engine candidates and writes the title / hint /
 explanation, or the agent designs positions that the engine checks, retrying with the reason.
+Tailscale access DONE (user request, 2026-10-09): on a tailnet, the installer adds `100.64.0.0/10` to the
+allowlist.
 
 ## Current task status
 Strict verification against task.md (2026-10-06) found and fixed: stale README/PROJECT_STATE,
@@ -347,11 +349,15 @@ No task in progress.
   - Vite dev server :5180 proxies `/api` → backend :8820.
   - LAN deployment: `scripts/install_service.sh` → systemd user service `crazyhouse-review`
     (enabled, Linger=yes so it starts at boot) running `scripts/run_server.sh` with HOST=0.0.0.0,
-    PORT=8820, ALLOWED_CLIENT_NETWORKS=127.0.0.0/8,::1/128,192.168.0.0/24. `app/access.py`
-    (pure ASGI) answers 403 to any other peer address (X-Forwarded-For ignored): verified Tailscale
-    source 100.70.168.53 → 403 and a Docker container (172.17.0.3) → 403 — Docker bridge traffic
-    reaches the port despite ufw, so the app-level allowlist matters. ufw (default DROP) needs
-    `sudo ufw allow from 192.168.0.0/24 to any port 8820 proto tcp` (user runs it; no sudo here). `scripts/serve.sh` builds the UI and
+    PORT=8820, ALLOWED_CLIENT_NETWORKS=127.0.0.0/8,::1/128,192.168.0.0/24, plus Tailscale's IPv4 range
+    `100.64.0.0/10` when `tailscale ip -4` works (and `TAILSCALE=0` is not set; the service listens on
+    IPv4 only, so no IPv6 range; who in the tailnet can connect is up to its ACLs), printing the tailnet
+    IP and MagicDNS URLs. `app/access.py` (pure ASGI) answers 403 to any other peer address
+    (X-Forwarded-For ignored): verified tailnet IP 100.70.168.53 and the MagicDNS name → 200 (403
+    before), the LAN → 200, a Docker container → 403 — Docker bridge traffic reaches the port despite
+    ufw, so the app-level allowlist matters. ufw (default DROP) needs
+    `sudo ufw allow from 192.168.0.0/24 to any port 8820 proto tcp`, and if the tailnet is blocked
+    `sudo ufw allow in on tailscale0 to any port 8820 proto tcp` (user runs them; no sudo here). `scripts/serve.sh` builds the UI and
     the backend serves `frontend/dist` at `/` (StaticFiles mounted after the API routes).
   - Click-to-drop: pocket click toggles a selection mirrored into chessground's drop mode; one
     board click per selection, then re-sync (an occupied-square click leaves chessground's
@@ -434,7 +440,8 @@ No task in progress.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 232 passed (incl. `tests/test_puzzle_agent.py`: JSON extraction,
+- `cd backend && uv run pytest -q` → 233 passed (incl. tailnet devices allowed with the tailnet range,
+  Docker / other networks and a spoofed X-Forwarded-For still 403) (incl. `tests/test_puzzle_agent.py`: JSON extraction,
   give-away detection, picks only listed ids (no repeats) and drops titles / hints that give the answer
   away, explanation warnings kept, unusable answers fall back to hardness; a design hears "no JSON",
   「局面不合法：too_many_kings」 and "no unique solution" in turn and retries, then the texts are written

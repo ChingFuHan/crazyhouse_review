@@ -76,16 +76,24 @@ cd frontend && npx vite --host 127.0.0.1 --port 5180
 ```
 Open http://127.0.0.1:5180.
 
-## LAN access (run at boot)
-Serve the app to the local network as a systemd user service that starts at boot:
+## LAN and Tailscale access (run at boot)
+Serve the app to the local network (and the tailnet, when this machine is on Tailscale) as a systemd
+user service that starts at boot:
 ```bash
 ./scripts/install_service.sh          # LAN_NETWORK=192.168.0.0/24 PORT=8820 by default; re-run after updates
 sudo ufw allow from 192.168.0.0/24 to any port 8820 proto tcp comment 'crazyhouse-review'   # once
 ```
 Then open `http://<this machine's LAN IP>:8820` (printed by the script; the IP comes from DHCP and may
-change). The service listens on all interfaces but the app itself only answers clients in
-`ALLOWED_CLIENT_NETWORKS` (loopback + the LAN); anything else, e.g. Tailscale or Docker, gets 403.
-Everyone on the LAN can use the AI features, which spend this machine's agy quota (or the chosen CLI's).
+change). The service listens on all interfaces (IPv4) but the app itself only answers clients in
+`ALLOWED_CLIENT_NETWORKS`: loopback, the LAN and (when `tailscale ip` works) Tailscale's `100.64.0.0/10`;
+anything else, e.g. Docker, gets 403.
+- **Tailscale**: tailnet devices open `http://<this machine's tailnet IP>:8820` or the MagicDNS name
+  `http://<machine name>:8820` (both printed by the script). Which tailnet devices can reach this machine
+  is up to the tailnet's ACLs. If they cannot connect, run once
+  `sudo ufw allow in on tailscale0 to any port 8820 proto tcp comment 'crazyhouse-review tailscale'`.
+  Install with `TAILSCALE=0 ./scripts/install_service.sh` to keep the tailnet out.
+
+Everyone on the LAN (and the tailnet) can use the AI features, which spend this machine's agy quota (or the chosen CLI's).
 The service's PATH gets the directories where the installer found agy / codex / claude (and node);
 re-run the installer after installing or moving one of them.
 Manage it with `systemctl --user status|restart|stop crazyhouse-review`, logs via
