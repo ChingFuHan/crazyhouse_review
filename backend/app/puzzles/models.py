@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from ..models import Color, LineRequest, MoveModel
+from ..models import AnswerWarning, Color, LineRequest, LlmChoice, MoveModel
 
 PuzzleType = Literal["attack", "defense", "tactics", "battle"]
 PUZZLE_TYPES: tuple[PuzzleType, ...] = ("attack", "defense", "tactics", "battle")
@@ -33,6 +33,12 @@ class Puzzle(BaseModel):
     themes: list[str] = []
     hardness: float = Field(default=0.0, description="0–1: how likely a human misses the answer.")
     source: dict = {}
+    # Written by the agent that made or picked the puzzle (never the solution itself).
+    title: str = ""
+    hint: str = ""
+    explanation: str = ""
+    ai: str = Field(default="", description="The agent (cli:model (effort)) that wrote the texts.")
+    ai_warnings: list[AnswerWarning] = []
 
 
 class Player(BaseModel):
@@ -61,6 +67,8 @@ class PuzzleView(BaseModel):
     plays: int
     themes: list[str]
     rated: bool = Field(description="False when this player already had a rated attempt at it.")
+    title: str = ""
+    ai: str = ""
 
 
 class MoveAttempt(BaseModel):
@@ -86,6 +94,8 @@ class MoveResult(BaseModel):
     done: bool
     solution: list[MoveModel] = Field(default=[], description="The whole solution, once the puzzle is over.")
     rating: RatingChange | None = None
+    explanation: str = Field(default="", description="The agent's explanation, once the puzzle is over.")
+    ai_warnings: list[AnswerWarning] = []
 
 
 class BattleMoveResult(BaseModel):
@@ -100,6 +110,8 @@ class BattleMoveResult(BaseModel):
     final_chances: float | None = None
     result: float | None = Field(default=None, description="1 won / 0.5 held / 0 lost, when done.")
     rating: RatingChange | None = None
+    explanation: str = ""
+    ai_warnings: list[AnswerWarning] = []
 
 
 class GiveUpRequest(BaseModel):
@@ -113,6 +125,7 @@ class HintRequest(BaseModel):
 class Hint(BaseModel):
     square: str | None = Field(description="The square of the piece to move, or None for a drop.")
     drop: str | None = Field(description="The pocket piece to drop, if the move is a drop.")
+    text: str = Field(default="", description="The agent's hint in words (never the move itself).")
 
 
 class CreatePuzzleRequest(LineRequest):
@@ -124,8 +137,25 @@ class MineRequest(LineRequest):
 
 
 class GenerateRequest(BaseModel):
+    """Make puzzles with an agent: `curate` — engine self-play candidates, the agent picks the most
+    puzzling and writes title / hint / explanation; `design` — the agent proposes a position of `type`
+    (after `description`), the engine verifies it and reports why not, the agent tries again."""
+
+    mode: Literal["curate", "design"] = "curate"
     count: int = Field(default=5, ge=1, le=30)
     types: list[PuzzleType] = Field(default=list(PUZZLE_TYPES), min_length=1)
+    type: PuzzleType = Field(default="attack", description="design: the kind of puzzle to design.")
+    description: str = Field(default="", max_length=300, description="design: what the viewer asks for.")
+    llm: LlmChoice | None = None
+
+
+class MadePuzzle(BaseModel):
+    """A puzzle a job stored, so it can be opened directly (#/puzzles/<id>)."""
+
+    id: int
+    type: PuzzleType
+    type_name: str
+    title: str = ""
 
 
 class PuzzleJob(BaseModel):
@@ -136,6 +166,9 @@ class PuzzleJob(BaseModel):
     total: int
     found: int = 0
     message: str = ""
+    log: list[str] = Field(default=[], description="What happened so far, one line per step.")
+    ai: str = ""
+    made: list[MadePuzzle] = Field(default=[], description="The puzzles stored when the job is done.")
 
 
 class PuzzleExport(BaseModel):

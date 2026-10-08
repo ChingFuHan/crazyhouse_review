@@ -9,7 +9,11 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 DOCS = ["README", "PROJECT_STATE", "task"]
 # Runtime LLM input, not documentation: never split or decorated.
-NOT_DOCS = {"backend/app/llm/system_prompt.md"}
+NOT_DOCS = {
+    "backend/app/llm/system_prompt.md",
+    "backend/app/puzzles/prompts/curate.md",
+    "backend/app/puzzles/prompts/design.md",
+}
 # Generated or installed content (reports: scripts/llm_eval.py output, git-ignored).
 SKIP_DIRS = {".git", ".venv", "node_modules", "dist", ".pytest_cache", "test-results", "playwright-report", "reports"}
 

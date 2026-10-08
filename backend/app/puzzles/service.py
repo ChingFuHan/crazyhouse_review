@@ -10,9 +10,20 @@ from collections import OrderedDict
 
 import chess
 
-from ..chess_core import IllegalMoveError, LineError, build_board, color_name, move_model, normalize_root_fen, parse_move
+from ..chess_core import (
+    STARTING_FEN,
+    IllegalMoveError,
+    LineError,
+    build_board,
+    color_name,
+    move_model,
+    normalize_root_fen,
+    parse_move,
+)
 from ..models import ExportNode, MoveModel
 from ..pgn_import import export_pgn
+from ..llm.provider import LLMProvider
+from .agent import curate, design
 from .generator import generate
 from .miner import MIDDLEGAME_PLY, Miner, chances
 from .models import (
@@ -20,6 +31,7 @@ from .models import (
     TYPE_NAMES,
     BattleMoveResult,
     Hint,
+    MadePuzzle,
     MoveResult,
     Player,
     Puzzle,
@@ -88,6 +100,8 @@ class PuzzleService:
             plays=puzzle.plays,
             themes=puzzle.themes,
             rated=player_id is None or not self.store.attempted(player_id, puzzle.id),
+            title=puzzle.title,
+            ai=puzzle.ai,
         )
 
     def next(self, nickname: str, types: list[PuzzleType]) -> PuzzleView:
@@ -96,6 +110,11 @@ class PuzzleService:
         if puzzle is None:
             raise PuzzleError("題庫裡還沒有這類題目：請先從對局挖題或製造新題")
         return self.view(puzzle, player_id)
+
+    def open(self, nickname: str, puzzle_id: int) -> PuzzleView:
+        """A given puzzle (a link to it), rated like any other on the player's first attempt."""
+        player_id, _ = self.player(nickname)
+        return self.view(self._puzzle(puzzle_id), player_id)
 
     def _puzzle(self, puzzle_id: int) -> Puzzle:
         puzzle = self.store.get(puzzle_id)
@@ -153,6 +172,7 @@ class PuzzleService:
             return MoveResult(
                 correct=correct, played=played, done=True,
                 solution=self._models(puzzle.fen, puzzle.solution), rating=self._rate(player_id, player, puzzle, score),
+                explanation=puzzle.explanation, ai_warnings=puzzle.ai_warnings,
             )  # fmt: skip
         reply = chess.Move.from_uci(puzzle.solution[len(moves) + 1])
         return MoveResult(correct=True, played=played, reply=move_model(after, reply), done=False)
@@ -162,7 +182,8 @@ class PuzzleService:
         player_id, player = self.player(nickname)
         return MoveResult(
             correct=False, played=None, done=True, solution=self._models(puzzle.fen, puzzle.solution),
-            rating=self._rate(player_id, player, puzzle, 0.0),
+            rating=self._rate(player_id, player, puzzle, 0.0), explanation=puzzle.explanation,
+            ai_warnings=puzzle.ai_warnings,
         )  # fmt: skip
 
     def hint(self, puzzle_id: int, moves: list[str]) -> Hint:
@@ -171,7 +192,8 @@ class PuzzleService:
             raise PuzzleError("對轟題沒有提示")
         board = self._line_board(puzzle, moves)
         move = move_model(board, chess.Move.from_uci(puzzle.solution[len(moves)]))
-        return Hint(square=move.from_square, drop=move.drop)
+        # The agent's words fit the first move only; later steps get the piece to move.
+        return Hint(square=move.from_square, drop=move.drop, text=puzzle.hint if not moves else "")
 
     async def battle_move(self, puzzle_id: int, nickname: str, moves: list[str], answer: str) -> BattleMoveResult:
         """One solver move of a battle: scored against the engine's best from the same position, then
@@ -224,6 +246,7 @@ class PuzzleService:
             played=played, verdict=verdict, best=best_move, chances_best=chances_best,
             chances_played=chances_played, reply=reply, done=done, moves_left=max(0, moves_left),
             final_chances=final, result=result, rating=rating,
+            explanation=puzzle.explanation if done else "", ai_warnings=puzzle.ai_warnings if done else [],
         )  # fmt: skip
 
     def export(self, puzzle_id: int, with_solution: bool) -> PuzzleExport:
@@ -262,7 +285,8 @@ class PuzzleService:
         match.source = {"kind": "manual"}
         stored = self.store.add(match)
         if stored is None:
-            raise PuzzleError(f"這個局面已經是一題{TYPE_NAMES[kind]}")
+            existing = self.store.find(fen, kind)
+            raise PuzzleError(f"這個局面已經是一題{TYPE_NAMES[kind]}" + (f"（#{existing.id}）" if existing else ""))
         return stored
 
     def _job(self, kind: str, total: int) -> PuzzleJob:
@@ -278,7 +302,8 @@ class PuzzleService:
         async def run() -> None:
             try:
                 puzzles = await work
-                stored = [p for p in puzzles if self.store.add(p) is not None]
+                stored = [s for p in puzzles if (s := self.store.add(p)) is not None]
+                job.made = [MadePuzzle(id=s.id, type=s.type, type_name=TYPE_NAMES[s.type], title=s.title) for s in stored]
                 job.found = len(stored)
                 job.status = "done"
                 job.message = f"新增 {len(stored)} 題" + (f"（另有 {len(puzzles) - len(stored)} 題已在題庫中）" if len(puzzles) > len(stored) else "")
@@ -302,18 +327,42 @@ class PuzzleService:
         self._run(job, self.miner.mine_line(root, moves, {"kind": "game", "label": label}, progress))
         return job
 
-    def generate(self, count: int, types: list[PuzzleType]) -> PuzzleJob:
-        """Start making puzzles; while one batch is running (minutes of engine time on a machine the
-        whole network shares) another request gets that batch instead of a second one."""
+    def generate(self, count: int, types: list[PuzzleType], mode: str = "curate", kind: PuzzleType = "attack",
+                 description: str = "", provider: LLMProvider | None = None) -> PuzzleJob:
+        """Start making puzzles with an agent (see `agent`); while one batch is running (minutes of
+        engine time on a machine the whole network shares) another request gets that batch instead."""
         running = next((j for j in self._jobs.values() if j.kind == "generate" and j.status == "running"), None)
         if running is not None:
             return running
+        if mode == "design" and provider is None:
+            raise PuzzleError("沒有可用的 AI 可以設計局面：請在製題的 AI 設定選一個 agent")
         job = self._job("generate", count)
+        job.ai = provider.name if provider else ""
+        note = job.log.append
+        rng = random.Random()
 
         def progress(games: int, total_games: int, found: int) -> None:
             job.done, job.total, job.found = games, total_games, found
 
-        self._run(job, generate(self.miner, self.openings, count, types, random.Random(), progress))
+        async def curated() -> list[Puzzle]:
+            note(f"engine 自我對弈，尋找約 {count * 2} 個候選…")
+            candidates = await generate(self.miner, self.openings, count, types, rng, progress)
+            note(f"找到 {len(candidates)} 個候選")
+            return await curate(provider, self.miner, candidates, count, note)
+
+        async def designed() -> list[Puzzle]:
+            made: list[Puzzle] = []
+            job.total = count
+            for index in range(count):
+                reference = build_board(*rng.choice(self.openings)).fen() if self.openings else STARTING_FEN
+                assert provider is not None
+                puzzle = await design(provider, self.miner, kind, description, reference, note)
+                if puzzle is not None:
+                    made.append(puzzle)
+                job.done, job.found = index + 1, len(made)
+            return made
+
+        self._run(job, curated() if mode == "curate" else designed())
         return job
 
     def job(self, job_id: str) -> PuzzleJob:

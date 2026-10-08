@@ -114,6 +114,8 @@ class Miner:
             shallow = await self.lines(fen, 1, depth=depth, movetime_ms=200)
             if shallow and shallow[0].pv[0].uci != best.uci():
                 score += weight
+                if depth == 2:
+                    themes.append("deep_calculation")
         forcing = any(board.is_capture(m) or board.gives_check(m) for m in board.legal_moves)
         if not facts.is_check and not facts.is_capture and forcing:
             score += 0.15
@@ -204,6 +206,69 @@ class Miner:
                     line_board.push_uci(move)
                     covered.add(line_board.fen())
         return found
+
+
+TYPE_WORDS = {"attack": "進攻題", "defense": "防守題", "tactics": "中局攻防", "battle": "中局對轟"}
+
+
+def invalid(fen: str) -> str | None:
+    """Why a FEN is not a playable crazyhouse position (None if it is)."""
+    try:
+        board = CrazyhouseBoard(fen)  # not build_board: it rejects an illegal position without naming why
+    except ValueError as error:
+        return f"FEN 無效：{error}"
+    status = board.status()
+    if status != chess.STATUS_VALID:
+        problems = [name.removeprefix("STATUS_").lower() for name in dir(chess)
+                    if name.startswith("STATUS_") and name != "STATUS_VALID" and status & getattr(chess, name)]
+        return "局面不合法：" + "、".join(problems)
+    if board.is_game_over():
+        return "局面已經結束（將死或和局），沒有題目可解"
+    return None
+
+
+async def diagnose(miner: "Miner", fen: str, kind: str) -> str | None:
+    """Why `fen` is not a puzzle of `kind` (None when it is), in words an agent can act on."""
+    if (problem := invalid(fen)) is not None:
+        return problem
+    board = build_board(fen, [])
+    solver = color_name(board.turn)
+    lines = await miner.lines(fen, 3)
+    if len(lines) < 2:
+        return "解題方只有一步合法著，沒有選擇"
+    found = await miner.classify(fen, ply=MIDDLEGAME_PLY)
+    if any(p.type == kind for p in found):
+        return None
+    best, second = chances(lines[0], solver), chances(lines[1], solver)
+    top = "、".join(f"{line.pv[0].san}（{_score(line)}）" for line in lines)
+    reasons = []
+    if kind in ("attack", "defense", "tactics") and not unique(lines, solver):
+        reasons.append(f"最佳 {lines[0].pv[0].san} 與次佳 {lines[1].pv[0].san} 勝率相差 {best - second:.2f}（需 ≥ {UNIQUE_GAP}），沒有唯一解")
+    if kind == "attack" and not solver_mates(lines[0], solver) and best < WINNING:
+        reasons.append(f"最佳著後解題方勝率只有 {best:.2f}（需 ≥ {WINNING} 或有將殺）")
+    if kind in ("defense", "tactics"):
+        threat = await miner.threat(board)
+        if kind == "defense" and (threat is None or threat < THREAT):
+            reasons.append("解題方停一手時對手沒有致命威脅" + (f"（對手勝率 {threat:.2f}，需 ≥ {THREAT}）" if threat is not None else ""))
+        if kind == "defense" and best < HOLDS:
+            reasons.append(f"最佳著也守不住（勝率 {best:.2f} < {HOLDS}）")
+        if kind == "defense" and best >= WINNING:
+            reasons.append(f"解題方其實已經大優（勝率 {best:.2f}），比較像進攻題")
+        if kind == "tactics":
+            reasons.append("需要連續 ≥ 3 步唯一好著，且雙方都有威脅")
+    if kind == "battle":
+        if abs(best) > BATTLE_BALANCE:
+            reasons.append(f"局勢不夠接近（解題方勝率 {best:.2f}，需在 ±{BATTLE_BALANCE} 內）")
+        if not tense(board):
+            reasons.append("雙方王沒有都受到攻擊，或不是雙方都有手中棋子能打入將軍")
+    if not reasons:
+        reasons.append("不符合題型條件")
+    others = "、".join(dict.fromkeys(TYPE_WORDS[p.type] for p in found))
+    return "；".join(reasons) + f"。engine 前幾名（白方視角）：{top}" + (f"。這個局面 engine 判定為：{others}" if others else "")
+
+
+def _score(line: EngineLine) -> str:
+    return f"#{line.mate}" if line.mate is not None else f"{line.evaluation:+.2f}"
 
 
 def tense(board: CrazyhouseBoard) -> bool:

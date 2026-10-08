@@ -24,6 +24,7 @@ from ..puzzles.models import (
     PuzzleView,
 )
 from ..puzzles.service import PuzzleError, PuzzleService
+from .explain import chosen_provider
 
 router = APIRouter(prefix="/api")
 
@@ -60,6 +61,15 @@ async def stats(request: Request) -> PuzzleStats:
     return PuzzleStats(total=sum(counts.values()), by_type={t: counts.get(t, 0) for t in PUZZLE_TYPES})
 
 
+@router.get("/puzzles/{puzzle_id:int}", response_model=PuzzleView)
+async def open_puzzle(puzzle_id: int, request: Request, player: str = Query(max_length=24)) -> PuzzleView:
+    """A given puzzle, for a link to it (#/puzzles/<id>)."""
+    try:
+        return puzzles(request).open(player, puzzle_id)
+    except PuzzleError as error:
+        raise _error(error) from error
+
+
 @router.post("/puzzles", response_model=PuzzleView)
 async def create(body: CreatePuzzleRequest, request: Request) -> PuzzleView:
     """Make a puzzle of the chosen type from a position; the engine checks that it is one."""
@@ -81,8 +91,14 @@ async def mine(body: MineRequest, request: Request) -> PuzzleJob:
 
 @router.post("/puzzles/generate", response_model=PuzzleJob)
 async def generate(body: GenerateRequest, request: Request) -> PuzzleJob:
-    """Make new puzzles from imperfect engine self-play, hardest for humans first, in the background."""
-    return puzzles(request).generate(body.count, body.types)
+    """Make new puzzles in the background with the agent the viewer picked (server default if none):
+    `curate` — the agent picks among engine self-play candidates and writes title / hint / explanation;
+    `design` — the agent proposes positions of `type`, verified by the engine."""
+    provider = await chosen_provider(body.llm, request) or request.app.state.explain.provider
+    try:
+        return puzzles(request).generate(body.count, body.types, body.mode, body.type, body.description, provider)
+    except PuzzleError as error:
+        raise _error(error) from error
 
 
 @router.get("/puzzle-jobs/{job_id}", response_model=PuzzleJob)

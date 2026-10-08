@@ -65,3 +65,28 @@ def test_next_puzzle_prefers_ratings_close_to_the_player(tmp_path):
     player_id, _ = store.player("Bo", create=True)
     assert {store.next_for(player_id, 1500, ["attack"]).id for _ in range(10)} == {near.id}
     store.close()
+
+
+def test_an_older_database_gets_the_new_columns_and_keeps_its_puzzles(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.sqlite"
+    old = sqlite3.connect(path)
+    old.executescript(
+        "create table puzzles (id integer primary key, type text not null, fen text not null, solver text not null,"
+        " solution text not null, battle_plies integer, start_chances real, rating real not null, rd real not null,"
+        " vol real not null, plays integer not null default 0, wins real not null default 0,"
+        " themes text not null default '[]', hardness real not null default 0, source text not null default '{}',"
+        " created_at real not null, unique (fen, type));"
+        f"insert into puzzles (type, fen, solver, solution, rating, rd, vol, created_at)"
+        f" values ('attack', '{MATE_FEN}', 'white', '[\"R@d8\"]', 1400, 100, 0.06, 0);"
+    )
+    old.commit()
+    old.close()
+    store = PuzzleStore(path)
+    kept = store.get(1)
+    assert kept.solution == ["R@d8"] and kept.title == "" and kept.ai_warnings == []
+    written = store.add(puzzle(fen="6k1/5ppp/8/8/8/8/5PPP/5K2[R] w - - 0 1", title="打入底線", hint="看看底線",
+                               explanation="R@d8 將殺", ai="codex:gpt-6.1-sol (low)"))
+    assert (written.title, written.hint, written.ai) == ("打入底線", "看看底線", "codex:gpt-6.1-sol (low)")
+    store.close()

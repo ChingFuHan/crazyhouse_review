@@ -46,7 +46,8 @@ async def selfplay(engine: EngineService, root_fen: str, opening: list[str], rng
 
 async def generate(miner: Miner, openings: list[tuple[str, list[str]]], count: int, types: list[PuzzleType],
                    rng: random.Random, progress=None) -> list[Puzzle]:
-    """Up to `count` new puzzles of `types`, the hardest first, from self-play games."""
+    """New puzzles of `types` from self-play games, the hardest first: about twice `count`, for the
+    caller (an agent, or engine hardness) to choose `count` from."""
     found: list[Puzzle] = []
     games = max(1, count * MAX_GAMES_PER_PUZZLE // 2)
     for game in range(games):
@@ -60,4 +61,4 @@ async def generate(miner: Miner, openings: list[tuple[str, list[str]]], count: i
         if len(found) >= count * 2:  # enough to choose the hardest from
             break
     found.sort(key=lambda p: p.hardness, reverse=True)
-    return found[:count]
+    return found

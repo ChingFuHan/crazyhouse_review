@@ -85,6 +85,10 @@ def test_solving_rates_once_accepts_any_mate_and_reveals_the_solution_afterwards
 
         view = c.get("/api/puzzles/next", params={"player": "Ann", "types": "attack"}).json()
         assert view["id"] in (mate_id, line_id) and "solution" not in view and view["rated"]
+        # A link opens a given puzzle (rated like any other).
+        linked = c.get(f"/api/puzzles/{line_id}", params={"player": "Ann"}).json()
+        assert linked["id"] == line_id and linked["rated"] and "solution" not in linked
+        assert c.get("/api/puzzles/999", params={"player": "Ann"}).status_code == 422
         export = c.get(f"/api/puzzles/{mate_id}/export", params={"player": "Ann"}).json()
         assert not export["solution_shown"] and "R@d8" not in export["pgn"] and '[FEN "6k1/5ppp/8/8/8/8/5PPP/6K1[R] w - - 0 1"]' in export["pgn"]
         assert export["lichess_analysis_url"] == "https://lichess.org/analysis/crazyhouse/6k1/5ppp/8/8/8/8/5PPP/6K1/R_w_-_-_0_1"
@@ -102,7 +106,7 @@ def test_solving_rates_once_accepts_any_mate_and_reveals_the_solution_afterwards
         step = c.post(f"/api/puzzles/{line_id}/move", json={"player": "Ann", "moves": [], "move": "e4"}).json()
         assert step["correct"] and not step["done"] and step["reply"]["uci"] == "e7e5"
         hint = c.post(f"/api/puzzles/{line_id}/hint", json={"moves": ["e2e4", "e7e5"]}).json()
-        assert hint == {"square": "g1", "drop": None}
+        assert hint == {"square": "g1", "drop": None, "text": ""}
         wrong = c.post(f"/api/puzzles/{line_id}/move", json={"player": "Ann", "moves": ["e2e4", "e7e5"], "move": "d2d4"}).json()
         assert not wrong["correct"] and wrong["done"] and wrong["rating"]["after"] < wrong["rating"]["before"]
         out_of_step = c.post(f"/api/puzzles/{line_id}/move", json={"player": "Ann", "moves": ["e2e4", "c7c5"], "move": "g1f3"})
@@ -137,7 +141,8 @@ def test_manual_puzzles_are_checked_by_the_engine(tmp_path):
         made = c.post("/api/puzzles", json={"root_fen": MATE_IN_ONE, "type": "attack"})
         assert made.status_code == 200 and made.json()["type"] == "attack" and made.json()["solver_moves"] == 1
         duplicate = c.post("/api/puzzles", json={"root_fen": MATE_IN_ONE, "type": "attack"})
-        assert duplicate.status_code == 422 and "已經是一題" in duplicate.json()["detail"]["message"]
+        message = duplicate.json()["detail"]["message"]
+        assert duplicate.status_code == 422 and message == f"這個局面已經是一題進攻題（#{made.json()['id']}）"
         refused = c.post("/api/puzzles", json={"moves": ["e2e4"], "type": "attack"})
         assert refused.status_code == 422 and "不適合當進攻題" in refused.json()["detail"]["message"]
 
@@ -159,6 +164,7 @@ def test_mining_a_game_and_making_puzzles_run_in_the_background(tmp_path, monkey
     with client(tmp_path) as c:
         job = wait(c, c.post("/api/puzzles/mine", json={"moves": node.state.moves, "label": "fixture"}).json())
         assert job["status"] == "done" and job["found"] >= 1 and job["done"] == job["total"]
+        assert [m["id"] for m in job["made"]] == list(range(1, job["found"] + 1)), "the stored puzzles, to open"
         store = c.app.state.puzzles.store
         battles = sorted(store.get(i).source["ply"] for i in range(1, job["found"] + 1) if store.get(i).type == "battle")
         assert all(b - a >= 8 for a, b in zip(battles, battles[1:])), "battles from one game are spread out"

@@ -57,6 +57,14 @@ create table if not exists attempts (
     unique (player_id, puzzle_id)
 );
 """
+# Columns added after the first release: (name, definition); added to an older database on start.
+ADDED_COLUMNS = (
+    ("title", "text not null default ''"),
+    ("hint", "text not null default ''"),
+    ("explanation", "text not null default ''"),
+    ("ai", "text not null default ''"),
+    ("ai_warnings", "text not null default '[]'"),
+)
 # How far (rating points) from the player's rating a puzzle is first looked for; widened step by step.
 RATING_WINDOWS = (100, 200, 400, 800, 10_000)
 
@@ -69,6 +77,11 @@ class PuzzleStore:
         self._lock = threading.Lock()
         with self._lock:
             self._db.executescript(SCHEMA)
+            present = {row["name"] for row in self._db.execute("pragma table_info(puzzles)")}
+            for name, definition in ADDED_COLUMNS:
+                if name not in present:
+                    self._db.execute(f"alter table puzzles add column {name} {definition}")
+            self._db.commit()
 
     def close(self) -> None:
         with self._lock:
@@ -82,10 +95,12 @@ class PuzzleStore:
         with self._lock:
             cursor = self._db.execute(
                 "insert or ignore into puzzles (type, fen, solver, solution, battle_plies, start_chances, rating, rd,"
-                " vol, themes, hardness, source, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " vol, themes, hardness, source, created_at, title, hint, explanation, ai, ai_warnings)"
+                " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (puzzle.type, fen, puzzle.solver, json.dumps(puzzle.solution), puzzle.battle_plies,
                  puzzle.start_chances, puzzle.rating, puzzle.rd, puzzle.vol, json.dumps(puzzle.themes),
-                 puzzle.hardness, json.dumps(puzzle.source), time.time()),
+                 puzzle.hardness, json.dumps(puzzle.source), time.time(), puzzle.title, puzzle.hint,
+                 puzzle.explanation, puzzle.ai, json.dumps([w.model_dump() for w in puzzle.ai_warnings])),
             )  # fmt: skip
             self._db.commit()
             if cursor.rowcount == 0:
@@ -96,6 +111,13 @@ class PuzzleStore:
     def get(self, puzzle_id: int) -> Puzzle | None:
         with self._lock:
             row = self._db.execute("select * from puzzles where id = ?", (puzzle_id,)).fetchone()
+        return _puzzle(row) if row else None
+
+    def find(self, fen: str, kind: PuzzleType) -> Puzzle | None:
+        with self._lock:
+            row = self._db.execute(
+                "select * from puzzles where fen = ? and type = ?", (normalize_root_fen(fen), kind)
+            ).fetchone()
         return _puzzle(row) if row else None
 
     def next_for(self, player_id: int, rating: float, types: list[PuzzleType]) -> Puzzle | None:
@@ -189,4 +211,9 @@ def _puzzle(row: sqlite3.Row) -> Puzzle:
         themes=json.loads(row["themes"]),
         hardness=row["hardness"],
         source=json.loads(row["source"]),
+        title=row["title"],
+        hint=row["hint"],
+        explanation=row["explanation"],
+        ai=row["ai"],
+        ai_warnings=json.loads(row["ai_warnings"]),
     )
