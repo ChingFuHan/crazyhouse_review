@@ -31,6 +31,8 @@ model, effort) and two modes — the agent picks among engine candidates and wri
 explanation, or the agent designs positions that the engine checks, retrying with the reason.
 Tailscale access DONE (user request, 2026-10-09): on a tailnet, the installer adds `100.64.0.0/10` to the
 allowlist.
+Review page improvements DONE (user request, 2026-10-09): review summary and mistake jumps, learn from
+mistakes, automatic review, game info, new layout, lichess import, recent games, promote a variation.
 Moving back and forth while solving and full replays DONE (user request, 2026-10-09): ⏮ ◀ ▶ ⏭ ⇅
 under the puzzle board, ◀ to retry after a wrong move.
 Puzzle page improvements DONE (user request, 2026-10-09): the opponent's last move and delayed replies,
@@ -84,6 +86,12 @@ back and forth, and a full replay once solved): the puzzle board got the review 
 ◀ replaced the 「再試一次」 button. Found on the way: when solved with another mate, the replay showed the
 moves played but the side panel listed the engine's stored solution — it now lists the moves played and
 adds the engine's solution when it differs.
+Then (the user asked where the review page could improve; eight items listed, all chosen): the review
+had to be started by hand and was only a long list of errors without a summary, the right column
+stacked seven panels (「問 AI」 about 2000 px down on a desktop), only pasting a PGN was possible, only the
+last game was remembered, and a variation could not become the main line. Desktop and phone layouts
+were checked with screenshots of a fixed lichess test game, fixing "?" PGN headers shown as names (top
+bar, summary, game info).
 No task in progress.
 
 ## Current architecture
@@ -232,6 +240,10 @@ No task in progress.
     alternating fake blunders (side-to-move bias, found via screenshot). Verdicts: lichess
     winning-chance drop 0.1/0.2/0.3 on cp×0.5 (crazyhouse scale heuristic) + mate-aware
     (mate_missed, mate_allowed; downgraded/ignored when the position is already decisive).
+  - `POST /api/review/judge` (learning from mistakes): `ReviewService.judge` compares the best line and
+    `root_moves=(move,)` on the review engine with protected searches (never stopped by a running review),
+    1000 ms each, reusing `classify` / `winning_chances`; a mate is always good; a finished position or an
+    illegal move is a 422.
   - `EngineService.analyse(..., root_moves=())` — part of the cache key.
   - `scripts/fetch_engine.sh` → `engines/fairy-stockfish` (gitignored; fairy_sf_14 release, bmi2
     build here, sha256 9c8ff22d…) + crazyhouse NNUE `engines/crazyhouse-8ebf84784ad2.nnue` (55.8 MB,
@@ -384,6 +396,23 @@ No task in progress.
     `PuzzlePage` reuses `NavControls` (flipping affects this puzzle only); `PuzzleLibrary` (list, filters, restore) +
     `PuzzleMaker` (AI making, paste a FEN); `PuzzleHistory` (`ratingGraph.ts` computes ticks and points; a
     single-series SVG with crosshair, tooltip and arrow keys).
+  - Review page layout (`App.tsx`): `.review-layout`, a three-area grid (board | side / under the board |
+    side; on a phone board → side → under); under the board the status (FEN, back to main), move input,
+    `ReviewPanel` and `LearnPanel`; the side has `EnginePanel`, `MoveList` and the tabs 「為什麼｜問 AI｜
+    對局與工具」 (kept mounted and only hidden; the choice in localStorage). `reviewSummary.ts`: lichess's
+    per-move accuracy 103.1668·e^(−0.04354·win% drop)−3.1669 averaged, plus counts per kind;
+    `ReviewPanel` filters by side / inaccuracies, previous / next mistake (p / n; `typing.isTyping` shared
+    with `NavControls`); `useGameReview(tree, auto)` starts by itself when the main line (root_fen + moves)
+    changes and has no job yet (preference `auto-review`, on by default). `useLearn`: one side's mistakes,
+    blunders and mate errors from the review, `select`s the position before each; a move there goes to
+    `attempt` (judge; the board always snaps back, nothing enters the game), and while practising the
+    engine panel, arrows, why tab and mistake list are hidden; the answer's arrow comes from `api.move`
+    on the best move's SAN. `GameInfo` + `gameInfo.ts` (`known` drops "?", time control, date, the lichess
+    game). `lichess.ts`: game link / id parsing, the browser `fetch`es lichess directly (`/game/export/{id}`,
+    `/api/games/user/{name}` ndjson; lichess's API sends `Access-Control-Allow-Origin: *`), 404 / 429 /
+    network errors in words. `session.ts`: the 10 recent games (deduped by `sourceKey`) and the main line's
+    last moves; `tree.promote` / `makeMainline` swap variationIds and `children` order, `useReview` has
+    `promoteToMain` and `openRecent`, and a restore applies `makeMainline`.
   - Vite dev server :5180 proxies `/api` → backend :8820.
   - LAN deployment: `scripts/install_service.sh` → systemd user service `crazyhouse-review`
     (enabled, Linger=yes so it starts at boot) running `scripts/run_server.sh` with HOST=0.0.0.0,
@@ -454,6 +483,10 @@ No task in progress.
 
 ## Known limitations
 - Review verdicts come from 300 ms searches: bullet-game classifications vary a little between runs.
+- Accuracy is the plain average of move accuracies (lichess also weighs by volatility and uses a harmonic
+  mean), so it differs a little from lichess's numbers.
+- The lichess import runs in the viewer's browser, which needs internet access; recent games live only in
+  that browser.
 - Engine: single shared interactive process; two tabs analysing different positions replace each
   other's searches (shown as 已中斷 "interrupted" + 重新分析 "analyse again"). Threads/Hash choices affect the whole machine.
 - At 390 px width chessground's file coordinates overflow by 2 px (pre-existing).
@@ -480,7 +513,9 @@ No task in progress.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 240 passed (incl. the last move stored when mining and when saving
+- `cd backend && uv run pytest -q` → 241 passed (incl. judge: a mate is good, allowing mate gives
+  mate_missed / blunder with the best move, judging works during a running review, illegal 422, finished
+  422) (incl. the last move stored when mining and when saving
   from a line; an equally good move neither ends nor rates, a retry after failing is unrated; hint scores
   for levels 0 / 1 / 2; explaining before an attempt 422, written once and stored, two viewers at once run
   the agent once; one puzzle of a kind against ten of another still comes up about half the time;
@@ -523,8 +558,15 @@ No task in progress.
   a real-game job not disturbing interactive analysis; LLM context == board/engine/analyzer, variation
   and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
   503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
-- `cd frontend && npx vitest run` → 52 passed (incl. the rating chart's ticks and points); `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 51 passed (incl. a solved puzzle replayed with ⏮ ▶ ⏭ from
+- `cd frontend && npx vitest run` → 63 passed (incl. the rating chart's ticks and points; accuracy and the
+  summary, lichess link and ndjson parsing, time control and date, promoting and making a main line
+  (nested, a user line past the game's end), recent games deduped and capped); `npx tsc -b`, `npm run lint`, `npx vite build` clean.
+- `cd frontend && npx playwright test` → 55 passed (incl. `e2e/review-tools.spec.ts`: the review starts by
+  itself with its summary, Black only, n to a mistake, learning from it (a bad try named, a good one, nothing
+  added to the game, the engine hidden while practising); intercepted lichess answers for a game link and a
+  player's list, game info and the original game link, switching back to a recent game; a promoted
+  variation kept after a reload; the three tabs fit a phone. The suite turns the automatic review off;
+  the tests that need it turn it on) (incl. a solved puzzle replayed with ⏮ ▶ ⏭ from
   before the opponent's last move, the current ply highlighted in the side panel; a two-move puzzle
   (Philidor's smothered mate) moved ◀◀ ▶▶ while solving, the same move again only stepping on, then
   replayed; a wrong defense move undone with ← and solved unrated; a finished battle replayed with Home /

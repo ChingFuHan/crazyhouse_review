@@ -257,7 +257,18 @@ local network; ratings and attempts are kept on the server). The puzzle page has
 ## Current features
 - Crazyhouse position state (FEN with pockets and promoted markers), legal moves incl. drops
 - Move input as UCI or SAN with readable illegal-move reasons
-- Crazyhouse PGN import (variations and comments kept as data), or load a crazyhouse FEN directly
+- Crazyhouse PGN import (variations and comments kept as data), or load a crazyhouse FEN directly;
+  「載入對局」 (load a game) also takes a lichess game link or id, or a lichess username to list their latest
+  20 crazyhouse games to pick from (fetched by the browser from lichess's public API, not via the server);
+  the 10 most recent games (with your variations and position) can be reopened
+- Layout: under the board the position status (FEN, back to main line), move input, the whole-game
+  review and 「從錯誤中學習」 (learn from mistakes); on the right the engine, the move list and the tabs
+  「為什麼｜問 AI｜對局與工具」 (why | ask the AI | game and tools: game info, export, save as puzzle); on a
+  phone: board, right column, then the review
+- Game info: players and ratings, result and how it ended, time control (e.g. 3+2), date, event, opening
+  from the PGN headers; a lichess game links to the original
+- 「↑」 next to a variation makes it the main line (the review, PGN export and back-to-main follow it,
+  kept after a reload)
 - Review board: PGN load, pockets, move list with variations, keyboard navigation, flip
 - Play your own moves: drag pieces, drag from the pocket or click a pocket piece then a square
   (legal squares highlighted; Esc cancels); works with touch, and with the keyboard (focus the
@@ -295,9 +306,17 @@ local network; ratings and attempts are kept on the server). The puzzle page has
   after the played move. A side without flagged moves is answered by the rules, without the AI. Scans
   belong to the whole main line and stay while you browse
 
-- 整局分析 (whole-game review): every main-line move checked by a separate engine process; inaccuracies, mistakes,
+- 整局分析 (whole-game review): started by itself when a game loads (or the main line changes; can be
+  turned off), every main-line move checked by a separate engine process; inaccuracies, mistakes,
   blunders, missed and allowed forced mates are marked in the move list and listed as critical
-  moments (best vs played, both searched from the same position), with a clickable eval graph
+  moments (best vs played, both searched from the same position), with a clickable eval graph; each
+  side's accuracy (lichess's per-move formula, averaged) and error counts; the list can show one side
+  and leave out inaccuracies, with previous / next mistake (keys p / n)
+
+- 從錯誤中學習 (learn from mistakes): pick a side and go through the positions before its mistakes,
+  blunders and mate errors to find a better move; each try is judged by the engine (same criteria as
+  the review) and never added to the game; the engine lines, arrows, explanation and mistake list stay
+  hidden while practising; show the answer, next exercise, and how many were found at the end
 
 - 匯出 PGN (export PGN): the game with your variations and comments as a crazyhouse PGN (copy or download)
 - Reloading the page restores the loaded game, your variations and the current position
