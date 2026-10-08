@@ -430,6 +430,18 @@ class ReviewJob(BaseModel):
     error: str | None = None
 
 
+class JudgedMove(BaseModel):
+    """A move tried in a position (learning from mistakes): compared with the engine's best there."""
+
+    played: MoveModel
+    best: MoveModel | None = Field(description="The engine's best move (None when the position is over).")
+    chances_best: float = Field(description="The mover's winning chances (-1..1) after the best move.")
+    chances_played: float
+    verdict: Literal["inaccuracy", "mistake", "blunder", "mate_missed", "mate_allowed"] | None = Field(
+        description="As in the whole-game review; None = a good move (the best, or within an inaccuracy of it)."
+    )
+
+
 class ExportNode(BaseModel):
     moves: list[str] = Field(max_length=1000)
     comment: str = Field(default="", max_length=2000)

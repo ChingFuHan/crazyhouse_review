@@ -89,3 +89,23 @@ def test_review_job_on_real_game_and_no_interference_with_interactive_engine():
         assert all(p["classification"] is None for p in plies if p["played_best"])
         assert all(p["evaluation_pov"] == "white" for p in plies)
         assert client.get("/api/review/0000000000000000").status_code == 404
+
+
+@needs_engine
+def test_judging_a_move_tried_in_a_position():
+    # 1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6??: Qxf7# is the move to find; Qxe5+ is far worse.
+    moves = ["e2e4", "e7e5", "d1h5", "b8c6", "f1c4", "g8f6"]
+    with TestClient(create_app(SETTINGS, review_settings=REVIEW)) as client:
+        mate = client.post("/api/review/judge", json={"moves": moves, "move": "Qxf7#"}).json()
+        assert mate["verdict"] is None and mate["played"]["san"] == "Qxf7#" and mate["chances_played"] == 1.0
+        worse = client.post("/api/review/judge", json={"moves": moves, "move": "h5h4"}).json()
+        assert worse["verdict"] in ("mate_missed", "blunder") and worse["best"]["san"] == "Qxf7#"
+        assert worse["chances_played"] < worse["chances_best"]
+        # A running whole-game review does not get in the way.
+        client.post("/api/review", json={"moves": moves})
+        again = client.post("/api/review/judge", json={"moves": moves, "move": "f7f5"})
+        assert again.status_code == 422 and again.json()["detail"]["error"] == "illegal_move"
+        over = client.post("/api/review/judge", json={"moves": [*moves, "h5f7"], "move": "e8e7"})
+        assert over.status_code == 422 and over.json()["detail"]["error"] == "game_over"
+        good = client.post("/api/review/judge", json={"moves": moves, "move": "h5f7"}).json()
+        assert good["verdict"] is None

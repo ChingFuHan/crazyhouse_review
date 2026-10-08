@@ -13,9 +13,11 @@ import logging
 import math
 from collections import OrderedDict
 
-from .chess_core import build_board, color_name, position_id
+import chess
+
+from .chess_core import build_board, color_name, move_model, position_id
 from .engine import EngineService, EngineUnavailable
-from .models import Color, EngineLine, ReviewJob, ReviewPly
+from .models import Color, EngineLine, JudgedMove, ReviewJob, ReviewPly
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +31,7 @@ CRAZYHOUSE_CP_SCALE = 0.5
 # Mate verdicts only matter while the game is still in the balance: a missed mate that keeps an
 # overwhelming advantage is an inaccuracy, and allowing mate in an already lost position is not flagged.
 DECISIVE = 0.9
+JUDGE_MOVETIME_MS = 1000  # one move a viewer tried: worth a longer look than a whole-game review step
 
 
 def winning_chances(evaluation: float | None, mate: int | None, color: Color) -> float:
@@ -127,6 +130,35 @@ class ReviewService:
         except Exception as error:  # noqa: BLE001 - surfaced to the client, logged with traceback
             log.exception("review %s failed", job.job_id)
             job.status, job.error = "error", repr(error)
+
+    async def judge(self, root_fen: str, moves: list[str], move: chess.Move) -> JudgedMove:
+        """A move tried after ``moves``: searched alone and against the engine's best from the same
+        position (protected searches, so a running review neither stops them nor is stopped)."""
+        board = build_board(root_fen, moves)
+        mover = color_name(board.turn)
+        pid = position_id(root_fen, moves)
+        best_analysis, played_analysis = await asyncio.gather(
+            self.engine.analyse(root_fen, moves, pid, 1, JUDGE_MOVETIME_MS, protected=True),
+            self.engine.analyse(root_fen, moves, pid, 1, JUDGE_MOVETIME_MS, (move.uci(),), protected=True),
+        )
+        played = move_model(board, move)
+        after = board.copy()
+        after.push(move)
+        best = best_analysis.lines[0] if best_analysis.lines else None
+        if after.is_checkmate():
+            return JudgedMove(played=played, best=best and move_model(board, chess.Move.from_uci(best.pv[0].uci)),
+                              chances_best=1.0, chances_played=1.0, verdict=None)
+        if best is None:
+            raise EngineUnavailable("engine 沒有回傳結果")
+        line = played_analysis.lines[0] if played_analysis.lines else None
+        played_best = best.pv[0].uci == move.uci()
+        return JudgedMove(
+            played=played,
+            best=move_model(board, chess.Move.from_uci(best.pv[0].uci)),
+            chances_best=winning_chances(best.evaluation, best.mate, mover),
+            chances_played=winning_chances(line.evaluation, line.mate, mover) if line else winning_chances(best.evaluation, best.mate, mover),
+            verdict=classify(best, line, mover, played_best) if line or played_best else None,
+        )
 
     async def _line(self, root_fen: str, moves: list[str], root_moves: tuple[str, ...]) -> EngineLine | None:
         pid = position_id(root_fen, moves)
