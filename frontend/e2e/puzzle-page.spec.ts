@@ -1,10 +1,15 @@
 import { type Page, expect, test } from '@playwright/test'
-import { pocketDrop } from './helpers'
+import { dragMove, pocketDrop } from './helpers'
 
 // Puzzles are added through the API (the engine checks each one), so the tests know the answers.
 // Each test uses its own positions: other specs add puzzles to the same library.
 const BEFORE_MATE = '7k/5ppp/8/8/8/8/5PPP/6K1[R] b - - 0 1' // ...Kg8, then R@d8#
 const PLAIN_MATE = '6k1/5ppp/8/8/8/8/5PPP/3K4[R] w - - 0 1'
+// Philidor's smothered mate (designed by an agent in a real run): Qg8+ Rxg8 Nf7#.
+const SMOTHERED = 'r1bq1r1k/ppp3pp/2n4N/2b1p3/4P3/1Q1P4/PPP2PPP/RNB2RK1[qn] w - - 0 12'
+
+const boardFen = async (page: Page) => (await page.locator('.board').getAttribute('data-fen'))!.split(' ')[0]
+const nav = (page: Page, name: 'first' | 'prev' | 'next' | 'last') => page.getByRole('button', { name, exact: true }).click()
 
 async function addPuzzle(page: Page, rootFen: string, moves: string[] = []): Promise<number> {
   const response = await page.request.post('/api/puzzles', { data: { root_fen: rootFen, moves, type: 'attack' } })
@@ -29,6 +34,45 @@ test('the opponent’s last move is shown first and stays highlighted', async ({
   await expect(page.locator('cg-board square.last-move')).toHaveCount(2)
   await pocketDrop(page, 'white', 'R', 'd8')
   await expect(page.getByTestId('puzzle-feedback')).toHaveText('解出來了！')
+
+  // Solved: the whole puzzle replays, from before the opponent's last move.
+  await nav(page, 'first')
+  await expect.poll(() => boardFen(page)).toBe(BEFORE_MATE.split(' ')[0])
+  await nav(page, 'next')
+  await expect.poll(() => boardFen(page)).toBe('6k1/5ppp/8/8/8/8/5PPP/6K1[R]')
+  await nav(page, 'next')
+  await expect.poll(() => boardFen(page)).toMatch(/^3R2k1\//)
+  await expect(page.getByTestId('puzzle-solution').locator('.current')).toHaveText('R@d8#')
+  await page.keyboard.press('Home')
+  await expect.poll(() => boardFen(page)).toBe('7k/5ppp/8/8/8/8/5PPP/6K1[R]')
+  await page.keyboard.press('End')
+  await expect.poll(() => boardFen(page)).toMatch(/^3R2k1\//)
+})
+
+test('while solving the board moves freely back and forth; a move already found just steps on', async ({ page }) => {
+  const id = await addPuzzle(page, SMOTHERED)
+  await signIn(page, 'e2e-replay', id)
+  const start = await boardFen(page)
+  await dragMove(page, 'b3', 'g8')
+  await expect(page.getByTestId('puzzle-feedback')).toContainText('正確！對手回應 Rxg8')
+  const afterReply = await boardFen(page)
+  await nav(page, 'prev')
+  await nav(page, 'prev')
+  await expect.poll(() => boardFen(page)).toBe(start)
+  await nav(page, 'next')
+  await nav(page, 'next')
+  await expect.poll(() => boardFen(page)).toBe(afterReply)
+  await page.keyboard.press('Home')
+  await expect.poll(() => boardFen(page)).toBe(start)
+  await dragMove(page, 'b3', 'g8') // the same move again: no new judgement, straight past the reply
+  await expect.poll(() => boardFen(page)).toBe(afterReply)
+  await dragMove(page, 'h6', 'f7')
+  await expect(page.getByTestId('puzzle-feedback')).toHaveText('解出來了！')
+  await expect(page.getByTestId('puzzle-solution')).toContainText('Qg8+Rxg8Nf7#')
+  await nav(page, 'first')
+  await expect.poll(() => boardFen(page)).toBe(start)
+  await nav(page, 'last')
+  await expect(page.getByTestId('puzzle-solution').locator('.current')).toHaveText('Nf7#')
 })
 
 test('an agent explains a puzzle once; the next solver gets its hint for half a point; the record and library show it', async ({

@@ -1392,3 +1392,15 @@ cg-board square.kb-cursor {
   color: var(--text-strong);
   font-size: 1rem;
 }
+
+.puzzle-solution .link.current {
+  color: var(--text-strong);
+  background: var(--accent-2);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
+.replay-note {
+  font-size: 0.8rem;
+  margin-top: 4px;
+}

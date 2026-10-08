@@ -1,19 +1,21 @@
 import type { DrawShape } from 'chessground/draw'
 import type { Key } from 'chessground/types'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { describeChoice, useAiChoice } from '../aiChoice'
 import { api } from '../api'
 import { copyText } from '../clipboard'
 import { Nav } from '../components/Nav'
+import { NavControls } from '../components/NavControls'
 import { ReviewBoard } from '../components/ReviewBoard'
 import { type PuzzleTab, goTo, puzzleTabLink, usePuzzleRoute } from '../route'
 import { openInReview } from '../session'
 import { PUZZLE_TYPE_NAMES, type PuzzleType } from '../types'
+import type { NavKind } from '../useReview'
 import { PuzzleHistory } from './PuzzleHistory'
 import { PuzzleLibrary } from './PuzzleLibrary'
 import { themeLabel } from './themes'
 import { usePlayer } from './usePlayer'
-import { type PuzzleState, usePuzzle } from './usePuzzle'
+import { type PuzzleState, introOf, usePuzzle } from './usePuzzle'
 
 const TYPES: PuzzleType[] = ['attack', 'defense', 'tactics', 'battle']
 const TYPES_KEY = 'crazyhouse-review:puzzle-types'
@@ -57,7 +59,7 @@ export function PuzzlePage() {
   const { player, error: playerError, signIn, signOut, setRating } = usePlayer()
   const [nickname, setNickname] = useState('')
   const [types, setTypes] = useState<PuzzleType[]>(loadTypes)
-  const { state, next, open, play, retry, reveal, hint, giveUp, showSolution, explain } = usePuzzle(
+  const { state, next, open, play, navigate, reveal, hint, giveUp, explain } = usePuzzle(
     player?.nickname ?? null,
     setRating,
   )
@@ -70,6 +72,16 @@ export function PuzzlePage() {
   const [reportError, setReportError] = useState<string | null>(null)
   const { puzzle, position, status } = state
   const over = status === 'solved' || status === 'failed' || status === 'finished'
+  const offset = puzzle ? introOf(puzzle) : 0
+  // The board faces the solver; ⇅ (or f) flips it for this puzzle.
+  const [flipped, setFlipped] = useState<{ id: number; on: boolean }>({ id: 0, on: false })
+  const solver = puzzle?.solver ?? 'white'
+  const orientation = flipped.id === puzzle?.id && flipped.on ? (solver === 'white' ? 'black' : 'white') : solver
+  const flip = useCallback(
+    () => setFlipped((f) => ({ id: puzzle?.id ?? 0, on: f.id === puzzle?.id ? !f.on : true })),
+    [puzzle?.id],
+  )
+  const onNavigate = useCallback((kind: NavKind) => void navigate(kind), [navigate])
 
   const toggleType = (type: PuzzleType) => {
     const chosen = types.includes(type) ? types.filter((t) => t !== type) : [...types, type]
@@ -182,7 +194,10 @@ export function PuzzlePage() {
         <main className="layout">
           <section className="board-column">
             {position && puzzle ? (
-              <ReviewBoard position={position} orientation={puzzle.solver} onPlay={play} shapes={shapes} />
+              <>
+                <ReviewBoard position={position} orientation={orientation} onPlay={play} shapes={shapes} />
+                <NavControls onNavigate={onNavigate} onFlip={flip} />
+              </>
             ) : (
               <div className="panel engine-note puzzle-empty">
                 {!player ? '輸入暱稱登入後開始解題；rating 會依你的表現調整題目難度。' : status === 'loading' ? '載入題目中…' : state.message}
@@ -289,8 +304,8 @@ export function PuzzlePage() {
 
               {status === 'failed' && !state.revealed && (
                 <div className="puzzle-actions" data-testid="puzzle-failed-actions">
-                  <button onClick={() => void retry()}>再試一次</button>
-                  <button onClick={reveal}>看解答</button>
+                  <button onClick={() => void navigate('prev')}>◀ 回上一步再試</button>
+                  <button onClick={() => void reveal()}>看解答</button>
                 </div>
               )}
               {over && state.revealed && state.explanation && (
@@ -316,14 +331,24 @@ export function PuzzlePage() {
                   )}
                 </div>
               )}
-              {over && state.revealed && state.solution.length > 0 && (
+              {over && state.revealed && (status === 'failed' ? state.solution.length > 0 : state.lineSan.length > 0) && (
                 <div className="puzzle-solution" data-testid="puzzle-solution">
-                  解答：
-                  {state.solution.map((m, i) => (
-                    <button key={i} className="link" onClick={() => void showSolution(i + 1)}>
-                      {m.san}
+                  {status === 'failed' ? '解答：' : '走過的棋：'}
+                  {(status === 'failed' ? state.solution.map((m) => m.san) : state.lineSan).map((san, i) => (
+                    <button
+                      key={i}
+                      className={`link${state.cursor === offset + i + 1 ? ' current' : ''}`}
+                      onClick={() => void navigate(offset + i + 1)}
+                    >
+                      {san}
                     </button>
                   ))}
+                  {status === 'solved' && state.solution.map((m) => m.san).join(' ') !== state.lineSan.join(' ') && (
+                    <div className="muted">engine 的解答：{state.solution.map((m) => m.san).join(' ')}</div>
+                  )}
+                  <div className="muted replay-note">
+                    用棋盤下方的 ⏮ ◀ ▶ ⏭（或 ← →）{offset ? '從對手上一步開始' : '從題目開始'}完整回放
+                  </div>
                 </div>
               )}
 

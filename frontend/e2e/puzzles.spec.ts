@@ -66,10 +66,11 @@ test('a wrong move fails the puzzle; the solver may try again (unrated) or see t
   await dragMove(page, 'a3', 'a4')
   await expect(page.getByTestId('puzzle-feedback')).toContainText('a4 不是答案（已記為失敗）')
   expect(Number(await page.getByTestId('player-rating').textContent())).toBeLessThan(1500)
-  // The answer stays hidden: try again from before the wrong move, or ask for it.
+  // The answer stays hidden: step back (◀ under the board, or ←) and try again, or ask for it.
   await expect(page.getByTestId('puzzle-solution')).toHaveCount(0)
-  await page.getByTestId('puzzle-failed-actions').getByRole('button', { name: '再試一次' }).click()
+  await page.keyboard.press('ArrowLeft')
   await expect(page.getByTestId('puzzle-feedback')).toContainText('再試一次（不計分）')
+  await expect(page.locator('.board')).toHaveAttribute('data-fen', DEFENSE)
   await dragMove(page, 'd2', 'c3')
   await expect(page.getByTestId('puzzle-feedback')).toContainText('解出來了（重試，不計分）')
   await expect(page.getByTestId('puzzle-solution')).toContainText('Bxc3')
@@ -97,6 +98,12 @@ test('a battle against the engine is played to the end and rated', async ({ page
   }
   await expect(page.getByTestId('battle-result')).toContainText(/勝|和|負/)
   await expect(page.getByTestId('rating-change')).toContainText('rating 1500 →')
+  // The game against the engine replays from its start.
+  const end = await page.locator('.board').getAttribute('data-fen')
+  await page.keyboard.press('Home')
+  await expect(page.locator('.board')).toHaveAttribute('data-fen', BALANCED)
+  await page.keyboard.press('End')
+  await expect(page.locator('.board')).toHaveAttribute('data-fen', end!)
 })
 
 test('the review board saves the position as a puzzle and mines the game', async ({ page }) => {
