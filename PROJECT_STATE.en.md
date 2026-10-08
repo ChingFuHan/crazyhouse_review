@@ -31,6 +31,8 @@ model, effort) and two modes — the agent picks among engine candidates and wri
 explanation, or the agent designs positions that the engine checks, retrying with the reason.
 Tailscale access DONE (user request, 2026-10-09): on a tailnet, the installer adds `100.64.0.0/10` to the
 allowlist.
+Moving back and forth while solving and full replays DONE (user request, 2026-10-09): ⏮ ◀ ▶ ⏭ ⇅
+under the puzzle board, ◀ to retry after a wrong move.
 Puzzle page improvements DONE (user request, 2026-10-09): the opponent's last move and delayed replies,
 retry after a wrong move, equally good moves not failed, ask the AI to explain (stored), half a point
 for the hint in words, kinds drawn first, my record, library browsing with reporting, tabs.
@@ -77,6 +79,11 @@ production data and the user chose all): no puzzle of the 46 in production had a
 FEN, a wrong move showed the answer at once, and the making forms sat under the solving panel. Checked
 with screenshots on a copy of the production database afterwards, fixing the rating chart's cut-off top
 and bottom ticks and the overlong library list (now scrolls).
+Then (the user could not find 「再試一次」 and asked for stepping back as on the review page, free movement
+back and forth, and a full replay once solved): the puzzle board got the review page's `NavControls` and
+◀ replaced the 「再試一次」 button. Found on the way: when solved with another mate, the replay showed the
+moves played but the side panel listed the engine's stored solution — it now lists the moves played and
+adds the engine's solution when it differs.
 No task in progress.
 
 ## Current architecture
@@ -366,9 +373,15 @@ No task in progress.
     `#/puzzles/<id>` (read by `route.usePuzzleRoute`) and the page opens it once signed in (the effect keys on
     the nickname, not the player object, so a rating update never reloads the puzzle); 「下一題」 leaves
     the link. Tabs: `route.usePuzzleRoute()` → `{tab: solve|library|history, id}`; `PuzzlePage` holds the
-    page's one AI choice (making and explaining); `usePuzzle` builds boards with `positionAfter` (from
-    `before_fen` + `last_move` when known), `INTRO_MS` 600 / `REPLY_MS` 500, states `intro`, `revealed`,
-    `retrying`, `hintUsed` (decides the score), `explaining`; `PuzzleLibrary` (list, filters, restore) +
+    page's one AI choice (making and explaining); `usePuzzle` builds boards from the puzzle root (from
+    `before_fen` + `last_move` when known): `line` (moves played, replies and a wrong move included) +
+    `lineSan` + `correct` (how much of it is known right) + `cursor`; `replayTrack` = the opponent's last
+    move (when known) + the line, or the solution once shown after a failure; `navigate` (◀ ▶ ⏮ ⏭ or a
+    ply) only moves the cursor, and stepping back before a wrong move turns into a retry; a move at the
+    cursor that matches the known-right next move just steps on, otherwise the right prefix before the
+    cursor goes to the server; a battle is played only at its latest position; `INTRO_MS` 600 /
+    `REPLY_MS` 500, states `intro`, `revealed`, `retrying`, `hintUsed` (decides the score), `explaining`;
+    `PuzzlePage` reuses `NavControls` (flipping affects this puzzle only); `PuzzleLibrary` (list, filters, restore) +
     `PuzzleMaker` (AI making, paste a FEN); `PuzzleHistory` (`ratingGraph.ts` computes ticks and points; a
     single-series SVG with crosshair, tooltip and arrow keys).
   - Vite dev server :5180 proxies `/api` → backend :8820.
@@ -511,7 +524,11 @@ No task in progress.
   and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
   503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
 - `cd frontend && npx vitest run` → 52 passed (incl. the rating chart's ticks and points); `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 50 passed (incl. `e2e/puzzle-page.spec.ts`: the opponent's last
+- `cd frontend && npx playwright test` → 51 passed (incl. a solved puzzle replayed with ⏮ ▶ ⏭ from
+  before the opponent's last move, the current ply highlighted in the side panel; a two-move puzzle
+  (Philidor's smothered mate) moved ◀◀ ▶▶ while solving, the same move again only stepping on, then
+  replayed; a wrong defense move undone with ← and solved unrated; a finished battle replayed with Home /
+  End) (incl. `e2e/puzzle-page.spec.ts`: the opponent's last
   move shown first and highlighted; Codex asked to explain and the text stored, the next player seeing the
   title and the hint in words and scoring half, reporting, my record (list, chart, kinds), library filters
   and restoring; tabs fit a phone; a wrong defense move → try again solved unrated, or show the answer) (incl. `e2e/puzzle-agent.spec.ts` (fake CLIs answer

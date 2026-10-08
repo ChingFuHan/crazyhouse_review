@@ -25,6 +25,7 @@ Milestone 4（對話 + 候選著重新分析 + 能感知變化的問答）完成
 AI 製題完成（使用者需求，2026-10-08）：題目頁獨立的 AI 選單（agy／codex／claude、model、effort），兩種方式——agent 從 engine
 候選中挑題並寫標題／提示／說明，或 agent 設計局面、engine 驗證並回饋原因重試。
 Tailscale 存取完成（使用者需求，2026-10-09）：在 tailnet 上時，安裝腳本把 `100.64.0.0/10` 加入允許清單。
+解題頁前後挪動與完整回放完成（使用者需求，2026-10-09）：棋盤下方 ⏮ ◀ ▶ ⏭ ⇅，走錯按 ◀ 重試。
 題目頁改進完成（使用者需求，2026-10-09）：對手上一步與延遲回應、走錯可重試、等價好著不判錯、請 AI 解釋並存回、文字提示半分、
 選題先抽題型、我的紀錄、題庫瀏覽與回報停用、分頁。
 
@@ -58,6 +59,9 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
 再之後（使用者問「題目頁哪裡可以改進」，我依程式與正式資料列出八項，使用者全選）：依據是正式題庫 46 題沒有一題有說明、
 rating 1436 的玩家最近的 rating 區間 8 題裡 5 題是對轟、題目從 FEN 直接開始、走錯立刻亮出解答、製題表單排在解題區下方。
 做完後在正式資料庫的副本上截圖檢查，修正 rating 圖上下刻度被裁到、題庫列表太長（改為可捲動）。
+再之後（使用者找不到「再試一次」，希望像分析頁那樣可以退一步、完全前後挪動、解完能完整回放）：解題頁棋盤下方改用分析頁的
+`NavControls`，「再試一次」按鈕由 ◀ 取代。過程中發現：解出時若走的是另一個將殺，回放是自己走的棋、但側欄列的是 engine 存的
+解答——改為列出實際走的棋，不同時另附 engine 解答。
 目前沒有進行中的任務。
 
 ## 目前架構
@@ -290,9 +294,12 @@ rating 1436 的玩家最近的 rating 區間 8 題裡 5 題是對轟、題目從
     與共用的 `AiSettings`，選方式、題型、描述與題數，輪詢工作並顯示最後幾行紀錄；`usePuzzle` 的提示分兩段（`hintLevel`
     1＝agent 文字、2＝要動的棋子），結束時存下說明與警告；`route.usePuzzleRoute` 讀 `#/puzzles/<id>`，登入後開啟該題
     （effect 依暱稱而非 player 物件，rating 更新時不會重載題目），「下一題」離開連結。分頁：`route.usePuzzleRoute()` →
-    `{tab: solve|library|history, id}`；`PuzzlePage` 持有題目頁唯一的 AI 選擇（製題與請 AI 解釋共用）；`usePuzzle` 以
-    `positionAfter`（有上一步時從 `before_fen` + `last_move` 走）建棋盤，`INTRO_MS` 600／`REPLY_MS` 500，狀態 `intro`、`revealed`、
-    `retrying`、`hintUsed`（決定分數）、`explaining`；`PuzzleLibrary`（列表、篩選、恢復）+ `PuzzleMaker`（AI 製題、貼 FEN）；
+    `{tab: solve|library|history, id}`；`PuzzlePage` 持有題目頁唯一的 AI 選擇（製題與請 AI 解釋共用）；`usePuzzle` 記錄
+    `line`（走過的棋，含對手回應與錯著）＋`lineSan`＋`correct`（其中已知正確的長度）＋`cursor`；`replayTrack`＝（有上一步時）
+    對手上一步＋走過的棋，失敗看解答後改為解答線；`navigate(◀▶⏮⏭ 或指定步)` 只移動游標，走錯後退回錯著之前即轉為重試；
+    在游標處走棋：與已知正確的下一步相同就只前進，否則以游標前的正確前綴送伺服器判定；對轟只能在最新局面走；
+    `INTRO_MS` 600／`REPLY_MS` 500，狀態 `intro`、`revealed`、`retrying`、`hintUsed`（決定分數）、`explaining`；`PuzzlePage`
+    重用 `NavControls`（翻轉只影響這一題）；`PuzzleLibrary`（列表、篩選、恢復）+ `PuzzleMaker`（AI 製題、貼 FEN）；
     `PuzzleHistory`（`ratingGraph.ts` 算刻度與座標，單一數列 SVG、十字線與提示框、方向鍵）。
   - Vite dev server :5180 把 `/api` 代理到 backend :8820。
   - 區網部署：`scripts/install_service.sh` → systemd user service `crazyhouse-review`（已啟用，
@@ -405,7 +412,9 @@ rating 1436 的玩家最近的 rating 區間 8 題裡 5 題是對轟、題目從
   候選著流程、SSE 事件、缺 key 時 503、key 永不出現在錯誤中、以模擬 SDK 串流測試拒答／fallback。
   沒有真實的 Claude 呼叫。
 - `cd frontend && npx vitest run` → 52 passed（含 rating 圖刻度與座標）；`npx tsc -b`、`npm run lint`、`npx vite build` 無誤。
-- `cd frontend && npx playwright test` → 50 passed（含 `e2e/puzzle-page.spec.ts`：先顯示對手上一步並高亮；選 Codex 請 AI 解釋
+- `cd frontend && npx playwright test` → 51 passed（含：解出後 ⏮▶⏭ 從對手上一步之前完整回放、側欄目前步高亮；多步題
+  （Philidor 悶殺）解題中 ◀◀▶▶ 前後挪動、在走過的地方走同一步只前進、解出後回放；防守題走錯按 ← 回到原局面再解出不計分；
+  對轟結束後 Home／End 回放）（含 `e2e/puzzle-page.spec.ts`：先顯示對手上一步並高亮；選 Codex 請 AI 解釋
   並存回、下一位玩家看到標題與文字提示、解出算半分、回報停用、我的紀錄（列表、圖、各題型）、題庫篩選與恢復；手機寬度分頁不溢出；
   防守題走錯 → 再試一次解出不計分、或看解答）（含 `e2e/puzzle-agent.spec.ts`（假 CLI 依 prompt 回 JSON）：題目頁獨立選
   Codex CLI → 設計進攻題，第一次兩個王被拒、看到原因與重試、通過後依解答撰寫，從工作列出的連結開題，標題、製作的 agent、兩段式

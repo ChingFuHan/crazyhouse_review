@@ -194,8 +194,13 @@ local network; ratings and attempts are kept on the server). The puzzle page has
   board) first shows the position before it and plays that move 0.6 s later, keeping it highlighted
   (「對手剛走了 …」, "the opponent just played …"); the opponent's replies come 0.5 s after the solver's move.
   A move the engine finds as good as the answer (chances within 0.1) snaps back with "also a good move, but
-  not the answer" and is not a failure. A wrong move counts as a failure but the answer stays hidden:
-  「再試一次」 (try again, from before the wrong move, unrated) or 「看解答」 (show the answer). A puzzle
+  not the answer" and is not a failure. Under the board are the same ⏮ ◀ ▶ ⏭ ⇅ as on the review page
+  (or ← → Home End f): while solving the board moves freely back and forth, and playing a move already
+  found there just steps on. A wrong move counts as a failure but the answer stays hidden: ◀ goes back to
+  before it to try again (unrated), or 「看解答」 (show the answer). Once over (solved, answer shown, or a
+  battle finished) the whole puzzle replays from before the opponent's last move through the line —
+  the moves actually played when solved (with the engine's solution when it differs), the solution
+  after a failure, the real game in a battle — and the moves in the side panel jump to their ply. A puzzle
   without an explanation offers 「請 AI 解釋這題」 (ask the AI to explain) when it is over: the puzzle page's
   agent writes it from the engine's solution (only for players who attempted it, with the usual give-away
   and answer checks) and it is stored for everyone. 「這題有問題？」 (something wrong?) reports a broken
