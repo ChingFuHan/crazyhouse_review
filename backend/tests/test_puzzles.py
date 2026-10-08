@@ -164,5 +164,8 @@ def test_mining_a_game_and_making_puzzles_run_in_the_background(tmp_path, monkey
         assert all(b - a >= 8 for a, b in zip(battles, battles[1:])), "battles from one game are spread out"
         assert c.get("/api/puzzles/stats").json()["total"] == job["found"]
         monkeypatch.setattr(generator, "MAX_PLIES", 24)
-        made = wait(c, c.post("/api/puzzles/generate", json={"count": 1, "types": ["battle", "attack"]}).json())
+        started = c.post("/api/puzzles/generate", json={"count": 1, "types": ["battle", "attack"]}).json()
+        again = c.post("/api/puzzles/generate", json={"count": 5, "types": ["attack"]}).json()
+        assert again["job_id"] == started["job_id"], "one batch at a time: the running one is returned"
+        made = wait(c, started)
         assert made["status"] == "done" and made["kind"] == "generate"

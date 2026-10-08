@@ -303,6 +303,11 @@ class PuzzleService:
         return job
 
     def generate(self, count: int, types: list[PuzzleType]) -> PuzzleJob:
+        """Start making puzzles; while one batch is running (minutes of engine time on a machine the
+        whole network shares) another request gets that batch instead of a second one."""
+        running = next((j for j in self._jobs.values() if j.kind == "generate" and j.status == "running"), None)
+        if running is not None:
+            return running
         job = self._job("generate", count)
 
         def progress(games: int, total_games: int, found: int) -> None:
