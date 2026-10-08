@@ -183,16 +183,38 @@ local network; ratings and attempts are kept on the server).
 - **Sources**: (1) 「從這盤挖題」 (mine this game) on the review page scans the main line; (2) by hand: paste
   a FEN on the puzzle page (pockets as `[..]` or lichess's `/..`) and choose the kind, or 「存成題目」 (save
   as puzzle) on the review page for the board's position (checked by the engine, with the reason when it
-  does not qualify); (3) 「製造新題」 (make new puzzles) on the puzzle page (one batch at a time, so the
-  machine is never swamped): engine self-play from
-  common openings, now and then playing a human-like second choice, keeping the positions a human is most
-  likely to miss. Mining and making run in the background on a third engine process
-  (`PUZZLE_ENGINE_THREADS`, default 2), so the review board is never slowed down.
+  does not qualify); (3) 「AI 製題」 (AI puzzle making) on the puzzle page (below). Mining and making run in
+  the background on a third engine process (`PUZZLE_ENGINE_THREADS`, default 2), so the review board is
+  never slowed down; one batch runs at a time, so the machine is never swamped.
+- **AI puzzle making**: the puzzle page has its own AI settings (agy / codex / claude CLI, model, effort,
+  remembered apart from the review page's chat; the server default when none is chosen). Two modes:
+  - **The agent picks and writes**: engine self-play from common openings, now and then playing a
+    human-like second choice, yields candidates with a unique solution (about twice the number asked
+    for); the agent gets their positions, solution lines, engine evaluations and difficulty signals,
+    picks the most puzzling ones and writes a title, a hint that gives nothing away and an explanation
+    shown after solving. Without a usable AI or answer, the engine's hardness picks instead.
+  - **The agent designs positions**: choose a kind and optionally describe it (e.g. "a defense with a
+    knight drop"); the agent proposes a position, the rules and the engine check legality and the kind's
+    criteria, and when it fails the agent is told exactly why (e.g. 「局面不合法：too_many_kings」, "no
+    unique solution: best and second best differ by 0.1") and tries again, up to 4 times a puzzle. Once
+    accepted, the agent writes the title, hint and explanation from the engine's solution (its design
+    idea may differ from that solution, so it is not shown).
+  - The engine alone decides what is correct; the agent only adds judgement and words: a title or hint
+    that reveals the first move (the move or its squares) is dropped, and the explanation gets the same
+    automatic checks as chat answers, with any doubts listed after solving. The job's progress lists every
+    step (what was picked, each designed position and the engine's verdict).
+  - When solving: the title and which agent picked/wrote it are shown above the puzzle; 「提示」 (hint)
+    gives the agent's hint first and 「再提示」 (hint again) then marks the piece to move; the agent's
+    explanation is shown when the puzzle is over.
+- **Puzzle links**: `#/puzzles/<id>` opens a given puzzle (after signing in; the first attempt is rated
+  as usual). A finished making or mining job lists links to its new puzzles, a pasted FEN gets 「開啟這一題」
+  (open this puzzle), and a duplicate's refusal names the existing puzzle's number. 「下一題」 (next)
+  leaves the link and goes back to choosing by rating.
 - **Human difficulty**: a short search (depth 2 / 6) picking another move, a quiet answer while checks or
   captures are available, a sacrifice, a tempting check or capture as the second choice — combined into a
   0–1 hardness; a puzzle's first rating = a base by length + a hardness bonus.
 - **Ratings**: Glicko-2 (as on lichess) for players and puzzles; only the first attempt at a puzzle counts;
-  a hint or showing the solution counts as a failure. Puzzles are chosen within ±100 of the player's
+  a hint (either stage) or showing the solution counts as a failure. Puzzles are chosen within ±100 of the player's
   rating, widened step by step.
 - **Export**: copy the FEN (the common `[..]` pocket form, which lichess and other tools read), copy the PGN (with the solution after an attempt), open the
   lichess analysis board (from which one can play the computer or a friend), or open the puzzle and its

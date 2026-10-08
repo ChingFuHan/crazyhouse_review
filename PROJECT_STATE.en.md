@@ -26,6 +26,9 @@ Puzzle page DONE (user request, 2026-10-08): attack / defense / middlegame tacti
 mined from games, saved from the review board or made by imperfect self-play; nickname accounts with
 Glicko-2 ratings; export to FEN / PGN / lichess. (task.md §35 listed puzzles and ratings as early
 non-goals; the user asked for them explicitly.)
+AI puzzle making DONE (user request, 2026-10-08): the puzzle page's own AI choice (agy / codex / claude,
+model, effort) and two modes — the agent picks among engine candidates and writes the title / hint /
+explanation, or the agent designs positions that the engine checks, retrying with the reason.
 
 ## Current task status
 Strict verification against task.md (2026-10-06) found and fixed: stale README/PROJECT_STATE,
@@ -55,6 +58,14 @@ Then: the puzzle page (see architecture), and a strict check against the request
 form on the puzzle page itself, theme labels in words (no codes), the copied FEN in the common bracket
 form (lichess reads both — checked in chessops and with a live lichess URL), one make-puzzles batch at a
 time, E2E for reload persistence and phone width.
+Then (the user asked that making puzzles use a chosen agent, both modes, with its own menu on the puzzle
+page): AI puzzle making (see architecture). Fixed on the way: self-play looked for twice the requested
+count after being asked for twice the count already (four times the engine time) — it now looks for
+about twice once; the reason for an illegal position (e.g. two kings) was `<Status.TOO_MANY_KINGS: 4>`
+and is now spelled out; a design idea can disagree with the engine's solution (seen in a real run), so
+the texts are now written from the solution once accepted; freshly made puzzles might never come up
+(the next puzzle comes from the nearest non-empty rating window — found through a failing E2E), so
+puzzle links `#/puzzles/<id>` were added and finished jobs list their new puzzles.
 No task in progress.
 
 ## Current architecture
@@ -223,11 +234,33 @@ No task in progress.
   tempting check/capture second choice → initial rating 1100 + 150·(moves−1) + 700·hardness (battle
   1400 + 600·h); `mine_line` skips positions inside a found solution. `generator.py`: self-play from
   `openings.py` (8 common lines, 6–14 plies), 120 ms searches, best / 2nd / 3rd with weights .7/.2/.1 when
-  within 0.25, mined and sorted by hardness. `service.py`: next puzzle (±100 widening), stateless move
+  within 0.25, mined and sorted by hardness (about twice the count, for the caller to choose from).
+  `agent.py` (AI puzzle making): `curate` puts the candidates (up to 12, by hardness) — position, pockets,
+  solution line (SAN), the engine's top three lines with the solver's chances, difficulty signals — in an
+  escaped `<puzzle_candidates>` JSON block; the agent answers JSON picks with title / hint / explanation;
+  only listed ids count (no repeats), and without an AI, on failure or unusable JSON hardness picks.
+  `design` sends the kind, the description and a real opening position as reference in
+  `<puzzle_request>`; the agent answers `fen` / `title` / `hint` / `idea`; `miner.invalid` and
+  `miner.diagnose` say why it fails (invalid FEN, illegal position, no unique solution with the gap, low
+  chances, no threat, does not hold, already winning, too few moves, not balanced or tense enough, with
+  the engine's top moves) and it goes back as a conversation, up to 4 attempts; once accepted, the agent
+  writes the texts from the engine's solution through the same picking prompt (one candidate) — the
+  design idea may not match the solution (in a real run agy's idea said "drop a knight to deflect first"
+  while the solution was Qxf8#), so it is not shown; if the agent cannot write, the design's title and
+  hint stay. `_write`: a title or hint
+  containing the first move (SAN / UCI) or its squares is dropped; the explanation is checked with
+  `check_answer` and its warnings stored; the agent (`model`) is recorded. Prompts in
+  `puzzles/prompts/curate.md`, `design.md`. `store.py` adds the `title` / `hint` / `explanation` / `ai` /
+  `ai_warnings` columns to an older database on start. `service.py`: next puzzle (±100 widening), stateless move
   judging (line must be a prefix of the solution), hint (counts as failure), give up, battle moves (verdict
   from same-position searches with root_moves; result vs start ±0.2), export (`lichess_fen` puts the pocket
   as a 9th rank; PGN with the solution only after an attempt), manual create (engine-checked, reason on
-  refusal), background mine / generate jobs. Router `routers/puzzles.py`; tests use their own DATA_DIR
+  refusal), background mine / generate jobs (generate takes `mode`, kind, description and `llm`;
+  `chosen_provider` validates the chosen AI (422), the server default otherwise; design without an AI is
+  a 422; the job keeps a `log` and the `ai` used); a hint returns the agent's words (first move only), and
+  the end of a puzzle returns the explanation and its warnings; `GET /api/puzzles/{id}` opens a given
+  puzzle (puzzle links), a finished job's `made` lists the stored puzzles, and a duplicate's refusal names
+  the existing puzzle (`store.find`). Router `routers/puzzles.py`; tests use their own DATA_DIR
   (`tests/conftest.py`), E2E a fresh tmp DATA_DIR per run.
 - `frontend/` React 19 + TS + Vite 8 + Chessground 9.2. NO rules logic in the browser.
   - `src/tree.ts`: pure game tree of backend states (id = position_id). Invariant check on every
@@ -303,7 +336,14 @@ No task in progress.
     `components/Nav.tsx`. Puzzle page `src/puzzles/` (`usePlayer`, `usePuzzle`, `PuzzlePage`,
     `PuzzleLibrary`); `components/PuzzleTools.tsx` on the review page (save as puzzle, mine this game);
     `session.openInReview(pgn)` hands a puzzle to the review page; `clipboard.ts` copies with an
-    execCommand fallback (navigator.clipboard is missing on the plain-http LAN origin).
+    execCommand fallback (navigator.clipboard is missing on the plain-http LAN origin). The 「AI 製題」
+    section of `PuzzleLibrary` uses `useAiChoice('crazyhouse-review:puzzle-ai-choice')` (remembered apart
+    from the review page) with the shared `AiSettings`, picks mode, kind, description and count, polls the
+    job and shows its last log lines; `usePuzzle` gives hints in two stages (`hintLevel` 1 = the agent's
+    words, 2 = the piece to move) and keeps the explanation and its warnings at the end;
+    `route.usePuzzleLink` reads `#/puzzles/<id>` and the page opens it once signed in (the effect keys on
+    the nickname, not the player object, so a rating update never reloads the puzzle); 「下一題」 leaves
+    the link.
   - Vite dev server :5180 proxies `/api` → backend :8820.
   - LAN deployment: `scripts/install_service.sh` → systemd user service `crazyhouse-review`
     (enabled, Linger=yes so it starts at boot) running `scripts/run_server.sh` with HOST=0.0.0.0,
@@ -375,6 +415,13 @@ No task in progress.
 - At 390 px width chessground's file coordinates overflow by 2 px (pre-existing).
 - Puzzles: nickname accounts have no password; a different but equally good non-mating move mid-solution
   is judged wrong; making puzzles takes minutes of engine time per puzzle.
+- AI puzzle making: an agent's hint is checked only for the first move or its squares (not for subtler
+  give-aways); designed positions often need several attempts, and after 4 failures the puzzle is skipped
+  (the job log lists each reason). Measured (2026-10-08, each CLI's default model): picking took agy
+  244 s, codex 32 s, claude 24 s, all with explanations matching the data, no warnings, no give-away
+  hints; designing attacks passed within 1–3 attempts for all three (mostly smothered mates), designing
+  defenses failed all 4 attempts for codex and claude and passed on the 2nd for agy — the defense
+  criteria (threat ≥ 0.5, a unique defense) are hard to hit from scratch. agy needs minutes per answer.
 - AI choice: Codex returns its answer in one piece (no partial text while it thinks); Claude's model list
   is the aliases its `--help` names (full model names are accepted by the CLI but not listed).
 - Answer checks cover moves, evaluations, mates and advantage claims only (not piece placement or other
@@ -387,7 +434,13 @@ No task in progress.
   for a black-to-move FEN) that passed only when the assertion ran before the move landed.
 
 ## Verification status
-- `cd backend && uv run pytest -q` → 226 passed (one generate batch at a time checked in test_puzzles) (incl. `tests/test_puzzle_store.py` (Glicko-2 paper example,
+- `cd backend && uv run pytest -q` → 232 passed (incl. `tests/test_puzzle_agent.py`: JSON extraction,
+  give-away detection, picks only listed ids (no repeats) and drops titles / hints that give the answer
+  away, explanation warnings kept, unusable answers fall back to hardness; a design hears "no JSON",
+  「局面不合法：too_many_kings」 and "no unique solution" in turn and retries, then the texts are written
+  from the engine's solution (not the design idea), and the design's title and hint stay when that
+  fails; design without an AI 422, an invalid choice 422; older databases get the new columns; puzzle
+  links, duplicate refusals naming the puzzle, a job's `made`) (one generate batch at a time checked in test_puzzles) (incl. `tests/test_puzzle_store.py` (Glicko-2 paper example,
   store, rated-once) and `tests/test_puzzles.py` (real engine: attack and defense found, solving with any
   mate accepted, replay unrated, hints, wrong move, out-of-step 422, battle to the end, manual create +
   refusal, mining a real game and generating as background jobs)) (incl. a real uvicorn server + real connection: a client
@@ -420,7 +473,12 @@ No task in progress.
   and viewer side, prompt-injection boundary, cache keys, candidate-move flow, SSE events, missing-key
   503, key never in errors, refusal/fallback via stubbed SDK streams. No real Claude call.
 - `cd frontend && npx vitest run` → 50 passed; `npx tsc -b`, `npm run lint`, `npx vite build` clean.
-- `cd frontend && npx playwright test` → 44 passed (incl. `e2e/puzzles.spec.ts`: paste a lichess-style FEN
+- `cd frontend && npx playwright test` → 46 passed (incl. `e2e/puzzle-agent.spec.ts` (fake CLIs answer
+  the prompts with JSON): Codex CLI chosen in the puzzle page's own menu → design an attack, two kings
+  refused first with the reason and a retry, texts written from the solution once accepted, the puzzle
+  opened from the job's link with its title, maker, two-stage hint and explanation after solving,
+  「下一題」 leaving the link; picking makes puzzles showing the agent's titles; the puzzle tests open
+  their puzzles by link) (incl. `e2e/puzzles.spec.ts`: paste a lichess-style FEN
   as a puzzle (+ refusal reason), themes in words, rating kept after reload, phone width fits; solve a mate puzzle with
   another mating drop → rating up, solution, FEN copy, lichess popup URL, open on the review board; hint +
   wrong move on a defense puzzle; a battle to the end; save as puzzle (+ duplicate refused) and mine a game

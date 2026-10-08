@@ -22,6 +22,8 @@ Milestone 4（對話 + 候選著重新分析 + 能感知變化的問答）完成
 觀看者可自選 AI 來源（agy／codex／claude CLI 訂閱）、model 與 effort，清單即時從 CLI 讀取，完成（使用者需求，2026-10-07）。
 題目頁完成（使用者需求，2026-10-08）：進攻／防守／中局攻防／中局對轟題，來源為對局挖題、復盤頁存成題目或不完美的自我
 對弈製題；暱稱帳號與 Glicko-2 rating；可匯出 FEN／PGN／lichess。（task.md §35 原把題目與 rating 列為初期非目標，使用者明確要求。）
+AI 製題完成（使用者需求，2026-10-08）：題目頁獨立的 AI 選單（agy／codex／claude、model、effort），兩種方式——agent 從 engine
+候選中挑題並寫標題／提示／說明，或 agent 設計局面、engine 驗證並回饋原因重試。
 
 ## 目前任務狀態
 依 task.md 嚴格驗證（2026-10-06）發現並修正：README/PROJECT_STATE 過時、LLM context 缺
@@ -45,6 +47,11 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
 再之後：題目頁（見架構），並依需求嚴格檢查後補上：題目頁本身可貼 FEN 新增題目、主題標籤改為文字（不顯示代碼）、
 複製的 FEN 改為通用的中括號寫法（lichess 兩種都接受——已查 chessops 原始碼並以實際 lichess 網址確認）、同一時間只跑一批製題、
 重新整理後 rating 保留與手機寬度的 E2E。
+再之後（使用者要求「製造題目也要可以用不同 agent 選取」，選擇兩種方式都要、題目頁獨立選單）：AI 製題（見架構）。過程中修正：
+自我對弈原本先找題數兩倍的候選、再被要求兩倍（等於四倍 engine 時間）——現在只找一次約兩倍；非法局面（例如兩個王）的原因
+原本是 `<Status.TOO_MANY_KINGS: 4>`，現在以文字說明哪裡不合法；設計時的構想可能與 engine 解答不符（實測），改為通過後依解答
+撰寫文字；剛製造的題目可能永遠輪不到（選題只取 rating 最接近的區間——E2E 因此失敗而發現），新增題目連結 `#/puzzles/<id>`，
+工作完成後列出新題目。
 目前沒有進行中的任務。
 
 ## 目前架構
@@ -190,9 +197,20 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
   回應（≤ 6 步，將殺 ≤ 7），以解題方著法結束；`hardness()`：深度 2／6 選的著不同、明明有強制著卻是安靜著、棄子（en prise）、
   次佳是誘人的將軍或吃子 → 初始 rating 1100 + 150·(步數−1) + 700·難度（對轟 1400 + 600·難度）；`mine_line` 跳過已在解答內的局面。
   `generator.py`：從 `openings.py`（8 條常見開局、6–14 ply）自我對弈，120 ms 搜尋，在 0.25 以內時依 .7/.2/.1 選最佳／次佳／第三，
-  再挖題並依難度排序。`service.py`：下一題（±100 逐步放寬）、無狀態判定（序列必須是解答的前綴）、提示（算失敗）、看解答、對轟
+  再挖題並依難度排序（約題數的兩倍，讓呼叫端挑）。`agent.py`（AI 製題）：`curate` 把候選（最多 12 個，依難度）的局面、
+  pocket、解答線（SAN）、engine 前三線與解題方勝率、難度訊號放進跳脫過的 `<puzzle_candidates>` JSON 區塊，agent 回 JSON 挑題並寫
+  標題／提示／說明；只接受清單內 id（不重複），沒有 AI、失敗或 JSON 無法使用時改依難度挑。`design` 把題型、描述與一個真實開局
+  局面當參考放進 `<puzzle_request>`，agent 回 `fen`／`title`／`hint`／`idea`；`miner.invalid` 與 `miner.diagnose` 說明不合格原因
+  （FEN 無效、局面不合法、沒有唯一解並附差距、勝率不足、沒有威脅、守不住、已經大優、步數不足、不夠接近或不夠緊張，附 engine
+  前幾名）並以對話形式回饋，最多 4 次；通過後以同一套挑題 prompt（單一候選）請 agent 依 engine 解答寫文字（設計時的構想可能
+  與解答不符——實測 agy 的構想寫「先打入馬引離」而解答是 Qxf8#——所以不顯示），寫不出來時保留設計時的標題與提示。`_write`：標題或提示含第一步的著法（SAN／UCI）或其格子就丟掉；說明以 `check_answer`
+  檢查並存下警告；記錄是哪個 agent（`model`）。Prompt 在 `puzzles/prompts/curate.md`、`design.md`。`store.py` 啟動時替舊資料庫
+  補上 `title`／`hint`／`explanation`／`ai`／`ai_warnings` 欄位。`service.py`：下一題（±100 逐步放寬）、無狀態判定（序列必須是解答的前綴）、提示（算失敗）、看解答、對轟
   每步（同局面 + root_moves 搜尋評語；結果與開局比 ±0.2）、匯出（`lichess_fen` 把 pocket 當第 9 列；PGN 只在作答後含解答）、
-  手動新增（engine 驗證，不適合時說明原因）、背景挖題／製題工作。路由 `routers/puzzles.py`；測試用自己的 DATA_DIR
+  手動新增（engine 驗證，不適合時說明原因）、背景挖題／製題工作（製題帶 `mode`、題型、描述與 `llm`；`chosen_provider` 驗證
+  所選 AI（422），沒選則用伺服器預設；設計模式沒有 AI 時 422；工作紀錄 `log` 與使用的 `ai`）；提示回傳 agent 的文字提示（只在
+  第一步），解題結束時回傳說明與警告；`GET /api/puzzles/{id}` 開啟指定題目（題目連結），工作完成時 `made` 列出存入的題目，
+  重複新增的訊息附上既有題目編號（`store.find`）。路由 `routers/puzzles.py`；測試用自己的 DATA_DIR
   （`tests/conftest.py`），E2E 每次執行用全新的暫存 DATA_DIR。
 - `frontend/` React 19 + TS + Vite 8 + Chessground 9.2。瀏覽器中「沒有」規則邏輯。
   - `src/tree.ts`：由 backend 局面組成的純對局樹（id = position_id）。每次插入都檢查不變式（子節點
@@ -256,7 +274,10 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
   - 頁面：`src/route.ts`（hash：`#/` 復盤、`#/puzzles`），`Root.tsx` 只掛載畫面上的頁面，`components/Nav.tsx`。題目頁
     `src/puzzles/`（`usePlayer`、`usePuzzle`、`PuzzlePage`、`PuzzleLibrary`）；復盤頁的 `components/PuzzleTools.tsx`（存成題目、
     從這盤挖題）；`session.openInReview(pgn)` 把題目交給復盤頁；`clipboard.ts` 複製時有 execCommand 備援（區網 http 位址沒有
-    navigator.clipboard）。
+    navigator.clipboard）。`PuzzleLibrary` 的「AI 製題」用 `useAiChoice('crazyhouse-review:puzzle-ai-choice')`（與復盤頁分開記住）
+    與共用的 `AiSettings`，選方式、題型、描述與題數，輪詢工作並顯示最後幾行紀錄；`usePuzzle` 的提示分兩段（`hintLevel`
+    1＝agent 文字、2＝要動的棋子），結束時存下說明與警告；`route.usePuzzleLink` 讀 `#/puzzles/<id>`，登入後開啟該題
+    （effect 依暱稱而非 player 物件，rating 更新時不會重載題目），「下一題」離開連結。
   - Vite dev server :5180 把 `/api` 代理到 backend :8820。
   - 區網部署：`scripts/install_service.sh` → systemd user service `crazyhouse-review`（已啟用，
     Linger=yes 所以開機即啟動）執行 `scripts/run_server.sh`，HOST=0.0.0.0、PORT=8820、
@@ -317,6 +338,10 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
   重新分析）。Threads/Hash 的選擇會影響整台機器。
 - 寬度 390 px 時 chessground 的檔案座標會超出 2 px（原本就有）。
 - 題目：暱稱帳號沒有密碼；解答中途走出不同但同樣好的非將殺著會被判錯；製題每題需數分鐘 engine 時間。
+- AI 製題：agent 的提示只檢查是否寫出第一步的著法或格子（不檢查較隱晦的洩題）；agent 設計的局面常需多次嘗試，4 次都不合格
+  就略過該題（工作紀錄列出每次原因）。實測（2026-10-08，各 CLI 預設 model）：挑題 agy 244 秒、codex 32 秒、claude 24 秒，三者
+  的說明都與資料一致、沒有警告、提示沒有洩題；設計進攻題三者都在 1–3 次內通過（多為悶殺類），設計防守題 codex 與 claude 4 次都
+  不合格、agy 第 2 次通過——防守題的標準（威脅 ≥ 0.5、唯一守法）很難憑空設計。agy 每次回答需數分鐘。
 - AI 選擇：Codex 一次給出完整回答（思考時沒有逐字顯示）；Claude 的 model 清單是 `--help` 列出的別名
   （CLI 也接受完整 model 名稱，但不會列出）。
 - 回答自動檢查只涵蓋著法、評估、將殺與優勢方向（不含棋子位置等其他敘述）；子句中沒提到某方或著法的中文
@@ -329,7 +354,10 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
   於著法落地前執行時才通過。
 
 ## 驗證狀態
-- `cd backend && uv run pytest -q` → 226 passed（含 test_puzzles 檢查同一時間只跑一批製題；含 `tests/test_puzzle_store.py`（Glicko-2 論文範例、儲存、只計分一次）與
+- `cd backend && uv run pytest -q` → 232 passed（含 `tests/test_puzzle_agent.py`：擷取 JSON、洩題判定、挑題只接受清單內 id
+  （不重複）且丟掉洩題的標題與提示、說明的警告被保存、無法使用的回覆退回難度排序；設計模式依序收到「沒有 JSON」「局面不合法：
+  too_many_kings」「沒有唯一解」的原因並重試，通過後依 engine 解答（而非設計構想）撰寫文字、寫不出來時保留設計的標題與提示；
+  沒有 AI 時設計 422、不合法的選擇 422；舊資料庫補欄位；題目連結、重複新增附編號、工作的 `made`）（含 test_puzzles 檢查同一時間只跑一批製題；含 `tests/test_puzzle_store.py`（Glicko-2 論文範例、儲存、只計分一次）與
   `tests/test_puzzles.py`（真 engine：找出進攻與防守題、接受其他將殺、重做不計分、提示、走錯、進度不符 422、對轟下到結束、手動新增
   與拒絕、背景挖真實對局與製題））（含：真的 uvicorn 伺服器與連線——用戶端中途斷開
   `/api/explain/stream` 後數秒內 CLI 程序被結束；codex 乾淨執行參數；逾時訊息）（含 `tests/test_cli_providers.py`：三個 CLI 以重播真實輸出
@@ -355,7 +383,9 @@ scrollIntoView 每走一步就捲動整個頁面，讓棋盤在操作中途跑�
   候選著流程、SSE 事件、缺 key 時 503、key 永不出現在錯誤中、以模擬 SDK 串流測試拒答／fallback。
   沒有真實的 Claude 呼叫。
 - `cd frontend && npx vitest run` → 50 passed；`npx tsc -b`、`npm run lint`、`npx vite build` 無誤。
-- `cd frontend && npx playwright test` → 44 passed（含 `e2e/puzzles.spec.ts`：貼上 lichess 寫法 FEN 新增題目（含拒絕原因）、
+- `cd frontend && npx playwright test` → 46 passed（含 `e2e/puzzle-agent.spec.ts`（假 CLI 依 prompt 回 JSON）：題目頁獨立選
+  Codex CLI → 設計進攻題，第一次兩個王被拒、看到原因與重試、通過後依解答撰寫，從工作列出的連結開題，標題、製作的 agent、兩段式
+  提示、解出後的說明，「下一題」離開連結；挑題產生題目並顯示 agent 寫的標題；題目測試改用連結開啟指定題）（含 `e2e/puzzles.spec.ts`：貼上 lichess 寫法 FEN 新增題目（含拒絕原因）、
   主題以文字顯示、重新整理後 rating 保留、手機寬度不溢出；用另一個將殺打入解出 → rating 上升、解答、複製
   FEN、lichess 彈出視窗網址、載入復盤頁；防守題的提示與走錯；對轟下到結束；復盤頁存成題目（重複被拒）與挖題）（含：取消慢速的 codex 回答與全局掃描後再提問）（含：從即時清單選 Codex CLI + model + effort，並取得該 CLI
   針對棋盤 FEN 的回答，重新整理後保留；CLI 更新移除所選 model → 提示並改回預設；手機上走棋不再捲動頁面）（含：未分析著法與 +9.9 評估的回答警告、含棋盤 FEN 的
