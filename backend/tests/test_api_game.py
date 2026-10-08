@@ -80,6 +80,20 @@ def test_client_network_allowlist():
     assert spoof.status_code == 403
 
 
+def test_tailnet_devices_are_allowed_with_tailscale_ranges():
+    from app.access import parse_networks
+
+    # What scripts/install_service.sh allows when the machine is on Tailscale.
+    lan_and_tailnet = parse_networks("127.0.0.0/8,::1/128,192.168.0.0/24,100.64.0.0/10")
+    app = create_app(frontend_dist=None, allowed_networks=lan_and_tailnet)
+    for device in ("100.83.233.91", "100.70.168.53", "::ffff:100.83.233.91", "192.168.0.5"):
+        assert TestClient(app, client=(device, 50000)).get("/api/health").status_code == 200, device
+    for outsider in ("172.17.0.2", "192.168.1.5", "100.128.0.1", "100.63.255.255"):
+        assert TestClient(app, client=(outsider, 50000)).get("/api/health").status_code == 403, outsider
+    spoof = TestClient(app, client=("172.17.0.2", 50000)).get("/api/health", headers={"X-Forwarded-For": "100.83.233.91"})
+    assert spoof.status_code == 403
+
+
 def test_allowlist_from_environment(monkeypatch):
     monkeypatch.setenv("ALLOWED_CLIENT_NETWORKS", "192.168.0.0/24")
     assert TestClient(create_app(frontend_dist=None), client=("10.0.0.1", 1)).get("/api/health").status_code == 403
